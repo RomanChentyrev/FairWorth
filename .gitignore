@@ -1,0 +1,16 @@
+node_modules/
+server/node_modules/
+client/node_modules/
+server/data/
+server/.env
+.DS_Store
+dist/
+*.log
+deploy/*.env
+deploy/**/*.dump
+.env.production
+.env.staging
+
+client/test-results/
+client/playwright-report/
+.Rhistory

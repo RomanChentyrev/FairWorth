@@ -1,0 +1,19 @@
+{
+  "name": "fairworth",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "install:all": "cd server && npm install && cd ../client && npm install",
+    "setup": "cd server && npm run db:setup",
+    "build": "npm --prefix client run build",
+    "test": "npm --prefix server test && npm --prefix client test",
+    "test:e2e": "npm --prefix client run test:e2e",
+    "lint": "npm --prefix server run lint && npm --prefix client run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

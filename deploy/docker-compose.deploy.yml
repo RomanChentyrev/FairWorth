@@ -1,0 +1,47 @@
+name: fairworth-${DEPLOY_ENV:-production}
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    image: ${REGISTRY_IMAGE:?REGISTRY_IMAGE is required}/web:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+
+  migrate:
+    image: ${REGISTRY_IMAGE}/api:${IMAGE_TAG}
+    env_file: ${SERVER_ENV_FILE:?SERVER_ENV_FILE is required}
+    command: ["node", "scripts/setup-postgres.js"]
+    restart: "no"
+
+  api:
+    image: ${REGISTRY_IMAGE}/api:${IMAGE_TAG}
+    restart: unless-stopped
+    env_file: ${SERVER_ENV_FILE}
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS_ON_START: "false"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  caddy_data:
+  caddy_config:

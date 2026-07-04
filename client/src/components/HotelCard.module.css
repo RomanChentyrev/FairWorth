@@ -1,0 +1,189 @@
+.card {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  border: 1.5px solid var(--border);
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.2s, border-color 0.2s, transform 0.15s;
+  box-shadow: var(--shadow-sm);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+}
+
+.card.recommended {
+  border-color: var(--gold-border);
+  box-shadow: 0 0 0 1px var(--gold-border), var(--shadow-md);
+}
+
+.imgArea {
+  min-height: 160px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.recBadge {
+  display: inline-block;
+  background: var(--gold);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 4px;
+  width: fit-content;
+}
+
+.stars {
+  display: flex;
+  gap: 2px;
+  margin-top: auto;
+}
+
+.body {
+  padding: 16px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.nameBlock { flex: 1; min-width: 0; }
+
+.name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.location {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  padding: 3px 9px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tagGold { background: var(--gold-bg); color: #92620A; border: 1px solid var(--gold-border); }
+.tagGreen { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+.tagBlue { background: var(--blue-bg); color: var(--blue); border: 1px solid #BEE3F8; }
+
+.bottomRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-top: auto;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.priceBlock { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.priceLabel { font-size: 11px; color: var(--text-muted); }
+.price { font-size: 22px; font-weight: 700; color: var(--navy); }
+.priceNote { font-size: 11px; color: var(--text-muted); }
+.liveBadge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--green-border);
+  background: var(--green-bg);
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1240px) {
+  .card { grid-template-columns: 160px minmax(0, 1fr); }
+  .body { padding: 14px; gap: 10px; }
+  .actions { gap: 6px; }
+  .compareBtn, .viewBtn, .tripBtn { padding-inline: 9px; }
+}
+
+.compareBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-subtle);
+  border: 1.5px solid var(--border);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.compareBtn:hover { border-color: var(--border-strong); }
+.compareBtnActive {
+  background: var(--gold-bg);
+  border-color: var(--gold-border);
+  color: #92620A;
+}
+
+.viewBtn {
+  padding: 7px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--navy);
+  color: #fff;
+  transition: background 0.15s;
+}
+.viewBtn:hover { background: var(--navy-mid); }
+
+.tripBtn {
+  padding: 7px 13px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--gold-bg);
+  color: #92620A;
+  border: 1.5px solid var(--gold-border);
+}
+
+.tripBtnActive {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: var(--green-border);
+}
+.tripBtn:disabled { opacity: 0.45; cursor: not-allowed; }

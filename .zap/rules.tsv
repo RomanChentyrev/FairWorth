@@ -1,0 +1,6 @@
+# ZAP rule configuration. WARN keeps the report actionable without hiding findings.
+10020	WARN	X-Frame-Options Header Scanner
+10021	WARN	X-Content-Type-Options Header Missing
+10038	WARN	Content Security Policy Header Not Set
+10054	WARN	Cookie without SameSite Attribute
+10096	WARN	Timestamp Disclosure

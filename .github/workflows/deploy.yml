@@ -1,0 +1,64 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [staging, production]
+        required: true
+      image_tag:
+        description: Immutable commit SHA to deploy
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'staging')
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.values.outputs.environment }}
+      image_tag: ${{ steps.values.outputs.image_tag }}
+    steps:
+      - id: values
+        env:
+          MANUAL_ENV: ${{ inputs.environment }}
+          MANUAL_TAG: ${{ inputs.image_tag }}
+          AUTO_TAG: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            printf '%s' "$MANUAL_TAG" | grep -Eq '^[0-9a-f]{40}$' || { echo 'image_tag must be a full commit SHA' >&2; exit 1; }
+            echo "environment=$MANUAL_ENV" >> "$GITHUB_OUTPUT"
+            echo "image_tag=$MANUAL_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+            echo "image_tag=$AUTO_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: select
+    runs-on: ubuntu-latest
+    environment: ${{ needs.select.outputs.environment }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: Trust deployment host
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
+      - name: Release immutable images
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          TARGET_ENV: ${{ needs.select.outputs.environment }}
+          IMAGE_TAG: ${{ needs.select.outputs.image_tag }}
+        run: ssh "$USER@$HOST" "/opt/fairworth/deploy/scripts/release.sh '$TARGET_ENV' '$IMAGE_TAG'"

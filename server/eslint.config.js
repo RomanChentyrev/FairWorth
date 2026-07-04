@@ -1,0 +1,1 @@
+module.exports = [{ ignores: ['node_modules/**'], languageOptions: { ecmaVersion: 2022, sourceType: 'commonjs', globals: { require: 'readonly', module: 'readonly', process: 'readonly', console: 'readonly', Buffer: 'readonly', URL: 'readonly', setTimeout: 'readonly' } }, rules: {} }];

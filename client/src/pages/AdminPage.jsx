@@ -1,0 +1,21 @@
+import React, { useEffect, useState } from 'react';
+import { adminApi } from '../api';
+import { useLang } from '../i18n/LanguageContext';
+
+export default function AdminPage() {
+  const { lang } = useLang(); const [data, setData] = useState(null); const [catalog, setCatalog] = useState({ syncs: [], reviews: [] }); const [city, setCity] = useState('Singapore'); const [error, setError] = useState(''); const [loading, setLoading] = useState(true); const [syncing, setSyncing] = useState(false);
+  const load = () => { setLoading(true); Promise.all([adminApi.anomalies(), adminApi.catalogSyncs(), adminApi.mappingReviews()]).then(([a, s, r]) => { setData(a.data); setCatalog({ syncs: s.data.syncs, reviews: r.data.reviews }); }).catch(e => setError(e.response?.data?.error || e.message)).finally(() => setLoading(false)); };
+  useEffect(load, []);
+  const resolve = async (type, id) => { await adminApi.resolveAnomaly(type, id); load(); };
+  const sync = async e => { e.preventDefault(); setSyncing(true); setError(''); try { await adminApi.catalogSync({ city }); load(); } catch (e) { setError(e.response?.data?.error || e.message); } finally { setSyncing(false); } };
+  const resolveMapping = async (id, status) => { await adminApi.resolveMapping(id, status); load(); };
+  if (loading) return <main className="system-page"><p>Loading…</p></main>;
+  if (error) return <main className="system-page"><p>{error}</p></main>;
+  return <main className="admin-page"><h1>{lang === 'ru' ? 'Контроль качества данных' : 'Data quality review'}</h1><form onSubmit={sync} className="admin-summary"><input value={city} onChange={e => setCity(e.target.value)} placeholder="City or IATA code" /><button disabled={syncing}>{syncing ? 'Syncing…' : (lang === 'ru' ? 'Синхронизировать каталог' : 'Sync hotel catalog')}</button></form><div className="admin-summary"><span>Price anomalies: {data.totals.price}</span><span>Score anomalies: {data.totals.score}</span><span>Stale prices: {data.totals.stale}</span></div>
+    <h2>{lang === 'ru' ? 'Синхронизации каталога' : 'Catalog syncs'}</h2><div className="admin-table">{catalog.syncs.slice(0, 10).map(item => <div className="admin-row" key={item.id}><div><strong>{item.city} ({item.iata_code})</strong><br />{item.status} · {item.processed_count}/{item.total_available ?? '—'} · {new Date(item.started_at).toLocaleString()}</div></div>)}{!catalog.syncs.length && <p>No catalog syncs yet.</p>}</div>
+    <h2>{lang === 'ru' ? 'Проверка совпадений отелей' : 'Hotel mapping review'}</h2><div className="admin-table">{catalog.reviews.map(item => <div className="admin-row" key={item.id}><div><strong>{item.imported_name}</strong><br />Candidate: {item.candidate_name} · {Math.round(item.confidence * 100)}%</div><div><button onClick={() => resolveMapping(item.id, 'approved')}>Approve</button><button onClick={() => resolveMapping(item.id, 'rejected')}>Reject</button></div></div>)}{!catalog.reviews.length && <p>No mappings need review.</p>}</div>
+    <h2>{lang === 'ru' ? 'Подозрительные цены' : 'Suspicious prices'}</h2><div className="admin-table">{data.price_anomalies.map(item => <div className="admin-row" key={item.id}><div><strong>{item.hotel_name}</strong><br />{item.provider} · {item.anomaly_type} · {item.previous_price ?? '—'} → {item.current_price ?? '—'} {item.currency}</div><button onClick={() => resolve('price', item.id)}>Resolve</button></div>)}{!data.price_anomalies.length && <p>No open price anomalies.</p>}</div>
+    <h2>{lang === 'ru' ? 'Изменения Score' : 'Score changes'}</h2><div className="admin-table">{data.score_anomalies.map(item => <div className="admin-row" key={item.id}><div><strong>{item.hotel_name}</strong><br />{item.previous_score} → {item.current_score} ({item.delta > 0 ? '+' : ''}{item.delta}) · v{item.score_version}</div><button onClick={() => resolve('score', item.id)}>Resolve</button></div>)}{!data.score_anomalies.length && <p>No open Score anomalies.</p>}</div>
+    <h2>{lang === 'ru' ? 'Устаревшие цены' : 'Stale prices'}</h2><div className="admin-table">{data.stale_prices.map(item => <div className="admin-row" key={item.price_id}><div><strong>{item.hotel_name}</strong><br />{item.provider} · {item.price_per_night} {item.currency} · {new Date(item.updated_at).toLocaleString()}</div></div>)}{!data.stale_prices.length && <p>No stale prices.</p>}</div>
+  </main>;
+}

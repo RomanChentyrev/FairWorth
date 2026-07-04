@@ -1,0 +1,999 @@
+const express = require('express');
+const router = express.Router();
+const { db } = require('../db/database');
+const { v4: uuidv4 } = require('uuid');
+const { analyzeHotel } = require('../services/ai');
+const { calculateHotelScore, getUserWeights, recordScoreSnapshot, SCORE_VERSION } = require('../services/personalization');
+const { normalizePrice, roundMoney } = require('../services/pricing');
+const { requireAuth, requireOnboarding, requireEmailVerified } = require('../middleware/auth');
+const { validateDateRange, defaultTravelDates } = require('../utils/dates');
+const { aiLimiter } = require('../middleware/security');
+const travelpayouts = require('../services/travelpayouts');
+const { ensureCatalogForCity } = require('../services/hotelCatalog');
+const { refreshLiteApiRates } = require('../services/hotelRates');
+const {
+  CACHE_TTL_HOURS,
+  HOTEL_CATALOG,
+  TRIPADVISOR_URLS,
+  extractTripadvisorHotelKey,
+  extractTripadvisorLocationId,
+  getRates,
+} = require('../services/xotelo');
+
+const INSIGHTS_ORIGIN = 'DXB';
+const INSIGHTS_CURRENCY = 'USD';
+const INSIGHTS_HOT_DAYS = 90;
+const INSIGHTS_NIGHTS = 7;
+const INSIGHTS_CACHE_KEY = 'global:DXB:USD';
+const INSIGHTS_CACHE_TTL_HOURS = Math.max(1, Number(process.env.INSIGHTS_CACHE_TTL_HOURS || 6));
+const INSIGHTS_JOB_TIMEOUT_MS = Math.max(5000, Number(process.env.INSIGHTS_JOB_TIMEOUT_MS || 20000));
+const INSIGHTS_ITEM_TIMEOUT_MS = Math.max(1000, Number(process.env.INSIGHTS_ITEM_TIMEOUT_MS || 3500));
+let insightsRefreshPromise = null;
+
+function withTimeout(promise, timeoutMs, label) {
+  let timeout;
+  return Promise.race([
+    promise,
+    new Promise((resolve, reject) => { timeout = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs); }),
+  ]).finally(() => clearTimeout(timeout));
+}
+
+function formatInsightDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addInsightDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getTravelpayoutsToken() {
+  return process.env.TRAVELPAYOUTS_TOKEN;
+}
+
+function normalizeCityName(value = '') {
+  return String(value).trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+async function hotelStatsByCity() {
+  const rows = await db.prepare(`
+    SELECT
+      h.city,
+      h.country,
+      COUNT(DISTINCT h.id) as hotel_count,
+      MIN(hp.price_per_night) as min_price,
+      AVG(hp.price_per_night) as avg_price,
+      AVG(hr.rating) as avg_rating,
+      SUM(COALESCE(hr.count, 0)) as review_count
+    FROM hotels h
+    LEFT JOIN hotel_prices hp ON hp.hotel_id = h.id AND hp.price_valid = 1
+    LEFT JOIN hotel_reviews hr ON hr.hotel_id = h.id
+    GROUP BY h.city, h.country
+  `).all();
+
+  return new Map(rows.map(row => [normalizeCityName(row.city), row]));
+}
+
+async function cityLookupByCode() {
+  const cities = await travelpayouts.getCities();
+  const cityList = Array.isArray(cities) ? cities : Object.values(cities);
+  return new Map(cityList.map(city => [city.code, city]));
+}
+
+function destinationName(city, code) {
+  return city?.name_translations?.en || city?.name || code;
+}
+
+async function getReturnPrice({ destination, origin, returnDate, currency, token }) {
+  const tickets = await travelpayouts.cheapestTickets({
+    origin: destination,
+    destination: origin,
+    depart_date: returnDate,
+    currency,
+    token,
+  }).catch(() => []);
+
+  const prices = tickets
+    .map(ticket => Number(ticket.price))
+    .filter(price => Number.isFinite(price) && price > 0);
+  if (prices.length) return Math.min(...prices);
+
+  const dateTickets = await travelpayouts.pricesForDates({
+    origin: destination,
+    destination: origin,
+    depart_date: returnDate,
+    currency,
+    limit: 1,
+    token,
+  }).catch(() => []);
+  const datePrices = dateTickets
+    .map(ticket => Number(ticket.price))
+    .filter(price => Number.isFinite(price) && price > 0);
+  return datePrices.length ? Math.min(...datePrices) : null;
+}
+
+async function buildLiveInsightOffers() {
+  const token = getTravelpayoutsToken();
+  if (!token) return null;
+
+  const [popular, citiesByCode] = await Promise.all([
+    travelpayouts.popularDestinations({ origin: INSIGHTS_ORIGIN, currency: INSIGHTS_CURRENCY, token }),
+    cityLookupByCode(),
+  ]);
+  const hotelsByCity = await hotelStatsByCity();
+  const today = new Date();
+  const maxDeparture = addInsightDays(today, INSIGHTS_HOT_DAYS);
+
+  const candidates = popular
+    .filter(item => item.destination && item.destination !== INSIGHTS_ORIGIN)
+    .filter(item => {
+      if (!item.departure_at) return true;
+      const departure = new Date(item.departure_at);
+      return !Number.isNaN(departure.getTime()) && departure <= maxDeparture;
+    })
+    .slice(0, 8);
+
+  const offers = await Promise.all(candidates.map(async item => {
+    const city = citiesByCode.get(item.destination);
+    const cityName = destinationName(city, item.destination);
+    const hotelRow = hotelsByCity.get(normalizeCityName(cityName));
+    const departureDate = item.departure_at
+      ? String(item.departure_at).slice(0, 10)
+      : formatInsightDate(addInsightDays(today, 14));
+    const returnDate = item.return_at
+      ? String(item.return_at).slice(0, 10)
+      : formatInsightDate(addInsightDays(new Date(`${departureDate}T00:00:00.000Z`), INSIGHTS_NIGHTS));
+    const outboundPrice = Number(item.price || 0);
+    const returnPrice = await withTimeout(getReturnPrice({
+      destination: item.destination,
+      origin: INSIGHTS_ORIGIN,
+      returnDate,
+      currency: INSIGHTS_CURRENCY,
+      token,
+    }), INSIGHTS_ITEM_TIMEOUT_MS, `Return price ${item.destination}`).catch(() => null);
+    const flightTotal = outboundPrice + Number(returnPrice || 0);
+    const minPrice = hotelRow?.min_price ? Math.round(hotelRow.min_price) : null;
+    const avgPrice = hotelRow?.avg_price ? Math.round(hotelRow.avg_price) : minPrice;
+    const hotelTotal = minPrice ? minPrice * INSIGHTS_NIGHTS : null;
+    const packagePrice = Math.round(flightTotal + Number(hotelTotal || 0));
+    const rating = hotelRow?.avg_rating ? Number(hotelRow.avg_rating.toFixed(1)) : 4.3;
+    const hotelCount = Number(hotelRow?.hotel_count || 0);
+    const reviewCount = Number(hotelRow?.review_count || 0);
+    const discountPercent = minPrice && avgPrice
+      ? Math.max(5, Math.min(38, Math.round(((avgPrice - minPrice) / Math.max(avgPrice, 1)) * 100) + 10))
+      : Math.max(5, Math.min(28, Math.round(32 - outboundPrice / 18)));
+    const valueScore = Math.round(
+      rating * 16
+      + discountPercent
+      + Math.max(0, 1100 - packagePrice) * 0.025
+      + hotelCount * 0.8
+    );
+    const popularityScore = Number(item.popularity || 0) + reviewCount + hotelCount * 2500;
+
+    return {
+      city: cityName,
+      country: hotelRow?.country || city?.country_code || '',
+      destination_code: item.destination,
+      origin_code: INSIGHTS_ORIGIN,
+      currency: INSIGHTS_CURRENCY,
+      departure_date: departureDate,
+      return_date: returnDate,
+      nights: INSIGHTS_NIGHTS,
+      outbound_price: outboundPrice || null,
+      return_price: returnPrice,
+      has_round_trip: Boolean(returnPrice),
+      flight_total: flightTotal || null,
+      has_hotel_price: Boolean(minPrice),
+      hotel_count: hotelCount,
+      min_price: minPrice || 0,
+      avg_price: avgPrice || minPrice || 0,
+      avg_rating: rating,
+      review_count: reviewCount,
+      discount_percent: discountPercent,
+      package_price: packagePrice,
+      popularity_score: popularityScore,
+      value_score: valueScore,
+      source: 'travelpayouts',
+      ai_reason: minPrice
+        ? `Round trip from Dubai plus ${INSIGHTS_NIGHTS} nights from current hotel prices.`
+        : `Popular route from Dubai with live flight price; hotel prices are not in Fairworth yet.`,
+    };
+  }));
+
+  return offers.filter(offer => offer.outbound_price && offer.package_price);
+}
+
+function insightsPayload(liveOffers) {
+  const byPriceDrop = [...liveOffers].sort((a, b) => b.discount_percent - a.discount_percent || a.package_price - b.package_price);
+  const byPopularity = [...liveOffers].sort((a, b) => b.popularity_score - a.popularity_score);
+  const byValue = [...liveOffers].sort((a, b) => b.value_score - a.value_score);
+  return {
+    origin: INSIGHTS_ORIGIN, currency: INSIGHTS_CURRENCY, days: INSIGHTS_HOT_DAYS, nights: INSIGHTS_NIGHTS,
+    source: 'travelpayouts', generated_at: new Date().toISOString(),
+    sections: [
+      { key: 'hot', offers: byPriceDrop.slice(0, 8) },
+      { key: 'popular', offers: byPopularity.slice(0, 8) },
+      { key: 'value', offers: byValue.slice(0, 8) },
+    ],
+    total: liveOffers.length,
+  };
+}
+
+async function refreshInsightsInBackground({ force = false } = {}) {
+  if (insightsRefreshPromise) return insightsRefreshPromise;
+  if (!force) {
+    const recent = await db.prepare(`SELECT status, refresh_started_at, expires_at > CURRENT_TIMESTAMP AS fresh FROM insights_cache WHERE cache_key = ?`).get(INSIGHTS_CACHE_KEY);
+    if (recent?.fresh && recent.status === 'ready') return null;
+    if (recent?.status === 'refreshing' && recent.refresh_started_at && Date.now() - new Date(recent.refresh_started_at).getTime() < INSIGHTS_JOB_TIMEOUT_MS * 2) return null;
+  }
+  insightsRefreshPromise = (async () => {
+    await db.prepare(`INSERT INTO insights_cache (cache_key, status, refresh_started_at) VALUES (?, 'refreshing', CURRENT_TIMESTAMP) ON CONFLICT (cache_key) DO UPDATE SET status = 'refreshing', error = NULL, refresh_started_at = CURRENT_TIMESTAMP`).run(INSIGHTS_CACHE_KEY);
+    try {
+      const offers = await withTimeout(buildLiveInsightOffers(), INSIGHTS_JOB_TIMEOUT_MS, 'Insights refresh');
+      const payload = insightsPayload(offers || []);
+      await db.prepare(`UPDATE insights_cache SET payload = ?, status = 'ready', error = NULL, updated_at = CURRENT_TIMESTAMP, expires_at = CURRENT_TIMESTAMP + (? * INTERVAL '1 hour'), refresh_started_at = NULL WHERE cache_key = ?`)
+        .run(JSON.stringify(payload), INSIGHTS_CACHE_TTL_HOURS, INSIGHTS_CACHE_KEY);
+      return payload;
+    } catch (error) {
+      await db.prepare(`UPDATE insights_cache SET status = 'error', error = ?, refresh_started_at = NULL WHERE cache_key = ?`).run(error.message.slice(0, 1000), INSIGHTS_CACHE_KEY);
+      console.warn(`[insights] background refresh failed: ${error.message}`);
+      return null;
+    }
+  })().finally(() => { insightsRefreshPromise = null; });
+  return insightsRefreshPromise;
+}
+
+async function ensureXoteloSchema() {
+  for (const hotel of HOTEL_CATALOG) {
+    const existingByKey = await db.prepare(`
+      SELECT id FROM hotels
+      WHERE tripadvisor_hotel_key = ? AND id != ?
+      LIMIT 1
+    `).get(hotel.tripadvisor_hotel_key, hotel.id);
+    if (existingByKey) {
+      await db.prepare('DELETE FROM hotel_prices WHERE hotel_id = ?').run(hotel.id);
+      await db.prepare('DELETE FROM hotel_reviews WHERE hotel_id = ?').run(hotel.id);
+      await db.prepare('DELETE FROM hotel_rooms WHERE hotel_id = ?').run(hotel.id);
+      await db.prepare('DELETE FROM hotels WHERE id = ?').run(hotel.id);
+    }
+
+    const existing = await db.prepare(`
+      SELECT id FROM hotels
+      WHERE id = ? OR LOWER(name) = LOWER(?) OR tripadvisor_hotel_key = ?
+      LIMIT 1
+    `).get(hotel.id, hotel.name, hotel.tripadvisor_hotel_key);
+    const hotelId = existing?.id || hotel.id;
+
+    if (!existing) {
+      await db.prepare(`
+        INSERT INTO hotels (
+          id, name, location, city, country, stars, description, amenities,
+          latitude, longitude, tripadvisor_url, tripadvisor_location_id, tripadvisor_hotel_key
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        hotel.id,
+        hotel.name,
+        hotel.location,
+        hotel.city,
+        hotel.country,
+        hotel.stars,
+        hotel.description,
+        hotel.amenities,
+        hotel.latitude,
+        hotel.longitude,
+        hotel.tripadvisor_url,
+        hotel.tripadvisor_location_id,
+        hotel.tripadvisor_hotel_key
+      );
+    }
+
+    await db.prepare(`
+      UPDATE hotels
+      SET tripadvisor_url = ?,
+          tripadvisor_location_id = ?,
+          tripadvisor_hotel_key = ?,
+          latitude = COALESCE(?, latitude),
+          longitude = COALESCE(?, longitude)
+      WHERE id = ?
+    `).run(
+      hotel.tripadvisor_url,
+      hotel.tripadvisor_location_id,
+      hotel.tripadvisor_hotel_key,
+      hotel.latitude,
+      hotel.longitude,
+      hotelId
+    );
+
+  }
+}
+
+function defaultCheckOut(checkIn) {
+  return formatDate(addDays(parseDate(checkIn), 1));
+}
+
+async function cachedXoteloPrices(hotelId, checkIn, checkOut) {
+  return await db.prepare(`
+    SELECT *
+    FROM hotel_prices
+    WHERE hotel_id = ?
+      AND check_in = ?
+      AND check_out = ?
+      AND source = 'xotelo'
+      AND updated_at + (? * INTERVAL '1 hour') > CURRENT_TIMESTAMP
+    ORDER BY price_per_night
+  `).all(hotelId, checkIn, checkOut, CACHE_TTL_HOURS);
+}
+
+async function writeXoteloPrices(hotelId, result) {
+  const previousRows = await db.prepare(`SELECT operator, price_per_night FROM hotel_prices WHERE hotel_id = ? AND source = 'xotelo' ORDER BY updated_at DESC`).all(hotelId);
+  const previousByProvider = new Map(previousRows.map(row => [row.operator, Number(row.price_per_night)]));
+  const validRates = result.rates.filter(rate => Number(rate.rate) > 0);
+  const sortedValues = validRates.map(rate => Number(rate.rate)).sort((a, b) => a - b);
+  const median = sortedValues.length ? sortedValues[Math.floor(sortedValues.length / 2)] : null;
+  const flagPrice = async ({ priceId = null, provider, type, previous = null, current = null, severity = 'warning', details = {} }) => {
+    const recent = await db.prepare(`SELECT id FROM price_anomalies WHERE hotel_id = ? AND provider = ? AND anomaly_type = ? AND status = 'open' AND created_at > CURRENT_TIMESTAMP - INTERVAL '24 hours' LIMIT 1`).get(hotelId, provider, type);
+    if (!recent) await db.prepare(`INSERT INTO price_anomalies (id, hotel_id, price_id, provider, anomaly_type, severity, previous_price, current_price, currency, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(uuidv4(), hotelId, priceId, provider, type, severity, previous, current, result.currency || 'USD', JSON.stringify(details));
+  };
+  for (const rate of result.rates.filter(rate => !(Number(rate.rate) > 0))) await flagPrice({ provider: rate.name || rate.code || 'unknown', type: 'invalid_price', current: Number(rate.rate) || 0, severity: 'critical', details: { rate } });
+  await db.prepare(`
+    DELETE FROM hotel_prices
+    WHERE hotel_id = ? AND check_in = ? AND check_out = ? AND source = 'xotelo'
+  `).run(hotelId, result.check_in, result.check_out);
+
+  for (const rate of validRates) {
+    const priceId = uuidv4();
+    const provider = rate.name || rate.code || 'Xotelo provider';
+    const nights = Math.max(1, Math.round((parseDate(result.check_out) - parseDate(result.check_in)) / 86400000));
+    const baseNightly = roundMoney(rate.rate, result.currency || 'USD');
+    const taxNightly = roundMoney(rate.tax || 0, result.currency || 'USD');
+    const current = roundMoney(baseNightly + taxNightly, result.currency || 'USD');
+    const previous = previousByProvider.get(provider);
+    if (median && (current < median * 0.5 || current > median * 2)) await flagPrice({ priceId, provider, type: 'market_outlier', current, severity: 'warning', details: { market_median: median } });
+    if (previous && Math.abs(current - previous) / previous >= 0.4) await flagPrice({ priceId, provider, type: 'sudden_price_change', previous, current, severity: 'warning', details: { change_percent: Math.round(((current - previous) / previous) * 100) } });
+    if (Number(rate.tax) > current) await flagPrice({ priceId, provider, type: 'tax_exceeds_base_price', current: Number(rate.tax), previous: current, severity: 'critical' });
+    await db.prepare(`
+      INSERT INTO hotel_prices (
+        id, hotel_id, operator, price_per_night, total_price, check_in, check_out,
+        includes_breakfast, cancellation_policy, url, currency, tax, provider_code,
+        source, raw_json, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'provider_policy', ?, ?, ?, ?, 'xotelo', ?, CURRENT_TIMESTAMP)
+    `).run(
+      priceId,
+      hotelId,
+      provider,
+      current,
+      roundMoney(current * nights, result.currency || 'USD'),
+      result.check_in,
+      result.check_out,
+      rate.url || rate.link || null,
+      result.currency || 'USD',
+      roundMoney(taxNightly * nights, result.currency || 'USD'),
+      rate.code || null,
+      JSON.stringify({ ...rate, base_price_per_night: baseNightly, taxes_per_night: taxNightly, taxes_total: roundMoney(taxNightly * nights, result.currency || 'USD'), stay_total: roundMoney(current * nights, result.currency || 'USD'), nights, currency_unit: 'major', requested_currency: result.currency || 'USD', tax_status: taxNightly > 0 ? 'excluded' : 'unknown', tax_included: taxNightly > 0 ? false : undefined })
+    );
+  }
+}
+
+async function refreshHotelPricesFromXotelo(hotel, checkIn, checkOut, options = {}) {
+  if (!hotel?.tripadvisor_hotel_key || !checkIn || !checkOut) return { updated: false, prices: [] };
+  if (!options.force) {
+    const cached = await cachedXoteloPrices(hotel.id, checkIn, checkOut);
+    if (cached.length) return { updated: false, cached: true, prices: cached };
+  }
+
+  const result = await getRates({
+    hotel_key: hotel.tripadvisor_hotel_key,
+    check_in: checkIn,
+    check_out: checkOut,
+  });
+
+  if (result.rates.length) {
+    await writeXoteloPrices(hotel.id, result);
+  }
+
+  const prices = await db.prepare(`
+    SELECT * FROM hotel_prices
+    WHERE hotel_id = ? AND check_in = ? AND check_out = ? AND source = 'xotelo'
+    ORDER BY price_per_night
+  `).all(hotel.id, result.check_in, result.check_out);
+
+  return { updated: true, cached: false, prices };
+}
+
+function parseDate(value) {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function formatDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+async function scoreHotelForUser(hotel, rooms, reviews, prices, userId, language = 'en') {
+  const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+  const weights = await getUserWeights(userId);
+  const minPrice = prices.length ? Math.min(...prices.map(price => Number(price.price_per_night)).filter(price => price > 0)) : null;
+  const marketPrices = (await db.prepare(`
+    SELECT MIN(hp.price_per_night) AS min_price
+    FROM hotels h JOIN hotel_prices hp ON hp.hotel_id = h.id AND hp.price_valid = 1
+    WHERE LOWER(h.city) = LOWER(?) GROUP BY h.id
+  `).all(hotel.city)).map(row => Number(row.min_price)).filter(price => price > 0);
+  const result = calculateHotelScore({
+    ...hotel,
+    min_price: minPrice,
+    rating: reviews?.rating,
+    review_count: reviews?.count,
+    cleanliness: reviews?.cleanliness,
+    service: reviews?.service,
+    location_score: reviews?.location_score,
+    value_score: reviews?.value,
+  }, userPrefs, weights, {
+    roomsByHotel: { [hotel.id]: rooms },
+    prices: marketPrices.length ? marketPrices : [minPrice].filter(Boolean),
+    language,
+    priceMetadataByHotel: {
+      [hotel.id]: (() => {
+        const cheapest = [...prices].sort((a, b) => Number(a.price_per_night) - Number(b.price_per_night))[0];
+        const normalized = normalizePrice(cheapest, CACHE_TTL_HOURS);
+        return normalized ? { ...normalized, provider: cheapest.operator } : null;
+      })(),
+    },
+  });
+  await recordScoreSnapshot(userId, result);
+  return result;
+}
+
+// GET /api/hotels/search
+router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
+  try {
+    const {
+      city, check_in, check_out, guests = 2, stars, min_price, max_price,
+      amenities, districts, rating_min, free_cancel, breakfast,
+      sort = 'score', language = 'en', search_event, search_session_id,
+      limit = 30, offset = 0
+    } = req.query;
+    const pageSize = Math.min(Math.max(Number(limit) || 30, 1), 30);
+    const pageOffset = Math.max(Number(offset) || 0, 0);
+    const userId = req.user.id;
+    const defaults = defaultTravelDates();
+    const liveCheckIn = check_in || defaults.checkIn;
+    const liveCheckOut = check_out || defaults.checkOut;
+    if (!validateDateRange(liveCheckIn, liveCheckOut)) {
+      return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
+    }
+
+    if (city) {
+      const existingCatalog = await db.prepare(`SELECT id FROM hotels WHERE active = 1 AND (LOWER(city) LIKE ? OR LOWER(location) LIKE ? OR LOWER(country) LIKE ?) LIMIT 1`)
+        .get(...Array(3).fill(`%${city.toLowerCase()}%`));
+      if (existingCatalog) setImmediate(() => ensureCatalogForCity(city).catch(error => console.warn(`[liteapi] catalog refresh: ${error.message}`)));
+      else await ensureCatalogForCity(city);
+    }
+
+    // Search is cache-first. Live rates are progressively requested by the client
+    // for the visible page through /rates/batch, so an external provider cannot
+    // hold the complete results page hostage for tens of seconds.
+
+    let query = `
+      SELECT 
+        h.id, h.name, h.location, h.city, h.country, h.stars, h.amenities,
+        h.latitude, h.longitude, h.tripadvisor_url, h.tripadvisor_location_id,
+        h.tripadvisor_hotel_key, h.address, h.postal_code, h.image_url,
+        h.thumbnail_url, h.hotel_type, h.chain_name, h.content_source,
+        h.source_updated_at, h.active, h.created_at,
+        hr.rating, hr.count as review_count, hr.cleanliness, hr.service, hr.location_score, hr.value as value_score,
+        MIN(hp.price_per_night) as min_price,
+        MAX(hp.price_per_night) as max_price,
+        CASE
+          WHEN SUM(CASE WHEN hp.source = 'liteapi' THEN 1 ELSE 0 END) > 0 THEN 'liteapi'
+          WHEN SUM(CASE WHEN hp.source = 'xotelo' THEN 1 ELSE 0 END) > 0 THEN 'xotelo'
+          ELSE NULL
+        END as price_source
+      FROM hotels h
+      LEFT JOIN hotel_reviews hr ON hr.hotel_id = h.id
+      LEFT JOIN hotel_prices hp ON hp.hotel_id = h.id
+        AND hp.source IN ('liteapi', 'xotelo') AND hp.price_valid = 1 AND hp.check_in = ? AND hp.check_out = ?
+      WHERE h.active = 1
+    `;
+    const params = [liveCheckIn, liveCheckOut];
+
+    if (city) {
+      query += ` AND (LOWER(h.city) LIKE ? OR LOWER(h.location) LIKE ? OR LOWER(h.country) LIKE ?)`;
+      const c = `%${city.toLowerCase()}%`;
+      params.push(c, c, c);
+    }
+    if (stars) {
+      const starsArr = stars.split(',');
+      query += ` AND h.stars IN (${starsArr.map(() => '?').join(',')})`;
+      params.push(...starsArr.map(Number));
+    }
+    if (rating_min) {
+      query += ` AND hr.rating >= ?`;
+      params.push(Number(rating_min));
+    }
+    if (districts) {
+      const values = String(districts).split(',').filter(Boolean);
+      if (values.length) {
+        query += ` AND (${values.map(() => 'LOWER(h.location) = LOWER(?)').join(' OR ')})`;
+        params.push(...values);
+      }
+    }
+    if (amenities) {
+      String(amenities).split(',').filter(Boolean).forEach(amenity => {
+        query += ` AND LOWER(h.amenities) LIKE ?`;
+        params.push(`%${String(amenity).toLowerCase()}%`);
+      });
+    }
+    if (free_cancel === '1') {
+      query += ` AND EXISTS (
+        SELECT 1 FROM hotel_prices fp WHERE fp.hotel_id = h.id
+        AND fp.price_valid = 1
+        AND fp.cancellation_policy = 'free_cancellation'
+        AND (fp.check_in IS NULL OR (fp.check_in = ? AND fp.check_out = ?))
+      )`;
+      params.push(liveCheckIn, liveCheckOut);
+    }
+    if (breakfast === '1') {
+      query += ` AND EXISTS (
+        SELECT 1 FROM hotel_prices bp WHERE bp.hotel_id = h.id
+        AND bp.price_valid = 1
+        AND bp.includes_breakfast = 1
+        AND (bp.check_in IS NULL OR (bp.check_in = ? AND bp.check_out = ?))
+      )`;
+      params.push(liveCheckIn, liveCheckOut);
+    }
+    if (max_price) {
+      query += ` AND hp.price_per_night <= ?`;
+      params.push(Number(max_price));
+    }
+    if (min_price) {
+      query += ` AND hp.price_per_night >= ?`;
+      params.push(Number(min_price));
+    }
+
+    query += ` GROUP BY h.id, hr.rating, hr.count, hr.cleanliness, hr.service, hr.location_score, hr.value`;
+
+    let hotels = await db.prepare(query).all(...params);
+
+    const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+    const userWeights = await getUserWeights(userId);
+    const hotelIds = hotels.map(hotel => hotel.id);
+    const roomRows = hotelIds.length
+      ? await db.prepare(`SELECT hotel_id, name, view_type FROM hotel_rooms WHERE hotel_id IN (${hotelIds.map(() => '?').join(',')})`).all(...hotelIds)
+      : [];
+    const roomsByHotel = roomRows.reduce((result, room) => {
+      if (!result[room.hotel_id]) result[room.hotel_id] = [];
+      result[room.hotel_id].push(room);
+      return result;
+    }, {});
+    const scoreCities = [...new Set(hotels.map(hotel => hotel.city).filter(Boolean))];
+    const marketPrices = scoreCities.length ? (await db.prepare(`
+      SELECT MIN(mp.price_per_night) AS min_price FROM hotels mh
+      JOIN hotel_prices mp ON mp.hotel_id = mh.id AND mp.price_valid = 1
+      WHERE mh.city IN (${scoreCities.map(() => '?').join(',')}) GROUP BY mh.id
+    `).all(...scoreCities)).map(row => Number(row.min_price)).filter(price => price > 0) : [];
+    const cheapestRows = hotelIds.length ? await db.prepare(`
+      SELECT DISTINCT ON (hotel_id) * FROM hotel_prices
+      WHERE hotel_id IN (${hotelIds.map(() => '?').join(',')})
+        AND check_in = ? AND check_out = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1
+      ORDER BY hotel_id, price_per_night ASC
+    `).all(...hotelIds, liveCheckIn, liveCheckOut) : [];
+    const cheapestByHotel = new Map(cheapestRows.map(price => [price.hotel_id, price]));
+    const priceMetadataEntries = hotels.map(hotel => {
+      const cheapest = cheapestByHotel.get(hotel.id);
+      const normalized = normalizePrice(cheapest, CACHE_TTL_HOURS);
+      return [hotel.id, normalized ? { ...normalized, provider: cheapest.operator } : null];
+    });
+    const scoreContext = {
+      roomsByHotel,
+      prices: marketPrices,
+      language,
+      priceMetadataByHotel: Object.fromEntries(priceMetadataEntries),
+    };
+    const scored = hotels.map(hotel => calculateHotelScore(
+      hotel, userPrefs, userWeights, scoreContext
+    ));
+    // Sort the complete filtered candidate set before applying pagination.
+    const sorted = scored.sort((a, b) => {
+      if (sort === 'score') return b.fairworth_score - a.fairworth_score;
+      if (sort === 'price_asc') return (a.min_price ?? Infinity) - (b.min_price ?? Infinity);
+      if (sort === 'price_desc') return (b.min_price ?? -Infinity) - (a.min_price ?? -Infinity);
+      if (sort === 'rating') return (b.rating || 0) - (a.rating || 0);
+      return 0;
+    });
+    const totalResults = sorted.length;
+    const pageResults = sorted.slice(pageOffset, pageOffset + pageSize);
+    const hasMore = pageOffset + pageResults.length < totalResults;
+    await Promise.all(pageResults.map(result => recordScoreSnapshot(userId, result)));
+
+    // Log search
+    if (city && search_event === '1' && search_session_id) {
+      const fingerprint = JSON.stringify({ city: city.toLowerCase(), check_in: liveCheckIn, check_out: liveCheckOut, guests: Number(guests) });
+      await db.prepare(`
+        INSERT INTO searches (id, user_id, destination, check_in, check_out, guests, result_count, search_session_id, search_kind, fingerprint)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'explicit', ?)
+        ON CONFLICT (user_id, search_session_id, fingerprint) WHERE search_session_id IS NOT NULL AND fingerprint IS NOT NULL DO NOTHING
+      `).run(uuidv4(), userId, city, liveCheckIn, liveCheckOut, guests, totalResults, search_session_id, fingerprint);
+    }
+
+    const locationFacets = city
+      ? (await db.prepare(`SELECT DISTINCT location FROM hotels WHERE LOWER(city) LIKE ? OR LOWER(country) LIKE ? ORDER BY location`).all(`%${city.toLowerCase()}%`, `%${city.toLowerCase()}%`)).map(row => row.location)
+      : [];
+    const responseHotels = pageResults.map(hotel => {
+      const result = { ...hotel };
+      delete result.content_raw_json;
+      return result;
+    });
+    res.json({
+      hotels: responseHotels,
+      total: totalResults,
+      has_more: hasMore,
+      next_offset: pageOffset + pageResults.length,
+      page_size: pageSize,
+      facets: { locations: locationFacets },
+      rates_progressive: true,
+      personalization: {
+        enabled: Boolean(userPrefs),
+        learning_confidence: userWeights.confidence,
+        interaction_count: userWeights.interactionCount,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/hotels/rates/batch — progressively enrich catalog results with live rates.
+router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
+  try {
+    const { hotel_ids: hotelIds, check_in: checkIn, check_out: checkOut, guests = 2, language = 'en' } = req.body || {};
+    if (!Array.isArray(hotelIds) || !hotelIds.length || hotelIds.length > 50) return res.status(400).json({ error: 'hotel_ids must contain between 1 and 50 items' });
+    if (!validateDateRange(checkIn, checkOut)) return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
+    const uniqueIds = [...new Set(hotelIds.map(String))];
+    const hotels = await db.prepare(`SELECT * FROM hotels WHERE active = 1 AND id IN (${uniqueIds.map(() => '?').join(',')})`).all(...uniqueIds);
+    await refreshLiteApiRates(hotels, checkIn, checkOut, { guests });
+    const ids = hotels.map(hotel => hotel.id);
+    const cities = [...new Set(hotels.map(hotel => hotel.city).filter(Boolean))];
+    const [roomRows, reviewRows, priceRows, userPrefs, userWeights, marketRows] = await Promise.all([
+      db.prepare(`SELECT hotel_id, name, view_type FROM hotel_rooms WHERE hotel_id IN (${ids.map(() => '?').join(',')})`).all(...ids),
+      db.prepare(`SELECT * FROM hotel_reviews WHERE hotel_id IN (${ids.map(() => '?').join(',')})`).all(...ids),
+      db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id IN (${ids.map(() => '?').join(',')}) AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ? ORDER BY hotel_id, price_per_night`).all(...ids, checkIn, checkOut),
+      db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(req.user.id),
+      getUserWeights(req.user.id),
+      cities.length ? db.prepare(`SELECT MIN(hp.price_per_night) AS min_price FROM hotels h JOIN hotel_prices hp ON hp.hotel_id = h.id AND hp.price_valid = 1 WHERE h.city IN (${cities.map(() => '?').join(',')}) GROUP BY h.id`).all(...cities) : [],
+    ]);
+    const roomsByHotel = roomRows.reduce((map, row) => ((map[row.hotel_id] ||= []).push(row), map), {});
+    const reviewsByHotel = new Map(reviewRows.map(row => [row.hotel_id, row]));
+    const pricesByHotel = priceRows.reduce((map, row) => ((map[row.hotel_id] ||= []).push(row), map), {});
+    const marketPrices = marketRows.map(row => Number(row.min_price)).filter(price => price > 0);
+    const priceMetadataByHotel = Object.fromEntries(hotels.map(hotel => {
+      const cheapest = pricesByHotel[hotel.id]?.[0];
+      const normalized = normalizePrice(cheapest, CACHE_TTL_HOURS);
+      return [hotel.id, normalized ? { ...normalized, provider: cheapest.operator } : null];
+    }));
+    const enriched = hotels.map(hotel => {
+      const review = reviewsByHotel.get(hotel.id);
+      const prices = pricesByHotel[hotel.id] || [];
+      const scoring = calculateHotelScore({
+        ...hotel,
+        min_price: prices[0] ? Number(prices[0].price_per_night) : null,
+        rating: review?.rating,
+        review_count: review?.count,
+        cleanliness: review?.cleanliness,
+        service: review?.service,
+        location_score: review?.location_score,
+        value_score: review?.value,
+      }, userPrefs, userWeights, { roomsByHotel, prices: marketPrices, language, priceMetadataByHotel });
+      return { ...scoring, price_source: prices[0]?.source || null };
+    });
+    await Promise.all(enriched.map(result => recordScoreSnapshot(req.user.id, result)));
+    res.json({
+      hotels: enriched.map(result => {
+        const compact = { ...result };
+        delete compact.content_raw_json;
+        delete compact.description;
+        return compact;
+      }),
+      checked: hotels.length,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(502).json({ error: 'Could not load the next price batch' });
+  }
+});
+
+// GET /api/hotels/popular-destinations
+router.get('/popular-destinations', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 12);
+    const destinations = await db.prepare(`
+      SELECT
+        h.city,
+        h.country,
+        COUNT(DISTINCT h.id) as hotel_count,
+        MIN(hp.price_per_night) as min_price,
+        AVG(hr.rating) as avg_rating,
+        SUM(COALESCE(hr.count, 0)) as review_count
+      FROM hotels h
+      LEFT JOIN hotel_prices hp ON hp.hotel_id = h.id AND hp.price_valid = 1
+      LEFT JOIN hotel_reviews hr ON hr.hotel_id = h.id
+      GROUP BY h.city, h.country
+      HAVING MIN(hp.price_per_night) IS NOT NULL
+      ORDER BY review_count DESC, hotel_count DESC, min_price ASC
+      LIMIT ?
+    `).all(limit);
+
+    res.json({
+      destinations: destinations.map(destination => ({
+        ...destination,
+        min_price: Math.round(destination.min_price),
+        avg_rating: destination.avg_rating ? Number(destination.avg_rating.toFixed(1)) : null,
+        review_count: Number(destination.review_count || 0),
+      })),
+      total: destinations.length,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/hotels/insights
+router.get('/insights', async (req, res) => {
+  try {
+    const cached = await db.prepare(`SELECT *, expires_at > CURRENT_TIMESTAMP AS fresh FROM insights_cache WHERE cache_key = ?`).get(INSIGHTS_CACHE_KEY);
+    const payload = cached?.payload ? JSON.parse(cached.payload) : null;
+    if (!cached?.fresh) refreshInsightsInBackground().catch(error => console.warn(`[insights] refresh start failed: ${error.message}`));
+    if (payload) return res.json({ ...payload, cached: true, stale: !cached.fresh, refreshing: !cached.fresh, refresh_error: cached.error || null });
+    if (cached?.status === 'error') return res.status(503).json({ error: 'Insights are temporarily unavailable', code: 'INSIGHTS_UNAVAILABLE', retryable: true });
+    return res.status(202).json({ status: 'refreshing', retry_after_seconds: 3, sections: [], total: 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/insights/refresh', requireAuth, async (req, res) => {
+  refreshInsightsInBackground({ force: true }).catch(error => console.warn(`[insights] manual refresh failed: ${error.message}`));
+  res.status(202).json({ status: 'refreshing', retry_after_seconds: 3 });
+});
+
+// GET /api/hotels/price-calendar
+router.get('/price-calendar', async (req, res) => {
+  try {
+    const {
+      city = 'Singapore',
+      start,
+      days = 35,
+      nights = 4,
+      check_in,
+      check_out,
+    } = req.query;
+
+    const startDate = start ? parseDate(start) : parseDate(formatDate(new Date()));
+    const requestedDays = Math.min(Math.max(Number(days) || 35, 14), 90);
+    const tripNights = check_in && check_out
+      ? Math.max(1, Math.ceil((parseDate(check_out) - parseDate(check_in)) / (1000 * 60 * 60 * 24)))
+      : Math.max(1, Number(nights) || 4);
+
+    const rows = await db.prepare(`
+      SELECT hp.check_in AS date, MIN(hp.price_per_night) as price_per_night
+      FROM hotel_prices hp
+      JOIN hotels h ON h.id = hp.hotel_id
+      WHERE hp.source IN ('liteapi', 'xotelo') AND hp.price_valid = 1 AND hp.check_in >= ? AND hp.check_in < ?
+        AND (LOWER(h.city) LIKE ? OR LOWER(h.country) LIKE ? OR LOWER(h.location) LIKE ?)
+      GROUP BY hp.check_in ORDER BY hp.check_in
+    `).all(formatDate(startDate), formatDate(addDays(startDate, requestedDays)), `%${city.toLowerCase()}%`, `%${city.toLowerCase()}%`, `%${city.toLowerCase()}%`);
+    const calendar = rows.map(row => ({ date: row.date, price_per_night: Math.round(row.price_per_night), total_price: Math.round(row.price_per_night) * tripNights, is_weekend: [5, 6].includes(parseDate(row.date).getUTCDay()) }));
+
+    const totals = calendar.map(day => day.total_price);
+    const minTotal = totals.length ? Math.min(...totals) : 0;
+    const maxTotal = totals.length ? Math.max(...totals) : 0;
+    const withBand = calendar.map(day => {
+      const range = Math.max(1, maxTotal - minTotal);
+      const ratio = (day.total_price - minTotal) / range;
+      const price_level = ratio < 0.34 ? 'low' : ratio < 0.67 ? 'mid' : 'high';
+      return { ...day, price_level };
+    });
+
+    let recommendation = null;
+    if (check_in) {
+      const selected = withBand.find(day => day.date === check_in);
+      if (selected) {
+        const selectedDate = parseDate(check_in);
+        const candidates = withBand
+          .map(day => ({
+            ...day,
+            shift_days: Math.round((parseDate(day.date) - selectedDate) / (1000 * 60 * 60 * 24)),
+          }))
+          .filter(day => day.shift_days !== 0 && Math.abs(day.shift_days) <= 7 && day.total_price < selected.total_price)
+          .sort((a, b) => a.total_price - b.total_price);
+
+        if (candidates.length) {
+          const best = candidates[0];
+          const savings = selected.total_price - best.total_price;
+          recommendation = {
+            current_check_in: selected.date,
+            recommended_check_in: best.date,
+            shift_days: best.shift_days,
+            savings_amount: savings,
+            savings_percent: Math.round((savings / selected.total_price) * 100),
+          };
+        }
+      }
+    }
+
+    res.json({
+      city,
+      nights: tripNights,
+      base_price: calendar.length ? Math.min(...calendar.map(day => day.price_per_night)) : null,
+      calendar: withBand,
+      recommendation,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/hotels/:id
+router.get('/:id', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
+  try {
+    const hotel = await db.prepare('SELECT * FROM hotels WHERE id = ?').get(req.params.id);
+    if (!hotel) return res.status(404).json({ error: 'Hotel not found' });
+    const checkIn = req.query.check_in || formatDate(addDays(new Date(), 30));
+    const checkOut = req.query.check_out || defaultCheckOut(checkIn);
+
+    await refreshLiteApiRates([hotel], checkIn, checkOut, { guests: req.query.guests, force: req.query.refresh === '1' }).catch(err => console.warn(`[liteapi] ${hotel.name}: ${err.message}`));
+    await refreshHotelPricesFromXotelo(hotel, checkIn, checkOut).catch(err => {
+      console.warn(`[xotelo] ${hotel.name}: ${err.message}`);
+      return null;
+    });
+
+    const rooms = await db.prepare('SELECT * FROM hotel_rooms WHERE hotel_id = ? ORDER BY base_price_per_night').all(req.params.id);
+    const prices = await db.prepare(`
+      SELECT * FROM hotel_prices
+      WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ?
+      ORDER BY
+        CASE WHEN source = 'liteapi' THEN 0 ELSE 1 END,
+        price_per_night
+    `).all(req.params.id, checkIn, checkOut);
+    const reviews = await db.prepare('SELECT * FROM hotel_reviews WHERE hotel_id = ?').get(req.params.id);
+    const scoring = await scoreHotelForUser(hotel, rooms, reviews, prices, req.user.id, req.query.language || 'en');
+
+    res.json({ hotel, rooms, prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), reviews, scoring, price_meta: { check_in: checkIn, check_out: checkOut, ttl_hours: CACHE_TTL_HOURS } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/hotels/:id/analyze  — AI analysis
+router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding, aiLimiter, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const defaults = defaultTravelDates();
+    const { check_in = defaults.checkIn, check_out = defaults.checkOut, language = 'en' } = req.body;
+    if (!validateDateRange(check_in, check_out)) return res.status(400).json({ error: 'Dates must be in the future' });
+
+    // Check cache (5 min TTL)
+    const cached = await db.prepare(`
+      SELECT * FROM ai_analyses 
+      WHERE hotel_id = ? AND user_id = ? AND check_in = ? AND check_out = ?
+      AND created_at + INTERVAL '5 minutes' > CURRENT_TIMESTAMP
+      ORDER BY created_at DESC LIMIT 1
+    `).get(req.params.id, userId, check_in, check_out);
+
+    if (cached) {
+      const cachedAnalysis = JSON.parse(cached.analysis_json);
+      if (cachedAnalysis._language === language && cachedAnalysis._score_version === SCORE_VERSION) {
+        return res.json({ analysis: cachedAnalysis, cached: true });
+      }
+    }
+
+    const hotel = await db.prepare('SELECT * FROM hotels WHERE id = ?').get(req.params.id);
+    if (!hotel) return res.status(404).json({ error: 'Hotel not found' });
+
+    const rooms = await db.prepare('SELECT * FROM hotel_rooms WHERE hotel_id = ?').all(req.params.id);
+    const prices = await db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ?`).all(req.params.id, check_in, check_out);
+    const reviews = await db.prepare('SELECT * FROM hotel_reviews WHERE hotel_id = ?').get(req.params.id);
+    const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+
+    if (!userPrefs) return res.status(404).json({ error: 'User preferences not found' });
+
+    const analysis = await analyzeHotel(hotel, rooms, reviews, prices, userPrefs, check_in, check_out, language);
+    const deterministicScore = await scoreHotelForUser(hotel, rooms, reviews, prices, userId, language);
+    analysis.fairworth_score = deterministicScore.fairworth_score;
+    analysis.score_breakdown = { ...deterministicScore.score_breakdown, risk: analysis.score_breakdown?.risk || 'medium' };
+    analysis.personal_fit = deterministicScore.personal_fit;
+    analysis.score_version = deterministicScore.score_version;
+    analysis.calculated_at = deterministicScore.calculated_at;
+    analysis.calculation_parameters = deterministicScore.calculation_parameters;
+    analysis.data_completeness = deterministicScore.data_completeness;
+    analysis.price_details = deterministicScore.price_details;
+    analysis._language = language;
+    analysis._score_version = SCORE_VERSION;
+
+    // Cache it
+    await db.prepare(`
+      INSERT INTO ai_analyses (id, hotel_id, user_id, check_in, check_out, analysis_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(uuidv4(), req.params.id, userId, check_in, check_out, JSON.stringify(analysis));
+
+    res.json({ analysis, cached: false });
+  } catch (err) {
+    console.error('AI analysis error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/hotels/:id/prices
+router.get('/:id/prices', async (req, res) => {
+  try {
+    const checkIn = req.query.check_in || formatDate(addDays(new Date(), 30));
+    const checkOut = req.query.check_out || defaultCheckOut(checkIn);
+    const hotel = await db.prepare('SELECT * FROM hotels WHERE id = ?').get(req.params.id);
+    if (!hotel) return res.status(404).json({ error: 'Hotel not found' });
+
+    await refreshLiteApiRates([hotel], checkIn, checkOut, { force: req.query.refresh === '1', guests: req.query.guests }).catch(err => console.warn(`[liteapi] ${hotel.name}: ${err.message}`));
+    await refreshHotelPricesFromXotelo(hotel, checkIn, checkOut, { force: req.query.refresh === '1' }).catch(err => {
+      console.warn(`[xotelo] ${hotel.name}: ${err.message}`);
+      return null;
+    });
+
+    const prices = await db.prepare(`
+      SELECT * FROM hotel_prices
+      WHERE hotel_id = ? AND (
+        (check_in = ? AND check_out = ?)
+        OR check_in IS NULL
+      )
+      AND price_valid = 1
+      ORDER BY
+        CASE WHEN source = 'liteapi' THEN 0 ELSE 1 END,
+        price_per_night
+    `).all(req.params.id, checkIn, checkOut);
+    res.json({ prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), ttl_hours: CACHE_TTL_HOURS });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/prices/refresh', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
+  try {
+    const checkIn = req.body.check_in || req.query.check_in;
+    const checkOut = req.body.check_out || req.query.check_out;
+    if (!checkIn || !checkOut) {
+      return res.status(400).json({ error: 'check_in and check_out are required' });
+    }
+
+    const hotel = await db.prepare('SELECT * FROM hotels WHERE id = ?').get(req.params.id);
+    if (!hotel) return res.status(404).json({ error: 'Hotel not found' });
+    await refreshLiteApiRates([hotel], checkIn, checkOut, { force: true, guests: req.body.guests });
+    if (hotel.tripadvisor_hotel_key) await refreshHotelPricesFromXotelo(hotel, checkIn, checkOut, { force: true });
+    const prices = await db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ? ORDER BY price_per_night`).all(hotel.id, checkIn, checkOut);
+    res.json({ success: true, hotel_id: hotel.id, prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), ttl_hours: CACHE_TTL_HOURS });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+if (process.env.NODE_ENV !== 'test') {
+  const insightsScheduler = setInterval(() => {
+    refreshInsightsInBackground().catch(error => console.warn(`[insights] scheduled refresh failed: ${error.message}`));
+  }, 15 * 60 * 1000);
+  insightsScheduler.unref();
+  const initialRefresh = setTimeout(() => {
+    refreshInsightsInBackground().catch(error => console.warn(`[insights] initial refresh failed: ${error.message}`));
+  }, 1500);
+  initialRefresh.unref();
+}
+
+module.exports = router;

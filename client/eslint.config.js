@@ -1,0 +1,1 @@
+export default [{ ignores: ['node_modules/**', 'dist/**'], languageOptions: { ecmaVersion: 2022, sourceType: 'module', parserOptions: { ecmaFeatures: { jsx: true } }, globals: { window: 'readonly', document: 'readonly', localStorage: 'readonly', sessionStorage: 'readonly', crypto: 'readonly', URL: 'readonly' } }, rules: {} }];
