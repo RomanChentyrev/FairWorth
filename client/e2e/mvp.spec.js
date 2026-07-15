@@ -49,6 +49,21 @@ async function authHeaders(token) {
   return { Authorization: `Bearer ${token}` };
 }
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/capabilities', route => route.fulfill({
+    json: {
+      capabilities: {
+        hotels: { status: 'ready', provider: 'E2E fixture', features: { catalog: true, live_rates: true, price_watches: true } },
+        flights: { status: 'ready', provider: 'E2E fixture', features: { search: true, live_fares: true } },
+        ai: { status: 'ready', provider: 'E2E fixture', optional: true, features: { hotel_analysis: true } },
+        hotel_photos: { status: 'ready', provider: 'E2E fixture', optional: true, features: { galleries: true, fallback_images: true } },
+        partner_booking: { status: 'pending', stage: 'post_company_registration', features: { redirect: false, postback: false } },
+        transfers: { status: 'unavailable', stage: 'planned', features: {} },
+      },
+    },
+  }));
+});
+
 test.afterEach(async ({ request }) => {
   for (const account of cleanupAccounts.splice(0)) {
     await request.delete(`${API_URL}/api/users/me`, {
