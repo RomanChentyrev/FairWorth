@@ -5,9 +5,12 @@ const { db } = require('../db/database');
 const { requireAuth } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { partnerClickSchema, partnerPostbackSchema } = require('../config/apiSchemas');
+const { requireCapability } = require('../config/capabilities');
 
 const router = express.Router();
 const frontendUrl = () => process.env.FRONTEND_URL || 'http://localhost:5173';
+
+router.use(requireCapability('partner_booking'));
 
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;

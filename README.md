@@ -81,9 +81,10 @@ SMTP_USER=
 SMTP_PASSWORD=
 SMTP_CONNECTION_TIMEOUT_MS=10000
 EMAIL_FROM=Fairworth <fairworth@gmail.com>
-PARTNER_ALLOWED_HOSTS=tripadvisor.com,booking.com,expedia.com,agoda.com
+PARTNER_BOOKING_ENABLED=false
+PARTNER_ALLOWED_HOSTS=
 PARTNER_DEEP_LINK_TEMPLATE=
-PARTNER_POSTBACK_SECRET=replace_with_a_long_random_partner_secret
+PARTNER_POSTBACK_SECRET=
 ```
 
 Client-side Sentry can be enabled with `VITE_SENTRY_DSN`.
@@ -154,7 +155,7 @@ The E2E scenario covers registration, preferences, search, comparison and a prov
 
 The web client authenticates with `HttpOnly`, `Secure`, `SameSite=Lax` cookies. Its access JWT expires after 15 minutes by default; the refresh token is rotated on every refresh and only its SHA-256 hash is stored in PostgreSQL. State-changing cookie-authenticated requests require the `X-CSRF-Token` double-submit header. Bearer JWT authentication remains available for trusted non-browser clients and automated tests.
 
-Partner postbacks send `event_id`, `click_id`, `event_type: "booking_completed"`, optional `booking_reference`, `amount` and `currency`. The `x-fairworth-signature` header is a SHA-256 HMAC of the canonical JSON body using `PARTNER_POSTBACK_SECRET`. Duplicate provider/event IDs are idempotent. Providers should redirect the user to the supplied `return_url` after checkout.
+Partner redirects and postbacks are disabled for the closed MVP with `PARTNER_BOOKING_ENABLED=false`. When referral booking is enabled later, `PARTNER_ALLOWED_HOSTS`, `PARTNER_DEEP_LINK_TEMPLATE` and a 32-character-or-longer `PARTNER_POSTBACK_SECRET` all become required. Postbacks send `event_id`, `click_id`, `event_type: "booking_completed"`, optional `booking_reference`, `amount` and `currency`. The `x-fairworth-signature` header is a SHA-256 HMAC of the canonical JSON body. Duplicate provider/event IDs are idempotent. Providers should redirect the user to the supplied `return_url` after checkout.
 
 ## Score and analytics
 

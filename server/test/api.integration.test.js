@@ -1,6 +1,8 @@
 require('dotenv').config();
 process.env.PARTNER_POSTBACK_SECRET = 'integration-postback-secret';
 process.env.PARTNER_ALLOWED_HOSTS = 'partner.example,tripadvisor.com,booking.com,expedia.com,agoda.com';
+process.env.PARTNER_DEEP_LINK_TEMPLATE = 'https://partner.example/hotel?target={url}&click_id={click_id}&return_url={return_url}';
+process.env.PARTNER_BOOKING_ENABLED = 'true';
 process.env.ADMIN_EMAILS = 'admin-test@example.com';
 process.env.PROVIDER_FIXTURES_ENABLED = 'true';
 process.env.TRAVELPAYOUTS_TOKEN = 'integration-travelpayouts-token';
@@ -125,7 +127,8 @@ test('capability endpoint reports deterministic test providers', async () => {
   assert.equal(response.status, 200);
   assert.equal(response.body.capabilities.hotels.status, 'ready');
   assert.equal(response.body.capabilities.flights.status, 'ready');
-  assert.equal(response.body.capabilities.partner_booking.stage, 'post_company_registration');
+  assert.equal(response.body.capabilities.partner_booking.status, 'ready');
+  assert.equal(response.body.capabilities.partner_booking.stage, 'referral_mvp');
 });
 
 test('registration records exact legal versions and rejects stale documents', async () => {
@@ -239,6 +242,32 @@ test('partner postback completes a tracked referral', async () => {
   assert.equal(postback.status, 200, postback.text);
   const status = await request(app).get(`/api/partners/clicks/${clickResponse.body.click_id}`).set('Authorization', `Bearer ${account.token}`);
   assert.equal(status.body.click.status, 'booking_completed'); assert.equal(status.body.click.booking_reference, 'BOOK-123');
+});
+
+test('disabled partner booking does not create clicks, redirect, expose status or accept postbacks', async () => {
+  const account = await register('partner-disabled');
+  const auth = { Authorization: `Bearer ${account.token}` };
+  const created = await request(app).post('/api/partners/clicks').set(auth).send({ provider: 'Test Partner', destination_url: 'https://partner.example/hotel' });
+  assert.equal(created.status, 201, created.text);
+  const before = Number((await db.prepare('SELECT COUNT(*) AS count FROM provider_clicks').get()).count);
+  process.env.PARTNER_BOOKING_ENABLED = 'false';
+  try {
+    const blockedClick = await request(app).post('/api/partners/clicks').set(auth).send({ provider: 'Test Partner', destination_url: 'https://partner.example/another' });
+    assert.equal(blockedClick.status, 503);
+    assert.equal(blockedClick.body.code, 'PARTNER_BOOKING_DISABLED');
+    assert.equal(Number((await db.prepare('SELECT COUNT(*) AS count FROM provider_clicks').get()).count), before);
+
+    const blockedRedirect = await request(app).get(`/api/partners/redirect/${created.body.click_id}`);
+    assert.equal(blockedRedirect.status, 503);
+    assert.equal(blockedRedirect.body.code, 'PARTNER_BOOKING_DISABLED');
+
+    const blockedStatus = await request(app).get(`/api/partners/clicks/${created.body.click_id}`).set(auth);
+    assert.equal(blockedStatus.status, 503);
+    const blockedPostback = await request(app).post('/api/partners/postback/test-partner').send({ event_id: 'disabled-event', click_id: created.body.click_id, event_type: 'booking_completed' });
+    assert.equal(blockedPostback.status, 503);
+  } finally {
+    process.env.PARTNER_BOOKING_ENABLED = 'true';
+  }
 });
 
 test('admin can review and resolve suspicious prices', async () => {

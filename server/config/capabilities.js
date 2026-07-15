@@ -15,6 +15,10 @@ function xoteloHotelFallbackEnabled() {
   return process.env.NODE_ENV !== 'production' && providers.includes('xotelo');
 }
 
+function partnerBookingEnabled() {
+  return process.env.PARTNER_BOOKING_ENABLED === 'true';
+}
+
 function capabilities() {
   const liteApiReady = configured(process.env.LITEAPI_KEY);
   const xoteloReady = xoteloHotelFallbackEnabled();
@@ -23,6 +27,11 @@ function capabilities() {
   const aiReady = configured(process.env.OPENROUTER_API_KEY);
   const hotelPhotosReady = configured(process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY)
     && process.env.GOOGLE_PLACES_PHOTOS_ENABLED !== 'false';
+  const partnerEnabled = partnerBookingEnabled();
+  const partnerConfigured = configured(process.env.PARTNER_ALLOWED_HOSTS)
+    && configured(process.env.PARTNER_DEEP_LINK_TEMPLATE)
+    && configured(process.env.PARTNER_POSTBACK_SECRET);
+  const partnerReady = partnerEnabled && partnerConfigured;
   return {
     hotels: {
       status: hotelsReady ? 'ready' : 'unavailable', stage: 'beta', provider: liteApiReady ? 'LiteAPI' : xoteloReady ? 'Xotelo' : 'LiteAPI',
@@ -45,7 +54,12 @@ function capabilities() {
       features: { galleries: hotelPhotosReady, fallback_images: true },
     },
     transfers: { status: 'unavailable', stage: 'planned', provider: null, reason: 'A live transfer provider is not connected', features: {} },
-    partner_booking: { status: 'pending', stage: 'post_company_registration', reason: 'Partner deep links will be enabled after company registration' },
+    partner_booking: {
+      status: partnerReady ? 'ready' : partnerEnabled ? 'unavailable' : 'pending',
+      stage: partnerReady ? 'referral_mvp' : partnerEnabled ? 'configuration_required' : 'post_company_registration',
+      reason: partnerReady ? null : partnerEnabled ? 'Partner booking is enabled but its redirect configuration is incomplete' : 'Partner deep links will be enabled after company registration',
+      features: { redirect: partnerReady, postback: partnerReady },
+    },
   };
 }
 
@@ -54,8 +68,8 @@ function requireCapability(name) {
     const capability = capabilities()[name];
     if (capability?.status === 'ready') return next();
     return res.status(503).json({
-      error: `${name} is temporarily unavailable because its live provider is not configured`,
-      code: 'PROVIDER_NOT_CONFIGURED',
+      error: capability?.reason || `${name} is temporarily unavailable because its live provider is not configured`,
+      code: name === 'partner_booking' && capability?.status === 'pending' ? 'PARTNER_BOOKING_DISABLED' : 'PROVIDER_NOT_CONFIGURED',
       capability: name,
       provider: capability?.provider || null,
       stage: capability?.stage || 'unavailable',
@@ -64,4 +78,4 @@ function requireCapability(name) {
   };
 }
 
-module.exports = { capabilities, requireCapability, configured, fixtureEnabled, xoteloHotelFallbackEnabled };
+module.exports = { capabilities, requireCapability, configured, fixtureEnabled, xoteloHotelFallbackEnabled, partnerBookingEnabled };

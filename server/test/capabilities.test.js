@@ -9,9 +9,11 @@ test('provider capabilities are unavailable without live keys', () => {
     travelpayouts: process.env.TRAVELPAYOUTS_TOKEN,
     openrouter: process.env.OPENROUTER_API_KEY,
     hotelRateProviders: process.env.HOTEL_RATE_PROVIDERS,
+    partnerBooking: process.env.PARTNER_BOOKING_ENABLED,
   };
   process.env.PROVIDER_FIXTURES_ENABLED = 'false';
   process.env.HOTEL_RATE_PROVIDERS = 'none';
+  process.env.PARTNER_BOOKING_ENABLED = 'false';
   delete process.env.LITEAPI_KEY; delete process.env.TRAVELPAYOUTS_TOKEN; delete process.env.OPENROUTER_API_KEY;
   const result = capabilities();
   assert.equal(result.hotels.status, 'unavailable');
@@ -19,8 +21,35 @@ test('provider capabilities are unavailable without live keys', () => {
   assert.equal(result.ai.status, 'unavailable');
   assert.equal(result.partner_booking.stage, 'post_company_registration');
   for (const [key, value] of Object.entries(previous)) {
-    const envKey = { fixture: 'PROVIDER_FIXTURES_ENABLED', liteapi: 'LITEAPI_KEY', travelpayouts: 'TRAVELPAYOUTS_TOKEN', openrouter: 'OPENROUTER_API_KEY', hotelRateProviders: 'HOTEL_RATE_PROVIDERS' }[key];
+    const envKey = { fixture: 'PROVIDER_FIXTURES_ENABLED', liteapi: 'LITEAPI_KEY', travelpayouts: 'TRAVELPAYOUTS_TOKEN', openrouter: 'OPENROUTER_API_KEY', hotelRateProviders: 'HOTEL_RATE_PROVIDERS', partnerBooking: 'PARTNER_BOOKING_ENABLED' }[key];
     if (value === undefined) delete process.env[envKey]; else process.env[envKey] = value;
+  }
+});
+
+test('partner booking requires both the feature flag and complete redirect configuration', () => {
+  const keys = ['PARTNER_BOOKING_ENABLED', 'PARTNER_ALLOWED_HOSTS', 'PARTNER_DEEP_LINK_TEMPLATE', 'PARTNER_POSTBACK_SECRET'];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    process.env.PARTNER_BOOKING_ENABLED = 'false';
+    delete process.env.PARTNER_ALLOWED_HOSTS;
+    delete process.env.PARTNER_DEEP_LINK_TEMPLATE;
+    delete process.env.PARTNER_POSTBACK_SECRET;
+    assert.equal(capabilities().partner_booking.status, 'pending');
+
+    process.env.PARTNER_BOOKING_ENABLED = 'true';
+    assert.equal(capabilities().partner_booking.status, 'unavailable');
+    assert.equal(capabilities().partner_booking.stage, 'configuration_required');
+
+    process.env.PARTNER_ALLOWED_HOSTS = 'partner.example.com';
+    process.env.PARTNER_DEEP_LINK_TEMPLATE = 'https://partner.example.com/redirect?url={url}';
+    process.env.PARTNER_POSTBACK_SECRET = 'test-partner-secret';
+    const enabled = capabilities().partner_booking;
+    assert.equal(enabled.status, 'ready');
+    assert.deepEqual(enabled.features, { redirect: true, postback: true });
+  } finally {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
+    }
   }
 });
 

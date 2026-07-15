@@ -112,4 +112,4 @@ docker compose --env-file /opt/fairworth/config/production.env \
   -f /opt/fairworth/deploy/docker-compose.deploy.yml ps
 ```
 
-Then smoke-test registration/email verification, login, hotel search, provider redirect and partner postback. `/api/health` is the deeper dependency diagnostic; `/api/live` and `/api/ready` are deliberately fast probes for orchestration.
+Then smoke-test registration/email verification, login and hotel search. Test provider redirect and partner postback only when `PARTNER_BOOKING_ENABLED=true`; the closed MVP keeps them disabled. `/api/health` is the deeper dependency diagnostic; `/api/live` and `/api/ready` are deliberately fast probes for orchestration.

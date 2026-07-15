@@ -29,15 +29,21 @@ const schema = z.object({
   WORKER_INTERVAL_MS: z.coerce.number().int().min(1000).default(60000),
   WORKER_PRICE_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(20),
   WORKER_EMAIL_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(25),
+  PARTNER_BOOKING_ENABLED: booleanString.default(false),
+  PARTNER_ALLOWED_HOSTS: z.string().optional().default(''),
+  PARTNER_DEEP_LINK_TEMPLATE: z.string().optional().default(''),
+  PARTNER_POSTBACK_SECRET: z.string().optional().default(''),
   LEGAL_ACTIVITY_HISTORY_MONTHS: z.coerce.number().int().min(1).max(120).default(24),
   SESSION_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   CACHE_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   TECHNICAL_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
 }).passthrough().superRefine((env, context) => {
   if (env.NODE_ENV !== 'production') return;
-  const required = ['SMTP_HOST', 'EMAIL_FROM', 'ADMIN_EMAILS', 'PARTNER_POSTBACK_SECRET', 'PARTNER_ALLOWED_HOSTS', 'LEGAL_OPERATOR_NAME', 'LEGAL_REGISTERED_ADDRESS', 'LEGAL_REGISTRATION_NUMBER', 'LEGAL_JURISDICTION', 'LEGAL_CONTACT_EMAIL', 'LEGAL_DATA_HOSTING_COUNTRIES', 'LEGAL_TRANSFER_SAFEGUARD'];
+  const required = ['SMTP_HOST', 'EMAIL_FROM', 'ADMIN_EMAILS', 'LEGAL_OPERATOR_NAME', 'LEGAL_REGISTERED_ADDRESS', 'LEGAL_REGISTRATION_NUMBER', 'LEGAL_JURISDICTION', 'LEGAL_CONTACT_EMAIL', 'LEGAL_DATA_HOSTING_COUNTRIES', 'LEGAL_TRANSFER_SAFEGUARD'];
+  if (env.PARTNER_BOOKING_ENABLED) required.push('PARTNER_POSTBACK_SECRET', 'PARTNER_ALLOWED_HOSTS', 'PARTNER_DEEP_LINK_TEMPLATE');
   for (const key of required) if (!String(env[key] || '').trim()) context.addIssue({ code: 'custom', path: [key], message: 'is required in production' });
   if (env.JWT_SECRET.length < 32) context.addIssue({ code: 'custom', path: ['JWT_SECRET'], message: 'must contain at least 32 characters in production' });
+  if (env.PARTNER_BOOKING_ENABLED && String(env.PARTNER_POSTBACK_SECRET || '').length < 32) context.addIssue({ code: 'custom', path: ['PARTNER_POSTBACK_SECRET'], message: 'must contain at least 32 characters when partner booking is enabled' });
   for (const email of String(env.ADMIN_EMAILS || '').split(',').map(value => value.trim()).filter(Boolean)) if (!z.string().email().safeParse(email).success) context.addIssue({ code: 'custom', path: ['ADMIN_EMAILS'], message: `contains an invalid email: ${email}` });
   for (const key of required.filter(key => key.startsWith('LEGAL_'))) if (/^(REPLACE_|\[)/i.test(String(env[key] || ''))) context.addIssue({ code: 'custom', path: [key], message: 'still contains a placeholder' });
 });
