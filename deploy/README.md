@@ -2,6 +2,8 @@
 
 This deployment targets a Linux VPS with Docker Engine and Compose v2. PostgreSQL should be a managed service with provider snapshots enabled. Staging and production must use different databases, domains, JWT secrets, API credentials, SMTP credentials, Sentry environments and partner sandbox/live accounts.
 
+The stack also runs a single notification worker. It checks hotel price watches, schedules trip reminders and weekly insights, and drains the PostgreSQL-backed email queue. Do not scale the worker by copying Compose projects; multiple replicas are safe for email delivery locks, but scheduler work is intentionally sized for one MVP worker.
+
 ## 1. DNS and host preparation
 
 Point the staging and production `A`/`AAAA` records to their respective hosts. Allow inbound TCP 22, 80 and 443 and UDP 443. On each host create:
@@ -92,6 +94,14 @@ This intentionally does not reverse database migrations. Backwards-compatible mi
 Database restore is destructive and requires typing `RESTORE` interactively. Record the deployed SHA, migration list and recovery point in the incident log.
 
 ## 6. Verification
+
+Before preparing a server release, run the local clean-database rehearsal:
+
+```bash
+npm run acceptance:local
+```
+
+It includes migration idempotence and a destructive backup/restore drill against an isolated `fairworth_acceptance` database. It never drops the normal development database.
 
 After each deployment check:
 

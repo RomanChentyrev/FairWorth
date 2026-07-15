@@ -2,9 +2,15 @@ const express = require('express');
 const { db } = require('../db/database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { syncCatalog } = require('../services/hotelCatalog');
+const { v4: uuidv4 } = require('uuid');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
+
+async function recordAdminAction(req, action, entityType, entityId, details = {}) {
+  await db.prepare(`INSERT INTO admin_audit_logs (id, actor_user_id, actor_email, action, entity_type, entity_id, details, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(uuidv4(), req.user.id, req.user.email, action, entityType || null, entityId || null, JSON.stringify(details), req.ip || null, req.get('user-agent') || null);
+}
 
 router.get('/anomalies', async (req, res) => {
   const status = req.query.status === 'resolved' ? 'resolved' : 'open';
@@ -20,6 +26,7 @@ router.patch('/anomalies/:type/:id/resolve', async (req, res) => {
   if (!table) return res.status(400).json({ error: 'Unknown anomaly type' });
   const result = await db.prepare(`UPDATE ${table} SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP, resolved_by = ? WHERE id = ? AND status = 'open'`).run(req.user.id, req.params.id);
   if (!result.rowCount) return res.status(404).json({ error: 'Open anomaly not found' });
+  await recordAdminAction(req, 'anomaly.resolve', req.params.type, req.params.id);
   return res.json({ resolved: true });
 });
 
@@ -28,6 +35,7 @@ router.post('/catalog/sync', async (req, res) => {
     const { city, iata_code, limit } = req.body || {};
     if (!city && !iata_code) return res.status(400).json({ error: 'city or iata_code is required' });
     const result = await syncCatalog({ city, iataCode: iata_code, limit });
+    await recordAdminAction(req, 'catalog.sync', 'hotel_catalog', result?.id || result?.sync_id || null, { city: city || null, iata_code: iata_code || null, requested_limit: limit || null });
     return res.json(result);
   } catch (error) { return res.status(502).json({ error: error.message }); }
 });
@@ -56,7 +64,14 @@ router.patch('/catalog/mapping-reviews/:id', async (req, res) => {
     });
   }
   await db.prepare(`UPDATE hotel_mapping_reviews SET status = ?, resolved_at = CURRENT_TIMESTAMP, resolved_by = ? WHERE id = ?`).run(status, req.user.id, review.id);
+  await recordAdminAction(req, 'mapping_review.resolve', 'hotel_mapping_review', review.id, { status, provider: review.provider, provider_hotel_id: review.provider_hotel_id });
   return res.json({ status });
+});
+
+router.get('/audit-log', async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 250);
+  const rows = await db.prepare(`SELECT id, actor_user_id, actor_email, action, entity_type, entity_id, details, ip_address, user_agent, created_at FROM admin_audit_logs ORDER BY created_at DESC LIMIT ?`).all(limit);
+  res.json({ audit_log: rows });
 });
 
 module.exports = router;

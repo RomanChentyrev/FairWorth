@@ -4,6 +4,9 @@
   "scripts": {
     "dev": "nodemon index.js",
     "start": "node index.js",
+    "worker": "node worker.js",
+    "providers:check": "node scripts/check-providers.js",
+    "mail:check": "node scripts/check-mailpit.js",
     "db:migrate": "node scripts/setup-postgres.js",
     "db:setup": "node scripts/setup-postgres.js",
     "test": "NODE_ENV=test node --test test/*.test.js",

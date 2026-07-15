@@ -133,6 +133,26 @@
   justify-content: flex-end;
 }
 
+.hideBtn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--text-muted);
+}
+.hideBtn:hover { color: var(--red); border-color: #efb4b4; }
+.hideOverlay { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 20px; background: rgb(15 29 50 / 32%); cursor: default; }
+.hideMenu { width: min(360px, 100%); padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: #fff; box-shadow: var(--shadow-lg); }
+.hideMenuHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--navy); font-size: 14px; }
+.hideMenuHeader button { width: 30px; height: 30px; display: grid; place-items: center; color: var(--text-muted); }
+.hideReasons { display: grid; gap: 6px; margin-top: 12px; }
+.hideReasons button { min-height: 38px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-subtle); color: var(--text-secondary); text-align: left; font-size: 13px; }
+.hideReasons button:hover { border-color: var(--border-strong); background: #fff; color: var(--navy); }
+.hideReasons button:disabled { opacity: .55; }
+
 @media (max-width: 1240px) {
   .card { grid-template-columns: 160px minmax(0, 1fr); }
   .body { padding: 14px; gap: 10px; }

@@ -63,7 +63,6 @@ function parseAIJson(text) {
  */
 async function analyzeHotel(hotel, rooms, reviews, prices, userPrefs, checkIn, checkOut, language = 'en') {
   const nights = Math.ceil((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24));
-  const bestPrice = prices.reduce((min, p) => p.price_per_night < min.price_per_night ? p : min, prices[0]);
 
   const responseLanguage = language === 'ru' ? 'Russian' : 'English';
   const prompt = `You are a luxury travel AI analyst. Analyze this hotel for a specific traveler and return a JSON response. Write all user-facing text in ${responseLanguage}.
@@ -95,6 +94,7 @@ USER PREFERENCES:
 - Room type: ${JSON.parse(userPrefs.room_type || '[]').join(', ')}
 - Preferred views: ${JSON.parse(userPrefs.room_view || '[]').join(', ')}
 - Amenities needed: ${JSON.parse(userPrefs.hotel_amenities || '[]').join(', ')}
+- Required amenities: ${JSON.parse(userPrefs.required_hotel_amenities || '[]').join(', ')}
 - Travel style: ${JSON.parse(userPrefs.travel_style || '[]').join(', ')}
 - Budget max per night: $${userPrefs.budget_per_night_max}
 - Noise sensitivity: ${userPrefs.noise_sensitivity}/100 (higher = more sensitive)
@@ -155,6 +155,7 @@ USER PREFERENCES:
 - Noise sensitivity: ${userPrefs.noise_sensitivity}/100
 - Preferred views: ${JSON.parse(userPrefs.room_view || '[]').join(', ')}
 - Amenities needed: ${JSON.parse(userPrefs.hotel_amenities || '[]').join(', ')}
+- Required amenities: ${JSON.parse(userPrefs.required_hotel_amenities || '[]').join(', ')}
 
 Return ONLY valid JSON:
 {

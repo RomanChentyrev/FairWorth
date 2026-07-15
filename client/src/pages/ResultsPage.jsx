@@ -7,6 +7,8 @@ import { useLang } from '../i18n/LanguageContext';
 import styles from './ResultsPage.module.css';
 import { defaultTravelDates, formatLocalDate, validFutureDates } from '../utils/dates';
 import { formatAmount } from '../utils/money';
+import useCapabilities from '../hooks/useCapabilities';
+import ProviderUnavailable from '../components/ProviderUnavailable';
 
 function HotelMap({ hotels, hoveredId, checkIn, checkOut, lang }) {
   const mapRef = useRef(null);
@@ -108,16 +110,19 @@ const SORT_OPTIONS_KEYS = [
 ];
 
 const AMENITY_OPTIONS = [
-  { value: 'pool', ru: '🏊 Бассейн', en: '🏊 Pool' },
-  { value: 'breakfast', ru: '🍳 Завтрак', en: '🍳 Breakfast' },
-  { value: 'spa', ru: '💆 Спа', en: '💆 Spa' },
-  { value: 'gym', ru: '🏋️ Фитнес', en: '🏋️ Gym' },
-  { value: 'wifi', ru: '📶 Wi-Fi', en: '📶 Wi-Fi' },
-  { value: 'bar', ru: '🍸 Бар', en: '🍸 Bar' },
-  { value: 'restaurant', ru: '🍽 Ресторан', en: '🍽 Restaurant' },
-  { value: 'butler', ru: '🛎 Батлер', en: '🛎 Butler' },
-  { value: 'beach', ru: '🏖 Пляж', en: '🏖 Beach' },
-  { value: 'parking', ru: '🚗 Парковка', en: '🚗 Parking' },
+  { value: 'wifi', ru: 'Wi-Fi', en: 'Wi-Fi' },
+  { value: 'pool', ru: 'Бассейн', en: 'Pool' },
+  { value: 'parking', ru: 'Парковка', en: 'Parking' },
+  { value: 'air_conditioning', ru: 'Кондиционер', en: 'Air conditioning' },
+  { value: 'gym', ru: 'Фитнес', en: 'Fitness' },
+  { value: 'beach', ru: 'Пляж', en: 'Beach' },
+  { value: 'airport_shuttle', ru: 'Трансфер из аэропорта', en: 'Airport shuttle' },
+  { value: 'tennis', ru: 'Теннисный корт', en: 'Tennis court' },
+  { value: 'bathtub', ru: 'Ванна в номере', en: 'Bathtub' },
+  { value: 'balcony', ru: 'Балкон', en: 'Balcony' },
+  { value: 'kitchen', ru: 'Кухня', en: 'Kitchen' },
+  { value: 'pets_allowed', ru: 'Можно с животными', en: 'Pet friendly' },
+  { value: 'accessible', ru: 'Доступная среда', en: 'Accessible' },
 ];
 
 function savedTravelDates() {
@@ -136,11 +141,11 @@ function savedTravelTrip() {
   }
 }
 
-function readResultsCache({ city, checkIn, checkOut, guests }) {
+function readResultsCache({ city, checkIn, checkOut, guests, tripPurpose }) {
   try {
     const cached = JSON.parse(window.sessionStorage.getItem('fairworth_hotel_results_cache') || 'null');
-    const sameSearch = cached?.version === 3 && cached?.search?.city === city && cached.search.checkIn === checkIn
-      && cached.search.checkOut === checkOut && String(cached.search.guests) === String(guests);
+    const sameSearch = cached?.version === 15 && cached?.search?.city === city && cached.search.checkIn === checkIn
+      && cached.search.checkOut === checkOut && String(cached.search.guests) === String(guests) && cached.search.tripPurpose === tripPurpose;
     if (!sameSearch || Date.now() - cached.savedAt > 15 * 60 * 1000) return null;
     return cached;
   } catch { return null; }
@@ -188,6 +193,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   const [searchParams, setSearchParams] = useSearchParams();
   const savedDates = savedTravelDates();
   const savedTrip = savedTravelTrip();
+  const { capabilities, loading: capabilitiesLoading } = useCapabilities();
 
   const [city, setCity] = useState(searchParams.get('city') || 'Singapore');
   const [from] = useState(searchParams.get('from') || savedTrip.from || 'Moscow');
@@ -198,7 +204,8 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   const [checkIn, setCheckIn] = useState(initialDates.check_in);
   const [checkOut, setCheckOut] = useState(initialDates.check_out);
   const [guests, setGuests] = useState(searchParams.get('guests') || '2');
-  const cachedResults = useRef(readResultsCache({ city, checkIn, checkOut, guests })).current;
+  const [tripPurpose, setTripPurpose] = useState(searchParams.get('trip_purpose') || savedTrip.trip_purpose || 'leisure');
+  const cachedResults = useRef(readResultsCache({ city, checkIn, checkOut, guests, tripPurpose })).current;
   const [searchOpen, setSearchOpen] = useState(false);
 
   const [hotels, setHotels] = useState(cachedResults?.hotels || []);
@@ -241,8 +248,9 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
       check_in: checkIn,
       check_out: checkOut,
       guests,
+      trip_purpose: tripPurpose,
     }));
-  }, [from, city, checkIn, checkOut, guests]);
+  }, [from, city, checkIn, checkOut, guests, tripPurpose]);
 
   useEffect(() => {
     if (!cachedResults || !resultsScrollRef.current) return;
@@ -255,8 +263,8 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
     try {
       const existing = JSON.parse(window.sessionStorage.getItem('fairworth_hotel_results_cache') || 'null');
       window.sessionStorage.setItem('fairworth_hotel_results_cache', JSON.stringify({
-        version: 3,
-        search: { city, checkIn, checkOut, guests }, hotels: hotels.map(compactCachedHotel), districtOptions, aiMessage, hasMore, totalResults,
+        version: 15,
+        search: { city, checkIn, checkOut, guests, tripPurpose }, hotels: hotels.map(compactCachedHotel), districtOptions, aiMessage, hasMore, totalResults,
         filters: { sort, stars, priceRange, ratingMin, amenities, districts, freeCancel, breakfastIncl },
         scrollTop: resultsScrollRef.current?.scrollTop ?? existing?.scrollTop ?? 0,
         savedAt: Date.now(),
@@ -273,13 +281,13 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
     const key = `${checkIn}:${checkOut}:${guests}:${hotelIds.join(',')}`;
     if (activeRateBatchesRef.current.has(key)) return;
     activeRateBatchesRef.current.add(key);
-    hotelsApi.loadRateBatch({ hotel_ids: hotelIds, check_in: checkIn, check_out: checkOut, guests, language: lang })
+    hotelsApi.loadRateBatch({ hotel_ids: hotelIds, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose, language: lang })
       .then(response => {
         const updates = new Map((response.data.hotels || []).map(hotel => [hotel.id, hotel]));
         setHotels(current => {
           const merged = current.map(hotel => updates.has(hotel.id) ? { ...hotel, ...updates.get(hotel.id) } : hotel);
           return [...merged].sort((a, b) => {
-            if (sort === 'score') return (b.fairworth_score || 0) - (a.fairworth_score || 0);
+            if (sort === 'score') return Number(b.top_pick_eligible) - Number(a.top_pick_eligible) || (b.adjusted_score || 0) - (a.adjusted_score || 0) || (b.fairworth_score || 0) - (a.fairworth_score || 0);
             if (sort === 'price_asc') return (a.min_price ?? Infinity) - (b.min_price ?? Infinity);
             if (sort === 'price_desc') return (b.min_price ?? -Infinity) - (a.min_price ?? -Infinity);
             if (sort === 'rating') return (b.rating || 0) - (a.rating || 0);
@@ -289,12 +297,12 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
       })
       .catch(error => console.warn('Progressive hotel rates were not loaded:', error.message))
       .finally(() => activeRateBatchesRef.current.delete(key));
-  }, [checkIn, checkOut, guests, lang, sort]);
+  }, [checkIn, checkOut, guests, tripPurpose, lang, sort]);
 
   const fetchHotels = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const params = { city, check_in: checkIn, check_out: checkOut, guests, sort, language: lang, search_session_id: searchSessionRef.current, limit: 30, offset: 0 };
+      const params = { city, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose, sort, language: lang, search_session_id: searchSessionRef.current, limit: 30, offset: 0 };
       if (explicitSearchRef.current) params.search_event = '1';
       if (stars.length) params.stars = stars.join(',');
       if (amenities.length) params.amenities = amenities.join(',');
@@ -319,22 +327,23 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
       setHasMore(Boolean(res.data.has_more));
       setTotalResults(Number(res.data.total ?? results.length));
       explicitSearchRef.current = false;
-      if (results.length > 0) {
-        const best = results[0];
-        const priceText = Number(best.min_price) > 0
-          ? (lang === 'ru' ? `Цена от $${formatAmount(best.min_price, lang)}/ночь на ${nights} ночей.` : `From $${formatAmount(best.min_price, lang)}/night for ${nights} nights.`)
-          : (lang === 'ru' ? 'Цена пока недоступна.' : 'Price is currently unavailable.');
-        const msg = lang === 'ru'
-          ? `На основе ваших предпочтений лучший вариант — **${best.name}** (Score ${best.fairworth_score}/100). ${priceText}`
-          : `Based on your preferences, the best option is **${best.name}** (Score ${best.fairworth_score}/100). ${priceText}`;
-        setAiMessage(msg);
-      } else { setAiMessage(''); }
-
     } catch (err) {
       setError(err.response?.data?.error || err.message || t('results_error'));
     }
     finally { setLoading(false); }
-  }, [city, checkIn, checkOut, guests, sort, stars, amenities, districts, priceRange, ratingMin, freeCancel, breakfastIncl, lang, searchNonce, enrichRateBatch]);
+  }, [city, checkIn, checkOut, guests, tripPurpose, sort, stars, amenities, districts, priceRange, ratingMin, freeCancel, breakfastIncl, lang, searchNonce, enrichRateBatch]);
+
+  useEffect(() => {
+    if (loading || sort !== 'score') return;
+    const best = hotels.find(hotel => hotel.top_pick_eligible);
+    if (!best) { setAiMessage(''); return; }
+    const priceText = lang === 'ru'
+      ? `Цена $${formatAmount(best.min_price, lang)}/ночь на ${nights} ночей.`
+      : `$${formatAmount(best.min_price, lang)}/night for ${nights} nights.`;
+    setAiMessage(lang === 'ru'
+      ? `На основе ваших предпочтений лучший вариант с подтверждённой ценой — **${best.name}** (Score ${best.fairworth_score}/100). ${priceText}`
+      : `Best option with a verified price for your preferences — **${best.name}** (Score ${best.fairworth_score}/100). ${priceText}`);
+  }, [hotels, loading, sort, lang, nights]);
 
   const loadMoreHotels = async () => {
     if (loadingMore || !hasMore) return;
@@ -394,7 +403,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
     window.sessionStorage.setItem('fairworth_search_session', searchSessionRef.current);
     setSearchNonce(value => value + 1);
     setDistricts([]);
-    setSearchParams({ from, city, to: city, check_in: checkIn, check_out: checkOut, guests });
+    setSearchParams({ from, city, to: city, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose });
     setSearchOpen(false);
   };
 
@@ -404,6 +413,8 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
     { value: 'price_desc', label: lang === 'ru' ? 'Цена ↓' : 'Price ↓' },
     { value: 'rating', label: lang === 'ru' ? 'Рейтинг' : 'Rating' },
   ];
+
+  if (!capabilitiesLoading && capabilities?.hotels?.status !== 'ready') return <ProviderUnavailable capability="hotels" />;
 
   return (
     <div className={`${styles.page} ${styles.hotelResultsPage}`}>
@@ -439,6 +450,12 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
           ) : (
             <form onSubmit={handleSearch} className={styles.inlineSearchForm}>
               <div className={styles.inlineField}><span className={styles.inlineLabel}>{t('results_direction')}</span><input className={styles.inlineInput} value={city} onChange={e => setCity(e.target.value)} /></div>
+              <div className={styles.inlineDivider} />
+              <div className={styles.inlineField}><span className={styles.inlineLabel}>{lang === 'ru' ? 'Тип поездки' : 'Trip type'}</span>
+                <select className={styles.inlineInput} value={tripPurpose} onChange={e => setTripPurpose(e.target.value)}>
+                  <option value="leisure">{lang === 'ru' ? 'Отдых' : 'Leisure'}</option><option value="business">{lang === 'ru' ? 'Командировка' : 'Business'}</option><option value="family">{lang === 'ru' ? 'Семья' : 'Family'}</option><option value="couple">{lang === 'ru' ? 'Вдвоём' : 'Couple'}</option>
+                </select>
+              </div>
               <div className={styles.inlineDivider} />
               <div className={styles.inlineField}><span className={styles.inlineLabel}>{t('home_checkin')}</span><input className={styles.inlineInput} type="date" min={formatLocalDate(new Date())} value={checkIn} onChange={e => setCheckIn(e.target.value)} /></div>
               <div className={styles.inlineDivider} />
@@ -515,7 +532,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
               </div>
             </FilterSection>}
 
-            <FilterSection title={t('results_amenities')} defaultOpen={false}>
+            <FilterSection title={lang === 'ru' ? 'Обязательные удобства' : 'Required amenities'} defaultOpen={false}>
               <div className={styles.checkList}>
                 {AMENITY_OPTIONS.map(a => (
                   <label key={a.value} className={styles.checkItem}>
@@ -582,11 +599,14 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
                 <div key={hotel.id} onMouseEnter={() => setHoveredId(hotel.id)} onMouseLeave={() => setHoveredId(null)}>
                   <HotelCard
                     hotel={hotel}
-                    isRecommended={i === 0 && sort === 'score'}
+                    isRecommended={i === 0 && sort === 'score' && hotel.top_pick_eligible}
                     inCompare={isInCompare(hotel.id)}
                     onToggleCompare={toggleCompare}
+                    onHide={hotelId => setHotels(current => current.filter(item => item.id !== hotelId))}
                     checkIn={checkIn}
                     checkOut={checkOut}
+                    guests={guests}
+                    tripPurpose={tripPurpose}
                   />
                 </div>
               ))}

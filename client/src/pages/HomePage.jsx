@@ -7,40 +7,24 @@ import PriceCalendar from '../components/PriceCalendar';
 import styles from './HomePage.module.css';
 import { defaultTravelDates, formatLocalDate } from '../utils/dates';
 import { formatAmount } from '../utils/money';
+import useCapabilities from '../hooks/useCapabilities';
+import ProviderUnavailable from '../components/ProviderUnavailable';
 
 const CITIES = [
-  { name: 'Москва', nameEn: 'Moscow', code: 'SVO', country: 'Россия', countryEn: 'Russia', flag: '🇷🇺' },
-  { name: 'Санкт-Петербург', nameEn: 'Saint Petersburg', code: 'LED', country: 'Россия', countryEn: 'Russia', flag: '🇷🇺' },
-  { name: 'Новосибирск', nameEn: 'Novosibirsk', code: 'OVB', country: 'Россия', countryEn: 'Russia', flag: '🇷🇺' },
-  { name: 'Екатеринбург', nameEn: 'Yekaterinburg', code: 'SVX', country: 'Россия', countryEn: 'Russia', flag: '🇷🇺' },
-  { name: 'Казань', nameEn: 'Kazan', code: 'KZN', country: 'Россия', countryEn: 'Russia', flag: '🇷🇺' },
-  { name: 'Сочи', nameEn: 'Sochi', code: 'AER', country: 'Россия', countryEn: 'Russia', flag: '🇷🇺' },
   { name: 'Сингапур', nameEn: 'Singapore', code: 'SIN', country: 'Сингапур', countryEn: 'Singapore', flag: '🇸🇬' },
   { name: 'Дубай', nameEn: 'Dubai', code: 'DXB', country: 'ОАЭ', countryEn: 'UAE', flag: '🇦🇪' },
   { name: 'Абу-Даби', nameEn: 'Abu Dhabi', code: 'AUH', country: 'ОАЭ', countryEn: 'UAE', flag: '🇦🇪' },
-  { name: 'Бангкок', nameEn: 'Bangkok', code: 'BKK', country: 'Таиланд', countryEn: 'Thailand', flag: '🇹🇭' },
-  { name: 'Пхукет', nameEn: 'Phuket', code: 'HKT', country: 'Таиланд', countryEn: 'Thailand', flag: '🇹🇭' },
-  { name: 'Бали', nameEn: 'Bali', code: 'DPS', country: 'Индонезия', countryEn: 'Indonesia', flag: '🇮🇩' },
-  { name: 'Токио', nameEn: 'Tokyo', code: 'NRT', country: 'Япония', countryEn: 'Japan', flag: '🇯🇵' },
-  { name: 'Сеул', nameEn: 'Seoul', code: 'ICN', country: 'Южная Корея', countryEn: 'South Korea', flag: '🇰🇷' },
-  { name: 'Гонконг', nameEn: 'Hong Kong', code: 'HKG', country: 'Гонконг', countryEn: 'Hong Kong', flag: '🇭🇰' },
-  { name: 'Мальдивы', nameEn: 'Maldives', code: 'MLE', country: 'Мальдивы', countryEn: 'Maldives', flag: '🇲🇻' },
-  { name: 'Стамбул', nameEn: 'Istanbul', code: 'IST', country: 'Турция', countryEn: 'Turkey', flag: '🇹🇷' },
-  { name: 'Анталья', nameEn: 'Antalya', code: 'AYT', country: 'Турция', countryEn: 'Turkey', flag: '🇹🇷' },
-  { name: 'Париж', nameEn: 'Paris', code: 'CDG', country: 'Франция', countryEn: 'France', flag: '🇫🇷' },
-  { name: 'Лондон', nameEn: 'London', code: 'LHR', country: 'Великобритания', countryEn: 'UK', flag: '🇬🇧' },
-  { name: 'Рим', nameEn: 'Rome', code: 'FCO', country: 'Италия', countryEn: 'Italy', flag: '🇮🇹' },
-  { name: 'Барселона', nameEn: 'Barcelona', code: 'BCN', country: 'Испания', countryEn: 'Spain', flag: '🇪🇸' },
-  { name: 'Амстердам', nameEn: 'Amsterdam', code: 'AMS', country: 'Нидерланды', countryEn: 'Netherlands', flag: '🇳🇱' },
-  { name: 'Берлин', nameEn: 'Berlin', code: 'BER', country: 'Германия', countryEn: 'Germany', flag: '🇩🇪' },
-  { name: 'Вена', nameEn: 'Vienna', code: 'VIE', country: 'Австрия', countryEn: 'Austria', flag: '🇦🇹' },
-  { name: 'Прага', nameEn: 'Prague', code: 'PRG', country: 'Чехия', countryEn: 'Czech Republic', flag: '🇨🇿' },
-  { name: 'Нью-Йорк', nameEn: 'New York', code: 'JFK', country: 'США', countryEn: 'USA', flag: '🇺🇸' },
-  { name: 'Лос-Анджелес', nameEn: 'Los Angeles', code: 'LAX', country: 'США', countryEn: 'USA', flag: '🇺🇸' },
-  { name: 'Майами', nameEn: 'Miami', code: 'MIA', country: 'США', countryEn: 'USA', flag: '🇺🇸' },
-  { name: 'Доха', nameEn: 'Doha', code: 'DOH', country: 'Катар', countryEn: 'Qatar', flag: '🇶🇦' },
-  { name: 'Сидней', nameEn: 'Sydney', code: 'SYD', country: 'Австралия', countryEn: 'Australia', flag: '🇦🇺' },
+  { name: 'Париж', nameEn: 'Paris', code: 'PAR', country: 'Франция', countryEn: 'France', flag: '🇫🇷' },
+  { name: 'Нью-Йорк', nameEn: 'New York', code: 'NYC', country: 'США', countryEn: 'USA', flag: '🇺🇸' },
+  { name: 'Москва', nameEn: 'Moscow', code: 'MOW', country: 'Россия', countryEn: 'Russia', flag: '🇷🇺' },
+  { name: 'Пекин', nameEn: 'Beijing', code: 'BJS', country: 'Китай', countryEn: 'China', flag: '🇨🇳' },
+  { name: 'Шанхай', nameEn: 'Shanghai', code: 'SHA', country: 'Китай', countryEn: 'China', flag: '🇨🇳' },
+  { name: 'Нячанг', nameEn: 'Nha Trang', code: 'NHA', country: 'Вьетнам', countryEn: 'Vietnam', flag: '🇻🇳' },
+  { name: 'Дананг', nameEn: 'Da Nang', code: 'DAD', country: 'Вьетнам', countryEn: 'Vietnam', flag: '🇻🇳' },
+  { name: 'Куала-Лумпур', nameEn: 'Kuala Lumpur', code: 'SZB', country: 'Малайзия', countryEn: 'Malaysia', flag: '🇲🇾' },
 ];
+
+const SUPPORTED_CITY_NAMES = new Set(CITIES.flatMap(city => [city.name, city.nameEn]).map(name => name.toLowerCase()));
 
 function CityDropdown({ value, onChange, placeholder, label, error }) {
   const { lang } = useLang();
@@ -115,6 +99,10 @@ export default function HomePage() {
   const [popularDestinations, setPopularDestinations] = useState([]);
   const [destinationsLoading, setDestinationsLoading] = useState(true);
   const [errors, setErrors] = useState({});
+  const { capabilities, loading: capabilitiesLoading } = useCapabilities();
+  const hotelReady = capabilities?.hotels?.status === 'ready';
+  const flightReady = capabilities?.flights?.status === 'ready';
+  const activeReady = tab === 0 ? hotelReady : tab === 1 ? flightReady : false;
   const initialDates = defaultTravelDates();
   const [form, setForm] = useState({
     from: lang === 'ru' ? 'Москва (SVO)' : 'Moscow (SVO)',
@@ -122,12 +110,14 @@ export default function HomePage() {
     check_in: initialDates.check_in,
     check_out: initialDates.check_out,
     guests: '2',
+    trip_purpose: 'leisure',
     cabin_class: 'business',
   });
 
   const TABS = [t('home_tab_hotel'), t('home_tab_flights'), t('home_tab_package')];
 
   const cleanPlace = (value) => value.replace(/\s*\([^)]*\)/, '').trim();
+  const isSupportedCity = (value) => SUPPORTED_CITY_NAMES.has(cleanPlace(value).toLowerCase());
 
   const validateSearch = () => {
     const nextErrors = {};
@@ -138,6 +128,8 @@ export default function HomePage() {
 
     if (!origin) nextErrors.from = true;
     if (!destination) nextErrors.city = true;
+    if (origin && !isSupportedCity(form.from)) nextErrors.from = true;
+    if (destination && !isSupportedCity(form.city)) nextErrors.city = true;
     if (!form.check_in) nextErrors.check_in = true;
     if (!form.check_out) nextErrors.check_out = true;
     if (form.check_in && form.check_out && checkOutTime <= checkInTime) {
@@ -152,6 +144,7 @@ export default function HomePage() {
   };
 
   useEffect(() => {
+    if (!capabilities || !hotelReady) { if (capabilities) { setPopularDestinations([]); setDestinationsLoading(false); } return undefined; }
     window.sessionStorage.setItem('fairworth_dates', JSON.stringify({
       check_in: form.check_in,
       check_out: form.check_out,
@@ -162,16 +155,22 @@ export default function HomePage() {
       check_in: form.check_in,
       check_out: form.check_out,
       guests: form.guests,
+      trip_purpose: form.trip_purpose,
       cabin_class: form.cabin_class,
     }));
-  }, [form.from, form.city, form.check_in, form.check_out, form.guests, form.cabin_class]);
+  }, [form.from, form.city, form.check_in, form.check_out, form.guests, form.cabin_class, form.trip_purpose]);
 
   useEffect(() => {
     let cancelled = false;
     setDestinationsLoading(true);
-    hotelsApi.popularDestinations({ limit: 5 })
+    hotelsApi.popularDestinations({ limit: 30 })
       .then(res => {
-        if (!cancelled) setPopularDestinations(res.data.destinations || []);
+        if (!cancelled) {
+          const destinations = (res.data.destinations || [])
+            .filter(destination => SUPPORTED_CITY_NAMES.has(String(destination.city || '').toLowerCase()))
+            .slice(0, 5);
+          setPopularDestinations(destinations);
+        }
       })
       .catch(() => {
         if (!cancelled) setPopularDestinations([]);
@@ -180,11 +179,12 @@ export default function HomePage() {
         if (!cancelled) setDestinationsLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [capabilities, hotelReady]);
 
   const handleSearch = (e) => {
     e.preventDefault();
     if (!validateSearch()) return;
+    if (!activeReady) return;
 
     const origin = cleanPlace(form.from);
     const destination = cleanPlace(form.city);
@@ -192,7 +192,7 @@ export default function HomePage() {
       navigate(`/flights?from=${encodeURIComponent(origin)}&to=${encodeURIComponent(destination)}&departure_date=${form.check_in}&check_in=${form.check_in}&check_out=${form.check_out}&passengers=${form.guests}&cabin_class=${form.cabin_class}`);
       return;
     }
-    navigate(`/results?from=${encodeURIComponent(origin)}&city=${encodeURIComponent(destination)}&to=${encodeURIComponent(destination)}&check_in=${form.check_in}&check_out=${form.check_out}&guests=${form.guests}`);
+    navigate(`/results?from=${encodeURIComponent(origin)}&city=${encodeURIComponent(destination)}&to=${encodeURIComponent(destination)}&check_in=${form.check_in}&check_out=${form.check_out}&guests=${form.guests}&trip_purpose=${form.trip_purpose}`);
   };
 
   const guestOptions = [1,2,3,4,5,6].map(n => ({
@@ -201,7 +201,7 @@ export default function HomePage() {
   }));
 
   const destinationForCalendar = cleanPlace(form.city);
-  const showPriceCalendar = Boolean(destinationForCalendar) && (tab === 0 || tab === 1 || tab === 2);
+  const showPriceCalendar = Boolean(destinationForCalendar) && activeReady;
 
   return (
     <div className={styles.page}>
@@ -218,7 +218,7 @@ export default function HomePage() {
           <p className={styles.sub}>{t('home_sub')}</p>
           <div className={styles.trustRow}>
             <div className={styles.trustItem}><strong>0%</strong><span>{t('home_trust_commission')}</span></div>
-            <div className={styles.trustItem}><strong>94%</strong><span>{t('home_trust_accuracy')}</span></div>
+            <div className={styles.trustItem}><strong>Live</strong><span>{lang === 'ru' ? 'данные провайдеров' : 'provider data'}</span></div>
             <div className={styles.trustItem}><strong>No</strong><span>{t('home_trust_ads')}</span></div>
           </div>
 
@@ -243,7 +243,7 @@ export default function HomePage() {
                   type="button"
                   key={`${destination.city}-${destination.country}`}
                   className={styles.destinationCard}
-                  onClick={() => navigate(`/results?city=${encodeURIComponent(destination.city)}&check_in=${form.check_in}&check_out=${form.check_out}&guests=${form.guests}`)}
+                  onClick={() => navigate(`/results?city=${encodeURIComponent(destination.city)}&check_in=${form.check_in}&check_out=${form.check_out}&guests=${form.guests}&trip_purpose=${form.trip_purpose}`)}
                 >
                   <div className={styles.destinationTop}>
                     <div>
@@ -273,12 +273,13 @@ export default function HomePage() {
           <div className={styles.tabs}>
             {TABS.map((tab_label, i) => (
               <button key={i} className={`${styles.tabBtn} ${tab === i ? styles.tabActive : ''}`} onClick={() => setTab(i)}>
-                {tab_label}
+                {tab_label}{((i === 0 && !hotelReady) || (i === 1 && !flightReady) || i === 2) && !capabilitiesLoading ? ' · Beta' : ''}
               </button>
             ))}
           </div>
 
           <form onSubmit={handleSearch} className={styles.form}>
+            {!capabilitiesLoading && !activeReady && <ProviderUnavailable capability={tab === 0 ? 'hotels' : tab === 1 ? 'flights' : 'packages'} compact />}
             {Object.values(errors).some(Boolean) && (
               <div className={styles.formError}>
                 {errors.dates ? t('home_validation_dates') : t('home_validation_required')}
@@ -355,6 +356,17 @@ export default function HomePage() {
                 {guestOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
+            {tab === 0 && (
+              <div className={styles.field}>
+                <label className={styles.label}>{lang === 'ru' ? 'Тип поездки' : 'Trip type'}</label>
+                <select className={styles.input} value={form.trip_purpose} onChange={e => setForm(p => ({ ...p, trip_purpose: e.target.value }))}>
+                  <option value="leisure">{lang === 'ru' ? 'Отдых' : 'Leisure'}</option>
+                  <option value="business">{lang === 'ru' ? 'Командировка' : 'Business'}</option>
+                  <option value="family">{lang === 'ru' ? 'Семейная поездка' : 'Family'}</option>
+                  <option value="couple">{lang === 'ru' ? 'Поездка вдвоём' : 'Couple'}</option>
+                </select>
+              </div>
+            )}
             {tab === 1 && (
               <div className={styles.field}>
                 <label className={styles.label}>{t('flight_class')}</label>
@@ -364,7 +376,7 @@ export default function HomePage() {
                 </select>
               </div>
             )}
-            <button type="submit" className={styles.searchBtn}>
+            <button type="submit" className={styles.searchBtn} disabled={capabilitiesLoading || !activeReady}>
               <Search size={16} /> {t('home_search_btn')}
             </button>
             <div className={styles.aiHint}>

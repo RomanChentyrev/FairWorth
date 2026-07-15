@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('../config/env').validateEnv();
 const { init, close } = require('../db/database');
 const { ensureDatabaseSchema } = require('../db/schema');
 const { ensurePersonalizationSchema } = require('../services/personalization');

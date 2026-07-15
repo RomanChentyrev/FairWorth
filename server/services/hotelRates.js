@@ -11,7 +11,7 @@ function firstMoney(values = [], currency) {
   return values.find(item => !currency || item.currency === currency) || values[0] || null;
 }
 
-function flattenRates(hotelResult, nights, requestedCurrency = 'USD') {
+function flattenRates(hotelResult, nights, requestedCurrency = 'USD', guests = 2) {
   const rows = [];
   for (const room of hotelResult.roomTypes || []) for (const rate of room.rates || []) {
     const money = firstMoney(rate.retailRate?.total || []);
@@ -32,14 +32,15 @@ function flattenRates(hotelResult, nights, requestedCurrency = 'USD') {
     const maxNightly = Number(process.env.MAX_HOTEL_NIGHTLY_PRICE_USD || 10000);
     const valid = nightlyTotal > 0 && nightlyTotal <= maxNightly && !currencyMismatch;
     rows.push({
-      roomTypeId: room.roomTypeId, offerId: room.offerId, rateId: rate.rateId,
+      roomTypeId: room.roomTypeId, roomName: room.name || room.roomName || room.roomTypeName || null,
+      offerId: room.offerId, rateId: rate.rateId,
       operator: room.supplier || String(room.supplierId || 'LiteAPI'), providerCode: String(room.supplierId || ''),
       boardName: rate.boardName || rate.boardType || null,
       includesBreakfast: /breakfast/i.test(`${rate.boardName || ''} ${rate.boardType || ''}`),
       refundable: rate.cancellationPolicies?.refundableTag === 'RFN',
       amount, perNight: nightlyTotal, stayTotal, taxPerNight, taxTotal, basePerNight,
       currency, requestedCurrency, valid, anomalyReason: currencyMismatch ? 'currency_conversion_unavailable' : valid ? null : 'invalid_or_extreme_nightly_price',
-      taxStatus, raw: { ...rate, roomTypeId: room.roomTypeId, offerId: room.offerId, provider_stay_amount: amount, stay_total: stayTotal, base_price_per_night: basePerNight, taxes_per_night: taxPerNight, taxes_total: taxTotal, nights, currency_unit: 'major', requested_currency: requestedCurrency, fx_applied: false, tax_status: taxStatus, tax_included: taxStatus === 'included' },
+      taxStatus, raw: { ...rate, roomTypeId: room.roomTypeId, room_name: room.name || room.roomName || room.roomTypeName || null, offerId: room.offerId, guests: Math.max(1, Number(guests) || 2), provider_stay_amount: amount, stay_total: stayTotal, base_price_per_night: basePerNight, taxes_per_night: taxPerNight, taxes_total: taxTotal, nights, currency_unit: 'major', requested_currency: requestedCurrency, fx_applied: false, tax_status: taxStatus, tax_included: taxStatus === 'included' },
     });
   }
   return rows.sort((a, b) => a.perNight - b.perNight).slice(0, 5);
@@ -61,23 +62,23 @@ async function refreshLiteApiRates(hotels, checkIn, checkOut, { currency = 'USD'
   const byProviderId = new Map(selected.map(item => [item.provider_hotel_id, item.hotel_id]));
   const nights = nightsBetween(checkIn, checkOut);
   const results = await liteapi.getRates({ hotelIds: [...byProviderId.keys()], checkIn, checkOut, currency, adults: Math.max(1, Number(guests || 2)) });
-  const availableIds = new Set(results.filter(result => flattenRates(result, nights, currency).some(rate => rate.valid)).map(result => result.hotelId));
+  const availableIds = new Set(results.filter(result => flattenRates(result, nights, currency, guests).some(rate => rate.valid)).map(result => result.hotelId));
   for (const mapping of selected) {
     await db.prepare(`INSERT INTO hotel_rate_checks (id, hotel_id, provider, check_in, check_out, guests, currency, status, checked_at) VALUES (?, ?, 'liteapi', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (hotel_id, provider, check_in, check_out, guests, currency) DO UPDATE SET status = EXCLUDED.status, checked_at = CURRENT_TIMESTAMP`)
       .run(uuidv4(), mapping.hotel_id, checkIn, checkOut, Math.max(1, Number(guests || 2)), currency, availableIds.has(mapping.provider_hotel_id) ? 'available' : 'unavailable');
   }
   for (const result of results) {
     const hotelId = byProviderId.get(result.hotelId); if (!hotelId) continue;
-    await db.prepare(`DELETE FROM hotel_prices WHERE hotel_id = ? AND source = 'liteapi' AND check_in = ? AND check_out = ?`).run(hotelId, checkIn, checkOut);
-    const rates = flattenRates(result, nights, currency);
+    await db.prepare(`DELETE FROM hotel_prices WHERE hotel_id = ? AND source = 'liteapi' AND check_in = ? AND check_out = ? AND (guests = ? OR guests IS NULL)`).run(hotelId, checkIn, checkOut, Math.max(1, Number(guests) || 2));
+    const rates = flattenRates(result, nights, currency, guests);
     const validPrices = rates.filter(rate => rate.valid).map(rate => rate.perNight).sort((a, b) => a - b);
     const median = validPrices.length ? validPrices[Math.floor(validPrices.length / 2)] : null;
     for (const rate of rates) {
       const marketOutlier = median && (rate.perNight < median / 8 || rate.perNight > median * 8);
       const valid = rate.valid && !marketOutlier;
       const anomalyReason = marketOutlier ? 'provider_market_outlier' : rate.anomalyReason;
-      await db.prepare(`INSERT INTO hotel_prices (id, hotel_id, operator, price_per_night, total_price, check_in, check_out, includes_breakfast, cancellation_policy, currency, tax, provider_code, source, raw_json, updated_at, offer_id, room_type_id, rate_id, board_name, refundable, currency_unit, requested_currency, price_valid, anomaly_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'liteapi', ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, 'major', ?, ?, ?)`)
-        .run(uuidv4(), hotelId, rate.operator, rate.perNight, rate.stayTotal, checkIn, checkOut, rate.includesBreakfast ? 1 : 0, rate.refundable ? 'free_cancellation' : 'non_refundable', rate.currency, rate.taxTotal, rate.providerCode, JSON.stringify(rate.raw), rate.offerId, rate.roomTypeId, rate.rateId, rate.boardName, rate.refundable ? 1 : 0, rate.requestedCurrency, valid ? 1 : 0, anomalyReason);
+      await db.prepare(`INSERT INTO hotel_prices (id, hotel_id, operator, price_per_night, total_price, check_in, check_out, includes_breakfast, cancellation_policy, currency, tax, provider_code, source, raw_json, updated_at, offer_id, room_type_id, rate_id, board_name, refundable, currency_unit, requested_currency, price_valid, anomaly_reason, guests, room_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'liteapi', ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, 'major', ?, ?, ?, ?, ?)`)
+        .run(uuidv4(), hotelId, rate.operator, rate.perNight, rate.stayTotal, checkIn, checkOut, rate.includesBreakfast ? 1 : 0, rate.refundable ? 'free_cancellation' : 'non_refundable', rate.currency, rate.taxTotal, rate.providerCode, JSON.stringify(rate.raw), rate.offerId, rate.roomTypeId, rate.rateId, rate.boardName, rate.refundable ? 1 : 0, rate.requestedCurrency, valid ? 1 : 0, anomalyReason, Math.max(1, Number(guests) || 2), rate.roomName);
     }
   }
 }

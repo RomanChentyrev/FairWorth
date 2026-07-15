@@ -2,8 +2,12 @@
   "name": "fairworth-client",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
+    "cities:generate": "node scripts/generate-city-index.mjs",
+    "predev": "npm run cities:generate",
     "dev": "vite",
+    "prebuild": "npm run cities:generate",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -16,7 +20,10 @@
     "lucide-react": "^0.363.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.22.3"
+    "react-router-dom": "^6.22.3",
+    "react-simple-maps": "^3.0.0",
+    "world-atlas": "^2.0.2",
+    "world-cities-json": "^1.0.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
@@ -27,5 +34,8 @@
     "jsdom": "^29.1.1",
     "vite": "^5.2.0",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "d3-color": "3.1.0"
   }
 }

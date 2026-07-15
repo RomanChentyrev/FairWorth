@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { db } = require('../db/database');
+const { isAdminEmail } = require('../config/admin');
 
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'fairworth-dev-secret-change-me');
 
@@ -40,9 +41,9 @@ async function requireEmailVerified(req, res, next) {
 }
 
 async function requireAdmin(req, res, next) {
-  const user = await db.prepare('SELECT role, email FROM users WHERE id = ?').get(req.user.id);
-  const configured = String(process.env.ADMIN_EMAILS || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
-  if (!user || (user.role !== 'admin' && !configured.includes(String(user.email).toLowerCase()))) return res.status(403).json({ error: 'Administrator access required' });
+  const user = await db.prepare('SELECT email FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !isAdminEmail(user.email)) return res.status(403).json({ error: 'Administrator access required' });
+  req.user.email = user.email;
   return next();
 }
 

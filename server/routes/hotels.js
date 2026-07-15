@@ -3,14 +3,18 @@ const router = express.Router();
 const { db } = require('../db/database');
 const { v4: uuidv4 } = require('uuid');
 const { analyzeHotel } = require('../services/ai');
-const { calculateHotelScore, getUserWeights, recordScoreSnapshot, SCORE_VERSION } = require('../services/personalization');
+const { calculateHotelScore, getUserWeights, recordScoreSnapshot, tripContextKey, SCORE_VERSION } = require('../services/personalization');
 const { normalizePrice, roundMoney } = require('../services/pricing');
+const { selectComparableRate, marketBenchmark } = require('../services/comparablePricing');
 const { requireAuth, requireOnboarding, requireEmailVerified } = require('../middleware/auth');
 const { validateDateRange, defaultTravelDates } = require('../utils/dates');
 const { aiLimiter } = require('../middleware/security');
+const { requireCapability, configured } = require('../config/capabilities');
 const travelpayouts = require('../services/travelpayouts');
 const { ensureCatalogForCity } = require('../services/hotelCatalog');
 const { refreshLiteApiRates } = require('../services/hotelRates');
+const googlePlaces = require('../services/googlePlaces');
+const { amenitySearchTerms } = require('../config/hotelAmenities');
 const {
   CACHE_TTL_HOURS,
   HOTEL_CATALOG,
@@ -29,6 +33,55 @@ const INSIGHTS_CACHE_TTL_HOURS = Math.max(1, Number(process.env.INSIGHTS_CACHE_T
 const INSIGHTS_JOB_TIMEOUT_MS = Math.max(5000, Number(process.env.INSIGHTS_JOB_TIMEOUT_MS || 20000));
 const INSIGHTS_ITEM_TIMEOUT_MS = Math.max(1000, Number(process.env.INSIGHTS_ITEM_TIMEOUT_MS || 3500));
 let insightsRefreshPromise = null;
+
+function parseList(value) {
+  if (Array.isArray(value)) return value;
+  try { return JSON.parse(value || '[]'); } catch { return []; }
+}
+
+function comparableRateOptions(preferences, guests) {
+  const preferredAmenities = parseList(preferences?.hotel_amenities);
+  const requiredAmenities = parseList(preferences?.required_hotel_amenities);
+  return {
+    guests,
+    preferredRoomTypes: parseList(preferences?.room_type),
+    breakfastPreferred: preferredAmenities.includes('breakfast'),
+    breakfastRequired: requiredAmenities.includes('breakfast'),
+    ttlHours: CACHE_TTL_HOURS,
+  };
+}
+
+function comparablePriceContext(hotels, priceRows, preferences, guests) {
+  const options = comparableRateOptions(preferences, guests);
+  const pricesByHotel = priceRows.reduce((map, row) => ((map[row.hotel_id] ||= []).push(row), map), {});
+  const hotelsById = new Map(hotels.map(hotel => [hotel.id, hotel]));
+  const ratesByHotel = new Map();
+  const offers = [];
+  for (const [hotelId, prices] of Object.entries(pricesByHotel)) {
+    const hotel = hotelsById.get(hotelId) || prices[0];
+    const rate = selectComparableRate(prices, options);
+    if (!hotel || !rate) continue;
+    ratesByHotel.set(hotelId, rate);
+    offers.push({
+      hotel_id: hotelId,
+      city: hotel.city,
+      location: hotel.location,
+      stars: hotel.stars,
+      room_category: rate.room_category,
+      comparable_nightly_price: rate.comparable_nightly_price,
+      currency: rate.currency,
+    });
+  }
+  const benchmarkByHotel = Object.fromEntries(hotels.map(hotel => {
+    const rate = ratesByHotel.get(hotel.id);
+    if (!rate) return [hotel.id, null];
+    return [hotel.id, marketBenchmark({
+      hotel_id: hotel.id, city: hotel.city, location: hotel.location, stars: hotel.stars,
+      room_category: rate.room_category, currency: rate.currency,
+    }, offers)];
+  }));
+  return { ratesByHotel, benchmarkByHotel };
+}
 
 function withTimeout(promise, timeoutMs, label) {
   let timeout;
@@ -49,7 +102,7 @@ function addInsightDays(date, days) {
 }
 
 function getTravelpayoutsToken() {
-  return process.env.TRAVELPAYOUTS_TOKEN;
+  return configured(process.env.TRAVELPAYOUTS_TOKEN) ? process.env.TRAVELPAYOUTS_TOKEN : null;
 }
 
 function normalizeCityName(value = '') {
@@ -115,7 +168,12 @@ async function getReturnPrice({ destination, origin, returnDate, currency, token
 
 async function buildLiveInsightOffers() {
   const token = getTravelpayoutsToken();
-  if (!token) return null;
+  if (!token) {
+    const error = new Error('TRAVELPAYOUTS_TOKEN is not configured on the server');
+    error.code = 'PROVIDER_NOT_CONFIGURED';
+    error.provider = 'Travelpayouts';
+    throw error;
+  }
 
   const [popular, citiesByCode] = await Promise.all([
     travelpayouts.popularDestinations({ origin: INSIGHTS_ORIGIN, currency: INSIGHTS_CURRENCY, token }),
@@ -245,6 +303,21 @@ async function refreshInsightsInBackground({ force = false } = {}) {
 }
 
 async function ensureXoteloSchema() {
+  await db.prepare(`
+    DELETE FROM hotel_prices
+    WHERE operator = 'Fairworth local demo'
+       OR provider_code = 'local_fixture'
+       OR raw_json LIKE '%"source":"local_fixture"%'
+  `).run();
+  await db.prepare(`
+    DELETE FROM hotel_rooms
+    WHERE id LIKE 'room-hotel-%-deluxe'
+  `).run();
+  await db.prepare(`
+    DELETE FROM hotel_reviews
+    WHERE id LIKE 'review-hotel-%'
+  `).run();
+
   for (const hotel of HOTEL_CATALOG) {
     const existingByKey = await db.prepare(`
       SELECT id FROM hotels
@@ -418,45 +491,115 @@ function addDays(date, days) {
   return next;
 }
 
-async function scoreHotelForUser(hotel, rooms, reviews, prices, userId, language = 'en') {
+async function scoreHotelForUser(hotel, rooms, reviews, prices, userId, language = 'en', guests = 2, tripPurpose = null) {
   const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
-  const weights = await getUserWeights(userId);
-  const minPrice = prices.length ? Math.min(...prices.map(price => Number(price.price_per_night)).filter(price => price > 0)) : null;
-  const marketPrices = (await db.prepare(`
-    SELECT MIN(hp.price_per_night) AS min_price
+  const checkIn = prices[0]?.check_in;
+  const checkOut = prices[0]?.check_out;
+  const requestedGuests = Math.max(1, Number(guests) || 2);
+  const weights = await getUserWeights(userId, { destination: hotel.city, check_in: checkIn, check_out: checkOut, guests: requestedGuests, trip_purpose: tripPurpose });
+  const marketRows = checkIn && checkOut ? await db.prepare(`
+    SELECT hp.*, h.city, h.location, h.stars
     FROM hotels h JOIN hotel_prices hp ON hp.hotel_id = h.id AND hp.price_valid = 1
-    WHERE LOWER(h.city) = LOWER(?) GROUP BY h.id
-  `).all(hotel.city)).map(row => Number(row.min_price)).filter(price => price > 0);
+    WHERE LOWER(h.city) = LOWER(?) AND hp.check_in = ? AND hp.check_out = ?
+      AND hp.source IN ('liteapi', 'xotelo') AND (hp.guests = ? OR hp.guests IS NULL)
+  `).all(hotel.city, checkIn, checkOut, requestedGuests) : prices.map(price => ({ ...price, city: hotel.city, location: hotel.location, stars: hotel.stars }));
+  const marketHotels = [...new Map([
+    [hotel.id, hotel],
+    ...marketRows.map(row => [row.hotel_id, { id: row.hotel_id, city: row.city, location: row.location, stars: row.stars }]),
+  ]).values()];
+  const comparableContext = comparablePriceContext(marketHotels, marketRows, userPrefs, requestedGuests);
+  const comparable = comparableContext.ratesByHotel.get(hotel.id);
   const result = calculateHotelScore({
     ...hotel,
-    min_price: minPrice,
+    min_price: comparable?.payable_nightly_price ?? null,
+    comparable_price: comparable?.comparable_nightly_price ?? null,
     rating: reviews?.rating,
     review_count: reviews?.count,
     cleanliness: reviews?.cleanliness,
     service: reviews?.service,
     location_score: reviews?.location_score,
     value_score: reviews?.value,
+    latest_review_at: reviews?.latest_review_at,
+    recent_review_share: reviews?.recent_review_share,
+    previous_rating: reviews?.previous_rating,
+    rating_trend: reviews?.rating_trend,
+    rating_stddev: reviews?.rating_stddev,
+    suspicious_review_share: reviews?.suspicious_review_share,
+    verified_review_share: reviews?.verified_review_share,
+    review_source_count: reviews?.review_source_count,
+    review_source_consistency: reviews?.review_source_consistency,
   }, userPrefs, weights, {
     roomsByHotel: { [hotel.id]: rooms },
-    prices: marketPrices.length ? marketPrices : [minPrice].filter(Boolean),
     language,
+    priceBenchmarkByHotel: comparableContext.benchmarkByHotel,
     priceMetadataByHotel: {
-      [hotel.id]: (() => {
-        const cheapest = [...prices].sort((a, b) => Number(a.price_per_night) - Number(b.price_per_night))[0];
-        const normalized = normalizePrice(cheapest, CACHE_TTL_HOURS);
-        return normalized ? { ...normalized, provider: cheapest.operator } : null;
-      })(),
+      [hotel.id]: comparable ? { ...comparable, provider: comparable.operator } : null,
     },
   });
   await recordScoreSnapshot(userId, result);
   return result;
 }
 
+async function storedHotelImages(hotelId) {
+  const rows = await db.prepare(`
+    SELECT url, provider, kind, sort_order, width_px, height_px, attribution_json
+    FROM hotel_images
+    WHERE hotel_id = ?
+    ORDER BY sort_order ASC, created_at ASC
+  `).all(hotelId);
+  return rows
+    .filter(row => row.url)
+    .map(row => ({
+      url: row.url,
+      provider: row.provider,
+      kind: row.kind || 'gallery',
+      sort_order: row.sort_order || 0,
+      width_px: row.width_px || null,
+      height_px: row.height_px || null,
+      attribution: parseJson(row.attribution_json, []),
+    }));
+}
+
+function parseJson(value, fallback) {
+  try { return JSON.parse(value || JSON.stringify(fallback)); } catch { return fallback; }
+}
+
+function fallbackImages(hotel, storedImages) {
+  const seen = new Set();
+  const images = [...storedImages];
+  for (const [index, url] of [hotel.image_url, hotel.thumbnail_url].filter(Boolean).entries()) {
+    if (seen.has(url) || images.some(image => image.url === url)) continue;
+    seen.add(url);
+    images.push({
+      url,
+      provider: hotel.content_source || 'hotel',
+      kind: index === 0 ? 'main' : 'thumbnail',
+      sort_order: images.length,
+      width_px: null,
+      height_px: null,
+      attribution: [],
+    });
+  }
+  return images;
+}
+
+async function hotelImages(hotel) {
+  const stored = await storedHotelImages(hotel.id);
+  const fallback = fallbackImages(hotel, stored);
+  try {
+    const googleImages = await googlePlaces.hotelPhotos(hotel);
+    if (googleImages.length) return googleImages;
+  } catch (error) {
+    console.warn(`[google-places] ${hotel.name}: ${error.message}`);
+  }
+  return fallback;
+}
+
 // GET /api/hotels/search
 router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
   try {
     const {
-      city, check_in, check_out, guests = 2, stars, min_price, max_price,
+      city, check_in, check_out, guests = 2, trip_purpose, stars, min_price, max_price,
       amenities, districts, rating_min, free_cancel, breakfast,
       sort = 'score', language = 'en', search_event, search_session_id,
       limit = 30, offset = 0
@@ -464,12 +607,22 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
     const pageSize = Math.min(Math.max(Number(limit) || 30, 1), 30);
     const pageOffset = Math.max(Number(offset) || 0, 0);
     const userId = req.user.id;
+    const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+    const requiredPreferenceAmenities = (() => {
+      try { return JSON.parse(userPrefs?.required_hotel_amenities || '[]'); } catch { return []; }
+    })();
+    const strictAmenities = [...new Set([
+      ...String(amenities || '').split(',').filter(Boolean),
+      ...requiredPreferenceAmenities,
+    ])];
     const defaults = defaultTravelDates();
     const liveCheckIn = check_in || defaults.checkIn;
     const liveCheckOut = check_out || defaults.checkOut;
     if (!validateDateRange(liveCheckIn, liveCheckOut)) {
       return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
     }
+    await ensureXoteloSchema();
+    const feedbackContextKey = tripContextKey({ destination: city, check_in: liveCheckIn, check_out: liveCheckOut, guests, trip_purpose }, userPrefs || {});
 
     if (city) {
       const existingCatalog = await db.prepare(`SELECT id FROM hotels WHERE active = 1 AND (LOWER(city) LIKE ? OR LOWER(location) LIKE ? OR LOWER(country) LIKE ?) LIMIT 1`)
@@ -487,9 +640,12 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
         h.id, h.name, h.location, h.city, h.country, h.stars, h.amenities,
         h.latitude, h.longitude, h.tripadvisor_url, h.tripadvisor_location_id,
         h.tripadvisor_hotel_key, h.address, h.postal_code, h.image_url,
-        h.thumbnail_url, h.hotel_type, h.chain_name, h.content_source,
+        h.thumbnail_url, h.hotel_type, h.chain_name, h.content_source, h.content_raw_json,
         h.source_updated_at, h.active, h.created_at,
         hr.rating, hr.count as review_count, hr.cleanliness, hr.service, hr.location_score, hr.value as value_score,
+        hr.latest_review_at, hr.recent_review_share, hr.previous_rating, hr.rating_trend,
+        hr.rating_stddev, hr.suspicious_review_share, hr.verified_review_share,
+        hr.review_source_count, hr.review_source_consistency,
         MIN(hp.price_per_night) as min_price,
         MAX(hp.price_per_night) as max_price,
         CASE
@@ -501,9 +657,11 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
       LEFT JOIN hotel_reviews hr ON hr.hotel_id = h.id
       LEFT JOIN hotel_prices hp ON hp.hotel_id = h.id
         AND hp.source IN ('liteapi', 'xotelo') AND hp.price_valid = 1 AND hp.check_in = ? AND hp.check_out = ?
+        AND (hp.guests = ? OR hp.guests IS NULL)
       WHERE h.active = 1
+        AND NOT EXISTS (SELECT 1 FROM user_hotel_feedback uhf WHERE uhf.user_id = ? AND uhf.hotel_id = h.id AND uhf.context_key = ?)
     `;
-    const params = [liveCheckIn, liveCheckOut];
+    const params = [liveCheckIn, liveCheckOut, Math.max(1, Number(guests) || 2), userId, feedbackContextKey];
 
     if (city) {
       query += ` AND (LOWER(h.city) LIKE ? OR LOWER(h.location) LIKE ? OR LOWER(h.country) LIKE ?)`;
@@ -526,10 +684,20 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
         params.push(...values);
       }
     }
-    if (amenities) {
-      String(amenities).split(',').filter(Boolean).forEach(amenity => {
-        query += ` AND LOWER(h.amenities) LIKE ?`;
-        params.push(`%${String(amenity).toLowerCase()}%`);
+    if (strictAmenities.length) {
+      strictAmenities.forEach(amenity => {
+        const terms = amenitySearchTerms(amenity);
+        const hotelChecks = terms.map(() => 'LOWER(h.amenities) LIKE ?');
+        const catalogChecks = terms.map(() => 'LOWER(ha.name) LIKE ? OR LOWER(ha.normalized_name) LIKE ?');
+        const roomChecks = terms.map(() => 'LOWER(ra.amenities) LIKE ?');
+        query += ` AND (
+          (${hotelChecks.join(' OR ')})
+          OR EXISTS (SELECT 1 FROM hotel_amenities ha WHERE ha.hotel_id = h.id AND (${catalogChecks.join(' OR ')}))
+          OR EXISTS (SELECT 1 FROM hotel_rooms ra WHERE ra.hotel_id = h.id AND (${roomChecks.join(' OR ')}))
+        )`;
+        params.push(...terms.map(term => `%${term.toLowerCase()}%`));
+        terms.forEach(term => params.push(`%${term.toLowerCase()}%`, `%${term.toLowerCase()}%`));
+        params.push(...terms.map(term => `%${term.toLowerCase()}%`));
       });
     }
     if (free_cancel === '1') {
@@ -559,15 +727,17 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
       params.push(Number(min_price));
     }
 
-    query += ` GROUP BY h.id, hr.rating, hr.count, hr.cleanliness, hr.service, hr.location_score, hr.value`;
+    query += ` GROUP BY h.id, hr.rating, hr.count, hr.cleanliness, hr.service, hr.location_score, hr.value,
+      hr.latest_review_at, hr.recent_review_share, hr.previous_rating, hr.rating_trend,
+      hr.rating_stddev, hr.suspicious_review_share, hr.verified_review_share,
+      hr.review_source_count, hr.review_source_consistency`;
 
     let hotels = await db.prepare(query).all(...params);
 
-    const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
-    const userWeights = await getUserWeights(userId);
+    const userWeights = await getUserWeights(userId, { destination: city, check_in: liveCheckIn, check_out: liveCheckOut, guests, trip_purpose });
     const hotelIds = hotels.map(hotel => hotel.id);
     const roomRows = hotelIds.length
-      ? await db.prepare(`SELECT hotel_id, name, view_type FROM hotel_rooms WHERE hotel_id IN (${hotelIds.map(() => '?').join(',')})`).all(...hotelIds)
+      ? await db.prepare(`SELECT hotel_id, name, size_sqm, view_type, amenities FROM hotel_rooms WHERE hotel_id IN (${hotelIds.map(() => '?').join(',')})`).all(...hotelIds)
       : [];
     const roomsByHotel = roomRows.reduce((result, room) => {
       if (!result[room.hotel_id]) result[room.hotel_id] = [];
@@ -575,35 +745,40 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
       return result;
     }, {});
     const scoreCities = [...new Set(hotels.map(hotel => hotel.city).filter(Boolean))];
-    const marketPrices = scoreCities.length ? (await db.prepare(`
-      SELECT MIN(mp.price_per_night) AS min_price FROM hotels mh
-      JOIN hotel_prices mp ON mp.hotel_id = mh.id AND mp.price_valid = 1
-      WHERE mh.city IN (${scoreCities.map(() => '?').join(',')}) GROUP BY mh.id
-    `).all(...scoreCities)).map(row => Number(row.min_price)).filter(price => price > 0) : [];
-    const cheapestRows = hotelIds.length ? await db.prepare(`
-      SELECT DISTINCT ON (hotel_id) * FROM hotel_prices
-      WHERE hotel_id IN (${hotelIds.map(() => '?').join(',')})
-        AND check_in = ? AND check_out = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1
-      ORDER BY hotel_id, price_per_night ASC
-    `).all(...hotelIds, liveCheckIn, liveCheckOut) : [];
-    const cheapestByHotel = new Map(cheapestRows.map(price => [price.hotel_id, price]));
+    const marketRows = scoreCities.length ? await db.prepare(`
+      SELECT mp.*, mh.city, mh.location, mh.stars
+      FROM hotel_prices mp JOIN hotels mh ON mh.id = mp.hotel_id
+      WHERE mh.city IN (${scoreCities.map(() => '?').join(',')})
+        AND mp.check_in = ? AND mp.check_out = ? AND mp.price_valid = 1
+        AND mp.source IN ('liteapi', 'xotelo') AND (mp.guests = ? OR mp.guests IS NULL)
+    `).all(...scoreCities, liveCheckIn, liveCheckOut, Math.max(1, Number(guests) || 2)) : [];
+    const marketHotels = [...new Map([
+      ...hotels.map(hotel => [hotel.id, hotel]),
+      ...marketRows.map(row => [row.hotel_id, { id: row.hotel_id, city: row.city, location: row.location, stars: row.stars }]),
+    ]).values()];
+    const comparableContext = comparablePriceContext(marketHotels, marketRows, userPrefs, guests);
     const priceMetadataEntries = hotels.map(hotel => {
-      const cheapest = cheapestByHotel.get(hotel.id);
-      const normalized = normalizePrice(cheapest, CACHE_TTL_HOURS);
-      return [hotel.id, normalized ? { ...normalized, provider: cheapest.operator } : null];
+      const comparable = comparableContext.ratesByHotel.get(hotel.id);
+      return [hotel.id, comparable ? { ...comparable, provider: comparable.operator } : null];
     });
     const scoreContext = {
       roomsByHotel,
-      prices: marketPrices,
       language,
       priceMetadataByHotel: Object.fromEntries(priceMetadataEntries),
+      priceBenchmarkByHotel: comparableContext.benchmarkByHotel,
     };
-    const scored = hotels.map(hotel => calculateHotelScore(
-      hotel, userPrefs, userWeights, scoreContext
-    ));
+    const scored = hotels.map(hotel => {
+      const comparable = comparableContext.ratesByHotel.get(hotel.id);
+      return calculateHotelScore({
+        ...hotel,
+        min_price: comparable?.payable_nightly_price ?? null,
+        comparable_price: comparable?.comparable_nightly_price ?? null,
+        price_source: comparable?.source || null,
+      }, userPrefs, userWeights, scoreContext);
+    });
     // Sort the complete filtered candidate set before applying pagination.
     const sorted = scored.sort((a, b) => {
-      if (sort === 'score') return b.fairworth_score - a.fairworth_score;
+      if (sort === 'score') return Number(b.top_pick_eligible) - Number(a.top_pick_eligible) || b.adjusted_score - a.adjusted_score || b.fairworth_score - a.fairworth_score;
       if (sort === 'price_asc') return (a.min_price ?? Infinity) - (b.min_price ?? Infinity);
       if (sort === 'price_desc') return (b.min_price ?? -Infinity) - (a.min_price ?? -Infinity);
       if (sort === 'rating') return (b.rating || 0) - (a.rating || 0);
@@ -643,6 +818,8 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
       personalization: {
         enabled: Boolean(userPrefs),
         learning_confidence: userWeights.confidence,
+        contextual_learning_confidence: userWeights.contextualConfidence,
+        active_contexts: userWeights.activeContexts,
         interaction_count: userWeights.interactionCount,
       },
     });
@@ -655,45 +832,63 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
 // POST /api/hotels/rates/batch — progressively enrich catalog results with live rates.
 router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
   try {
-    const { hotel_ids: hotelIds, check_in: checkIn, check_out: checkOut, guests = 2, language = 'en' } = req.body || {};
+    const { hotel_ids: hotelIds, check_in: checkIn, check_out: checkOut, guests = 2, trip_purpose: tripPurpose, language = 'en' } = req.body || {};
     if (!Array.isArray(hotelIds) || !hotelIds.length || hotelIds.length > 50) return res.status(400).json({ error: 'hotel_ids must contain between 1 and 50 items' });
     if (!validateDateRange(checkIn, checkOut)) return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
     const uniqueIds = [...new Set(hotelIds.map(String))];
     const hotels = await db.prepare(`SELECT * FROM hotels WHERE active = 1 AND id IN (${uniqueIds.map(() => '?').join(',')})`).all(...uniqueIds);
     await refreshLiteApiRates(hotels, checkIn, checkOut, { guests });
+    await Promise.allSettled(hotels.map(hotel => refreshHotelPricesFromXotelo(hotel, checkIn, checkOut).catch(error => {
+      console.warn(`[xotelo] ${hotel.name}: ${error.message}`);
+      return null;
+    })));
     const ids = hotels.map(hotel => hotel.id);
     const cities = [...new Set(hotels.map(hotel => hotel.city).filter(Boolean))];
     const [roomRows, reviewRows, priceRows, userPrefs, userWeights, marketRows] = await Promise.all([
-      db.prepare(`SELECT hotel_id, name, view_type FROM hotel_rooms WHERE hotel_id IN (${ids.map(() => '?').join(',')})`).all(...ids),
+      db.prepare(`SELECT hotel_id, name, size_sqm, view_type, amenities FROM hotel_rooms WHERE hotel_id IN (${ids.map(() => '?').join(',')})`).all(...ids),
       db.prepare(`SELECT * FROM hotel_reviews WHERE hotel_id IN (${ids.map(() => '?').join(',')})`).all(...ids),
-      db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id IN (${ids.map(() => '?').join(',')}) AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ? ORDER BY hotel_id, price_per_night`).all(...ids, checkIn, checkOut),
+      db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id IN (${ids.map(() => '?').join(',')}) AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ? AND (guests = ? OR guests IS NULL) ORDER BY hotel_id, price_per_night`).all(...ids, checkIn, checkOut, Math.max(1, Number(guests) || 2)),
       db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(req.user.id),
-      getUserWeights(req.user.id),
-      cities.length ? db.prepare(`SELECT MIN(hp.price_per_night) AS min_price FROM hotels h JOIN hotel_prices hp ON hp.hotel_id = h.id AND hp.price_valid = 1 WHERE h.city IN (${cities.map(() => '?').join(',')}) GROUP BY h.id`).all(...cities) : [],
+      getUserWeights(req.user.id, { destination: hotels[0]?.city, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose }),
+      cities.length ? db.prepare(`SELECT hp.*, h.city, h.location, h.stars FROM hotels h JOIN hotel_prices hp ON hp.hotel_id = h.id AND hp.price_valid = 1 WHERE h.city IN (${cities.map(() => '?').join(',')}) AND hp.check_in = ? AND hp.check_out = ? AND hp.source IN ('liteapi', 'xotelo') AND (hp.guests = ? OR hp.guests IS NULL)`).all(...cities, checkIn, checkOut, Math.max(1, Number(guests) || 2)) : [],
     ]);
     const roomsByHotel = roomRows.reduce((map, row) => ((map[row.hotel_id] ||= []).push(row), map), {});
     const reviewsByHotel = new Map(reviewRows.map(row => [row.hotel_id, row]));
     const pricesByHotel = priceRows.reduce((map, row) => ((map[row.hotel_id] ||= []).push(row), map), {});
-    const marketPrices = marketRows.map(row => Number(row.min_price)).filter(price => price > 0);
+    const marketHotels = [...new Map([
+      ...hotels.map(hotel => [hotel.id, hotel]),
+      ...marketRows.map(row => [row.hotel_id, { id: row.hotel_id, city: row.city, location: row.location, stars: row.stars }]),
+    ]).values()];
+    const comparableContext = comparablePriceContext(marketHotels, marketRows, userPrefs, guests);
     const priceMetadataByHotel = Object.fromEntries(hotels.map(hotel => {
-      const cheapest = pricesByHotel[hotel.id]?.[0];
-      const normalized = normalizePrice(cheapest, CACHE_TTL_HOURS);
-      return [hotel.id, normalized ? { ...normalized, provider: cheapest.operator } : null];
+      const comparable = comparableContext.ratesByHotel.get(hotel.id);
+      return [hotel.id, comparable ? { ...comparable, provider: comparable.operator } : null];
     }));
     const enriched = hotels.map(hotel => {
       const review = reviewsByHotel.get(hotel.id);
       const prices = pricesByHotel[hotel.id] || [];
+      const comparable = comparableContext.ratesByHotel.get(hotel.id);
       const scoring = calculateHotelScore({
         ...hotel,
-        min_price: prices[0] ? Number(prices[0].price_per_night) : null,
+        min_price: comparable?.payable_nightly_price ?? null,
+        comparable_price: comparable?.comparable_nightly_price ?? null,
         rating: review?.rating,
         review_count: review?.count,
         cleanliness: review?.cleanliness,
         service: review?.service,
         location_score: review?.location_score,
         value_score: review?.value,
-      }, userPrefs, userWeights, { roomsByHotel, prices: marketPrices, language, priceMetadataByHotel });
-      return { ...scoring, price_source: prices[0]?.source || null };
+        latest_review_at: review?.latest_review_at,
+        recent_review_share: review?.recent_review_share,
+        previous_rating: review?.previous_rating,
+        rating_trend: review?.rating_trend,
+        rating_stddev: review?.rating_stddev,
+        suspicious_review_share: review?.suspicious_review_share,
+        verified_review_share: review?.verified_review_share,
+        review_source_count: review?.review_source_count,
+        review_source_consistency: review?.review_source_consistency,
+      }, userPrefs, userWeights, { roomsByHotel, language, priceMetadataByHotel, priceBenchmarkByHotel: comparableContext.benchmarkByHotel });
+      return { ...scoring, price_source: comparable?.source || prices[0]?.source || null };
     });
     await Promise.all(enriched.map(result => recordScoreSnapshot(req.user.id, result)));
     res.json({
@@ -715,6 +910,8 @@ router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding
 router.get('/popular-destinations', async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 12);
+    const defaults = defaultTravelDates();
+    await ensureXoteloSchema();
     const destinations = await db.prepare(`
       SELECT
         h.city,
@@ -750,6 +947,14 @@ router.get('/popular-destinations', async (req, res) => {
 // GET /api/hotels/insights
 router.get('/insights', async (req, res) => {
   try {
+    if (!getTravelpayoutsToken()) {
+      return res.status(503).json({
+        error: 'Travelpayouts is not configured on the server',
+        code: 'PROVIDER_NOT_CONFIGURED',
+        provider: 'Travelpayouts',
+        retryable: false,
+      });
+    }
     const cached = await db.prepare(`SELECT *, expires_at > CURRENT_TIMESTAMP AS fresh FROM insights_cache WHERE cache_key = ?`).get(INSIGHTS_CACHE_KEY);
     const payload = cached?.payload ? JSON.parse(cached.payload) : null;
     if (!cached?.fresh) refreshInsightsInBackground().catch(error => console.warn(`[insights] refresh start failed: ${error.message}`));
@@ -763,6 +968,14 @@ router.get('/insights', async (req, res) => {
 });
 
 router.post('/insights/refresh', requireAuth, async (req, res) => {
+  if (!getTravelpayoutsToken()) {
+    return res.status(503).json({
+      error: 'Travelpayouts is not configured on the server',
+      code: 'PROVIDER_NOT_CONFIGURED',
+      provider: 'Travelpayouts',
+      retryable: false,
+    });
+  }
   refreshInsightsInBackground({ force: true }).catch(error => console.warn(`[insights] manual refresh failed: ${error.message}`));
   res.status(202).json({ status: 'refreshing', retry_after_seconds: 3 });
 });
@@ -860,28 +1073,30 @@ router.get('/:id', requireAuth, requireEmailVerified, requireOnboarding, async (
     });
 
     const rooms = await db.prepare('SELECT * FROM hotel_rooms WHERE hotel_id = ? ORDER BY base_price_per_night').all(req.params.id);
+    const images = await hotelImages(hotel);
     const prices = await db.prepare(`
       SELECT * FROM hotel_prices
       WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ?
+        AND (guests = ? OR guests IS NULL)
       ORDER BY
         CASE WHEN source = 'liteapi' THEN 0 ELSE 1 END,
         price_per_night
-    `).all(req.params.id, checkIn, checkOut);
+    `).all(req.params.id, checkIn, checkOut, Math.max(1, Number(req.query.guests) || 2));
     const reviews = await db.prepare('SELECT * FROM hotel_reviews WHERE hotel_id = ?').get(req.params.id);
-    const scoring = await scoreHotelForUser(hotel, rooms, reviews, prices, req.user.id, req.query.language || 'en');
+    const scoring = await scoreHotelForUser(hotel, rooms, reviews, prices, req.user.id, req.query.language || 'en', req.query.guests, req.query.trip_purpose);
 
-    res.json({ hotel, rooms, prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), reviews, scoring, price_meta: { check_in: checkIn, check_out: checkOut, ttl_hours: CACHE_TTL_HOURS } });
+    res.json({ hotel, images, rooms, prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), reviews, scoring, price_meta: { check_in: checkIn, check_out: checkOut, ttl_hours: CACHE_TTL_HOURS } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // POST /api/hotels/:id/analyze  — AI analysis
-router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding, aiLimiter, async (req, res) => {
+router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding, requireCapability('ai'), aiLimiter, async (req, res) => {
   try {
     const userId = req.user.id;
     const defaults = defaultTravelDates();
-    const { check_in = defaults.checkIn, check_out = defaults.checkOut, language = 'en' } = req.body;
+    const { check_in = defaults.checkIn, check_out = defaults.checkOut, language = 'en', guests = 2, trip_purpose: tripPurpose } = req.body;
     if (!validateDateRange(check_in, check_out)) return res.status(400).json({ error: 'Dates must be in the future' });
 
     // Check cache (5 min TTL)
@@ -894,7 +1109,7 @@ router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding
 
     if (cached) {
       const cachedAnalysis = JSON.parse(cached.analysis_json);
-      if (cachedAnalysis._language === language && cachedAnalysis._score_version === SCORE_VERSION) {
+      if (cachedAnalysis._language === language && cachedAnalysis._score_version === SCORE_VERSION && Number(cachedAnalysis._guests || 2) === Number(guests || 2) && (cachedAnalysis._trip_purpose || 'leisure') === (tripPurpose || 'leisure')) {
         return res.json({ analysis: cachedAnalysis, cached: true });
       }
     }
@@ -903,17 +1118,40 @@ router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding
     if (!hotel) return res.status(404).json({ error: 'Hotel not found' });
 
     const rooms = await db.prepare('SELECT * FROM hotel_rooms WHERE hotel_id = ?').all(req.params.id);
-    const prices = await db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ?`).all(req.params.id, check_in, check_out);
+    const prices = await db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ? AND (guests = ? OR guests IS NULL)`).all(req.params.id, check_in, check_out, Math.max(1, Number(guests) || 2));
     const reviews = await db.prepare('SELECT * FROM hotel_reviews WHERE hotel_id = ?').get(req.params.id);
     const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
 
     if (!userPrefs) return res.status(404).json({ error: 'User preferences not found' });
 
     const analysis = await analyzeHotel(hotel, rooms, reviews, prices, userPrefs, check_in, check_out, language);
-    const deterministicScore = await scoreHotelForUser(hotel, rooms, reviews, prices, userId, language);
+    const deterministicScore = await scoreHotelForUser(hotel, rooms, reviews, prices, userId, language, guests, tripPurpose);
     analysis.fairworth_score = deterministicScore.fairworth_score;
+    analysis.adjusted_score = deterministicScore.adjusted_score;
+    analysis.score_reliability = deterministicScore.score_reliability;
+    analysis.score_reliability_level = deterministicScore.score_reliability_level;
+    analysis.price_confidence = deterministicScore.price_confidence;
+    analysis.price_confidence_level = deterministicScore.price_confidence_level;
+    analysis.top_pick_eligible = deterministicScore.top_pick_eligible;
+    analysis.reliability_breakdown = deterministicScore.reliability_breakdown;
+    analysis.quality_breakdown = deterministicScore.quality_breakdown;
+    analysis.quality_weights = deterministicScore.quality_weights;
+    analysis.quality_profiles = deterministicScore.quality_profiles;
+    analysis.review_freshness_breakdown = deterministicScore.review_freshness_breakdown;
+    analysis.review_freshness_reliability = deterministicScore.review_freshness_reliability;
+    analysis.rating_trend = deterministicScore.rating_trend;
+    analysis.rating_trend_direction = deterministicScore.rating_trend_direction;
+    analysis.review_confidence = deterministicScore.review_confidence;
+    analysis.review_confidence_reliability = deterministicScore.review_confidence_reliability;
+    analysis.review_confidence_breakdown = deterministicScore.review_confidence_breakdown;
+    analysis.review_confidence_weights = deterministicScore.review_confidence_weights;
+    analysis.review_source_count = deterministicScore.review_source_count;
+    analysis.review_structure_breakdown = deterministicScore.review_structure_breakdown;
     analysis.score_breakdown = { ...deterministicScore.score_breakdown, risk: analysis.score_breakdown?.risk || 'medium' };
     analysis.personal_fit = deterministicScore.personal_fit;
+    analysis.travel_tier_score = deterministicScore.travel_tier_score;
+    analysis.travel_tier_breakdown = deterministicScore.travel_tier_breakdown;
+    analysis.travel_tier_weights = deterministicScore.travel_tier_weights;
     analysis.score_version = deterministicScore.score_version;
     analysis.calculated_at = deterministicScore.calculated_at;
     analysis.calculation_parameters = deterministicScore.calculation_parameters;
@@ -921,6 +1159,8 @@ router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding
     analysis.price_details = deterministicScore.price_details;
     analysis._language = language;
     analysis._score_version = SCORE_VERSION;
+    analysis._guests = Math.max(1, Number(guests) || 2);
+    analysis._trip_purpose = tripPurpose || 'leisure';
 
     // Cache it
     await db.prepare(`

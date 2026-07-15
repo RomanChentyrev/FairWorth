@@ -34,5 +34,8 @@ test('catalog matching favors equal names and nearby coordinates', () => {
 test('amenities and date ranges are normalized', () => {
   assert.equal(normalizedAmenity('High speed WiFi Internet'), 'wifi');
   assert.equal(normalizedAmenity('Swimming Pool'), 'pool');
+  assert.equal(normalizedAmenity('Outdoor tennis court'), 'tennis');
+  assert.equal(normalizedAmenity('Private bathroom with bath tub'), 'bathtub');
+  assert.equal(normalizedAmenity('Facilities for disabled guests'), 'accessible');
   assert.equal(nightsBetween('2026-07-30', '2026-08-03'), 4);
 });

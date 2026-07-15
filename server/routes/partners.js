@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db/database');
 const { requireAuth } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { partnerClickSchema, partnerPostbackSchema } = require('../config/apiSchemas');
 
 const router = express.Router();
 const frontendUrl = () => process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -23,7 +25,7 @@ function buildDeepLink(destination, clickId) {
   const url = new URL(destination); url.searchParams.set('sub_id', clickId); url.searchParams.set('return_url', returnUrl); return url.toString();
 }
 
-router.post('/clicks', requireAuth, async (req, res) => {
+router.post('/clicks', requireAuth, validate(partnerClickSchema), async (req, res) => {
   try {
     const destination = new URL(String(req.body.destination_url || ''));
     if (!['http:', 'https:'].includes(destination.protocol)) throw new Error('Unsupported destination URL');
@@ -53,14 +55,13 @@ router.get('/clicks/:clickId', requireAuth, async (req, res) => {
   return res.json({ click });
 });
 
-router.post('/postback/:provider', async (req, res) => {
+router.post('/postback/:provider', validate(partnerPostbackSchema), async (req, res) => {
   const secret = process.env.PARTNER_POSTBACK_SECRET;
   if (!secret) return res.status(503).json({ error: 'Partner postback is not configured' });
   const expected = crypto.createHmac('sha256', secret).update(stableJson(req.body)).digest('hex');
   const valid = safeEqual(req.get('x-fairworth-signature'), expected);
   if (!valid) return res.status(401).json({ error: 'Invalid postback signature' });
   const { event_id: eventId, click_id: clickId, event_type: eventType, booking_reference: bookingReference, amount, currency } = req.body;
-  if (!eventId || !clickId || eventType !== 'booking_completed') return res.status(400).json({ error: 'event_id, click_id and booking_completed event_type are required' });
   const duplicate = await db.prepare('SELECT id FROM partner_postbacks WHERE provider = ? AND event_id = ?').get(req.params.provider, eventId);
   if (duplicate) return res.json({ accepted: true, duplicate: true });
   const click = await db.prepare('SELECT * FROM provider_clicks WHERE click_id = ?').get(clickId);

@@ -17,11 +17,13 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
   useEffect(() => {
     setSelectedFareId(flight.fare_options?.[0]?.id || null);
   }, [flight.id, flight.fare_options]);
-  const stopsLabel = flight.stops === 0
+  const stopsLabel = flight.stops === null || flight.stops === undefined
+    ? (lang === 'ru' ? 'Пересадки неизвестны' : 'Stops unknown')
+    : flight.stops === 0
     ? t('flight_direct')
     : `${flight.stops} ${t('flight_stops')}`;
   const meta = flight.source === 'travelpayouts'
-    ? 'Travelpayouts fare'
+    ? (lang === 'ru' ? 'Тариф Travelpayouts' : 'Travelpayouts fare')
     : `${flight.seats_left} ${t('flight_seats_left')}`;
   const hasFareRange = fareOptions.length > 1 && flight.price_min !== flight.price_max;
   const priceLabel = hasFareRange
@@ -53,6 +55,11 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
       passengers: passengerCount,
       totalPrice: Number(selectedFare.price || flight.price || 0) * passengerCount,
       currency: 'USD',
+      fairworthScore: flight.fairworth_score,
+      adjustedScore: flight.adjusted_score,
+      scoreReliability: flight.score_reliability,
+      fareConfidence: flight.fare_confidence,
+      scoreVersion: flight.score_version,
     });
   };
 
@@ -89,15 +96,47 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
               <span className={styles.city}>{flight.destination_city}</span>
             </div>
           </div>
-          <ScoreRing score={flight.fairworth_score || 0} size={54} />
+          <div className={styles.scoreBlock}>
+            <ScoreRing score={flight.fairworth_score || 0} size={54} />
+            <span className={styles.reliability}>
+              {lang === 'ru' ? 'Уверенность' : 'Confidence'}: {flight.score_reliability ?? '—'}%
+            </span>
+            <span className={styles.adjustedScore}>
+              {lang === 'ru' ? 'Для рейтинга' : 'Ranking'}: {flight.adjusted_score ?? flight.fairworth_score}/100
+            </span>
+          </div>
         </div>
 
         <div className={styles.tags}>
           <span className={`${styles.tag} ${styles.tagGreen}`}><Route size={12} /> {stopsLabel}</span>
-          <span className={`${styles.tag} ${styles.tagBlue}`}><Armchair size={12} /> {t(`flight_class_${flight.cabin_class}`)}</span>
-          <span className={styles.tag}><Briefcase size={12} /> {flight.baggage}</span>
-          <span className={styles.tag}>{flight.aircraft}</span>
+          <span className={`${styles.tag} ${styles.tagBlue}`}><Armchair size={12} /> {flight.cabin_class
+            ? t(`flight_class_${flight.cabin_class}`)
+            : (lang === 'ru' ? 'Класс не подтверждён' : 'Cabin not confirmed')}</span>
+          <span className={styles.tag}><Briefcase size={12} /> {flight.baggage || (lang === 'ru' ? 'Багаж неизвестен' : 'Baggage unknown')}</span>
+          {flight.aircraft && <span className={styles.tag}>{flight.aircraft}</span>}
         </div>
+        {flight.score_breakdown && (
+          <details className={styles.scoreDetails}>
+            <summary>{lang === 'ru' ? 'Почему такой Score' : 'Why this Score'}</summary>
+            <div className={styles.scoreGrid}>
+              <span>{lang === 'ru' ? 'Ценность' : 'Value'} <strong>{flight.score_breakdown.value ?? '—'}</strong></span>
+              <span>{lang === 'ru' ? 'Маршрут' : 'Itinerary'} <strong>{flight.score_breakdown.itinerary ?? '—'}</strong></span>
+              <span>{lang === 'ru' ? 'Предпочтения' : 'Preferences'} <strong>{flight.score_breakdown.preferences ?? '—'}</strong></span>
+              <span>{lang === 'ru' ? 'Расписание' : 'Schedule'} <strong>{flight.score_breakdown.schedule ?? '—'}</strong></span>
+              <span>{lang === 'ru' ? 'Надёжность тарифа' : 'Fare confidence'} <strong>{flight.fare_confidence ?? '—'}%</strong></span>
+              {flight.score_context?.group_seating_score !== null && flight.score_context?.group_seating_score !== undefined && (
+                <span>{lang === 'ru' ? 'Размещение группы' : 'Group seating'} <strong>{flight.score_context.group_seating_score}</strong></span>
+              )}
+            </div>
+            {flight.unknown_score_data?.length > 0 && (
+              <p className={styles.unknownData}>
+                {lang === 'ru' ? 'Провайдер не передал: ' : 'Provider data unavailable: '}
+                {flight.unknown_score_data.join(', ')}. {lang === 'ru' ? 'Это не снижает базовый Score.' : 'This does not lower the base Score.'}
+              </p>
+            )}
+            <div className={styles.scoreMeta}>v{flight.score_version || '—'}</div>
+          </details>
+        )}
 
         <div className={styles.bottomRow}>
           <div className={styles.meta}>

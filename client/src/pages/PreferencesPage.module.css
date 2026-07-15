@@ -1,5 +1,11 @@
 .page { padding-top: 58px; min-height: 100vh; background: var(--bg); }
 
+.modalBackdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(11, 22, 42, .62); }
+.modal { width: min(100%, 480px); padding: 28px; border-radius: var(--radius-lg); background: #fff; box-shadow: 0 24px 80px rgba(0,0,0,.3); }
+.modal h2 { margin: 0 0 10px; color: var(--navy); }
+.modal p { margin: 0 0 20px; color: var(--text-secondary); line-height: 1.6; }
+.modalActions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
 .layout {
   max-width: 1200px;
   margin: 0 auto;

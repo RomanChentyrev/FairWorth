@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Star, Plus, Check } from 'lucide-react';
+import { MapPin, Star, Plus, Check, EyeOff, X } from 'lucide-react';
 import ScoreRing from './ScoreRing';
+import ScoreReliability from './ScoreReliability';
+import PriceConfidence from './PriceConfidence';
 import { useLang } from '../i18n/LanguageContext';
 import { useTripBasket } from '../context/TripBasketContext';
 import styles from './HotelCard.module.css';
@@ -21,10 +23,12 @@ function getGradient(id) {
   return HOTEL_GRADIENTS[Math.abs(hash) % HOTEL_GRADIENTS.length];
 }
 
-export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCompare, checkIn, checkOut }) {
+export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCompare, onHide, checkIn, checkOut, guests = 2, tripPurpose = 'leisure' }) {
   const navigate = useNavigate();
   const { t, lang } = useLang();
   const { basket, selectHotel } = useTripBasket();
+  const [hideMenuOpen, setHideMenuOpen] = useState(false);
+  const [hideBusy, setHideBusy] = useState(false);
 
   const amenities = JSON.parse(hotel.amenities || '[]');
   const hasBreakfast = amenities.includes('breakfast');
@@ -54,15 +58,36 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
     });
     interactionsApi.track('trip_add', {
       hotel_id: hotel.id,
-      context: { check_in: checkIn, check_out: checkOut, price_per_night: Number(hotel.min_price || 0) },
+      context: { check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose, destination: hotel.city, price_per_night: Number(hotel.min_price || 0) },
     }).catch(() => {});
+  };
+  const hideReasons = [
+    ['too_expensive', lang === 'ru' ? 'Слишком дорого' : 'Too expensive'],
+    ['bad_location', lang === 'ru' ? 'Не подходит район' : 'Bad location'],
+    ['photos', lang === 'ru' ? 'Не понравились фотографии' : 'Did not like the photos'],
+    ['missing_pool', lang === 'ru' ? 'Нет бассейна' : 'No pool'],
+    ['low_stars', lang === 'ru' ? 'Низкая звёздность' : 'Too few stars'],
+    ['other', lang === 'ru' ? 'Другая причина' : 'Other reason'],
+  ];
+  const handleHide = async (feedbackReason) => {
+    setHideBusy(true);
+    try {
+      await interactionsApi.track('hide', {
+        hotel_id: hotel.id,
+        context: { feedback_reason: feedbackReason, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose, destination: hotel.city, location: hotel.location, price_per_night: Number(hotel.min_price || 0), stars: hotel.stars },
+      });
+      onHide?.(hotel.id);
+    } finally {
+      setHideBusy(false);
+      setHideMenuOpen(false);
+    }
   };
 
   return (
     <div
       className={`${styles.card} ${isRecommended ? styles.recommended : ''}`}
       data-testid={`hotel-card-${hotel.id}`}
-      onClick={() => navigate(`/hotel/${hotel.id}?check_in=${checkIn}&check_out=${checkOut}`)}
+      onClick={() => navigate(`/hotel/${hotel.id}?check_in=${checkIn}&check_out=${checkOut}&guests=${guests}&trip_purpose=${tripPurpose}`)}
     >
       <div className={styles.imgArea} style={{ background: hotel.image_url ? `${getGradient(hotel.id)} center/cover, url(${hotel.image_url}) center/cover` : getGradient(hotel.id), backgroundImage: hotel.image_url ? `url(${hotel.image_url})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}>
         {isRecommended && <div className={styles.recBadge}>{t('card_top')}</div>}
@@ -80,7 +105,16 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
               <MapPin size={12} />{hotel.location} · {hotel.city}
             </div>
           </div>
-          <ScoreRing score={hotel.fairworth_score || 0} size={54} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+            <ScoreRing score={hotel.fairworth_score || 0} size={54} />
+            <ScoreReliability
+              value={hotel.score_reliability}
+              level={hotel.score_reliability_level}
+              adjustedScore={hotel.adjusted_score}
+              lang={lang}
+            />
+            <PriceConfidence value={hotel.price_confidence} level={hotel.price_confidence_level} lang={lang} />
+          </div>
         </div>
         <div className={styles.tags}>
           {hotel.rating && (
@@ -105,6 +139,9 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
             {isLivePrice && <span className={styles.liveBadge}>{hotel.price_source === 'liteapi' ? 'LiteAPI live' : 'Xotelo live'}</span>}
           </div>
           <div className={styles.actions} onClick={e => e.stopPropagation()}>
+            <button className={styles.hideBtn} type="button" onClick={() => setHideMenuOpen(true)} title={lang === 'ru' ? 'Скрыть отель' : 'Hide hotel'} aria-label={lang === 'ru' ? 'Скрыть отель' : 'Hide hotel'} data-testid={`hotel-hide-${hotel.id}`}>
+              <EyeOff size={15} />
+            </button>
             <button
               className={`${styles.compareBtn} ${inCompare ? styles.compareBtnActive : ''}`}
               data-testid={`hotel-compare-${hotel.id}`}
@@ -116,7 +153,7 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
             <button
               className={styles.viewBtn}
               data-testid={`hotel-details-${hotel.id}`}
-              onClick={() => navigate(`/hotel/${hotel.id}?check_in=${checkIn}&check_out=${checkOut}`)}
+              onClick={() => navigate(`/hotel/${hotel.id}?check_in=${checkIn}&check_out=${checkOut}&guests=${guests}&trip_purpose=${tripPurpose}`)}
             >
               {t('card_details')}
             </button>
@@ -130,6 +167,14 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
           </div>
         </div>
       </div>
+      {hideMenuOpen && (
+        <div className={styles.hideOverlay} onClick={e => { e.stopPropagation(); setHideMenuOpen(false); }}>
+          <div className={styles.hideMenu} role="dialog" aria-modal="true" aria-label={lang === 'ru' ? 'Причина скрытия' : 'Reason for hiding'} onClick={e => e.stopPropagation()}>
+            <div className={styles.hideMenuHeader}><strong>{lang === 'ru' ? 'Почему скрыть этот отель?' : 'Why hide this hotel?'}</strong><button type="button" onClick={() => setHideMenuOpen(false)} aria-label="Close"><X size={17} /></button></div>
+            <div className={styles.hideReasons}>{hideReasons.map(([value, label]) => <button type="button" key={value} disabled={hideBusy} onClick={() => handleHide(value)}>{label}</button>)}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

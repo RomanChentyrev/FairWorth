@@ -6,6 +6,8 @@ import FlightCard from '../components/FlightCard';
 import { useLang } from '../i18n/LanguageContext';
 import styles from './ResultsPage.module.css';
 import { defaultTravelDates, formatLocalDate, validFutureDate, validFutureDates } from '../utils/dates';
+import useCapabilities from '../hooks/useCapabilities';
+import ProviderUnavailable from '../components/ProviderUnavailable';
 
 function FilterSection({ title, children, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -119,16 +121,6 @@ function addMinutes(dateValue, minutes) {
   return new Date(date.getTime() + Number(minutes) * 60 * 1000).toISOString();
 }
 
-function scoreFlight(ticket, maxPrice) {
-  const price = Number(ticket.price || 0);
-  const transfers = Number(ticket.transfers ?? ticket.stops ?? 1);
-  const duration = Number(ticket.duration_to || ticket.duration || 0);
-  const priceScore = maxPrice ? Math.max(45, 100 - Math.round((price / maxPrice) * 35)) : 80;
-  const stopsScore = transfers === 0 ? 100 : Math.max(55, 92 - transfers * 14);
-  const durationScore = duration ? Math.max(50, 100 - Math.round(Math.max(duration - 360, 0) / 18)) : 75;
-  return Math.round(priceScore * 0.42 + stopsScore * 0.34 + durationScore * 0.24);
-}
-
 async function resolveIataCode(value) {
   const clean = normalizePlaceInput(value);
   const upper = clean.toUpperCase();
@@ -150,7 +142,9 @@ function normalizeTravelpayoutsTicket(ticket, context) {
   const departureAt = ticket.departure_at;
   const duration = Number(ticket.duration_to || ticket.duration || 0);
   const arrivalAt = ticket.arrival_local_at || addMinutes(departureAt, duration);
-  const stops = Number(ticket.transfers ?? ticket.stops ?? (ticket.direct ? 0 : 1));
+  const rawStops = ticket.transfers ?? ticket.stops ?? (ticket.direct === true ? 0 : null);
+  const stops = rawStops === null ? null : Number(rawStops);
+  const confirmedCabin = ticket.cabin_class || ticket.cabin || ticket.trip_class_name || null;
 
   return {
     id: `tp-${originCode}-${destinationCode}-${airlineCode || 'air'}-${ticket.flight_number || 'flight'}-${departureAt || Math.random()}-${ticket.price || ''}`,
@@ -170,12 +164,25 @@ function normalizeTravelpayoutsTicket(ticket, context) {
     duration_minutes: duration,
     duration_label: durationLabel(duration),
     stops,
-    cabin_class: context.cabinClass,
+    cabin_class: confirmedCabin ? String(confirmedCabin).toLowerCase() : null,
+    requested_cabin_class: context.cabinClass,
     price: Number(ticket.price || 0),
     seats_left: null,
-    aircraft: ticket.gate || (ticket.expires_at ? `Expires ${ticket.expires_at.slice(0, 10)}` : 'Travelpayouts'),
-    baggage: ticket.link ? 'Aviasales fare' : 'Fare data',
-    fairworth_score: 0,
+    aircraft: ticket.aircraft || ticket.plane || null,
+    baggage: ticket.baggage_included === true ? 'Baggage included' : ticket.baggage_included === false ? 'No checked baggage' : null,
+    fairworth_score: Number(ticket.fairworth_score || 0),
+    adjusted_score: Number(ticket.adjusted_score || ticket.fairworth_score || 0),
+    score_reliability: ticket.score_reliability,
+    score_reliability_level: ticket.score_reliability_level,
+    fare_confidence: ticket.fare_confidence,
+    fare_confidence_level: ticket.fare_confidence_level,
+    score_version: ticket.score_version,
+    score_breakdown: ticket.score_breakdown,
+    score_weights: ticket.score_weights,
+    score_context: ticket.score_context,
+    unknown_score_data: ticket.unknown_score_data || [],
+    top_pick_eligible: Boolean(ticket.top_pick_eligible),
+    price_details: ticket.price_details,
     source: 'travelpayouts',
     raw: ticket,
   };
@@ -183,7 +190,9 @@ function normalizeTravelpayoutsTicket(ticket, context) {
 
 function sortFlights(results, sortValue) {
   return [...results].sort((a, b) => {
-    if (sortValue === 'score') return (b.fairworth_score || 0) - (a.fairworth_score || 0);
+    if (sortValue === 'score') return Number(b.top_pick_eligible) - Number(a.top_pick_eligible)
+      || (b.adjusted_score || 0) - (a.adjusted_score || 0)
+      || (b.fairworth_score || 0) - (a.fairworth_score || 0);
     if (sortValue === 'price_asc') return Number(a.price || 0) - Number(b.price || 0);
     if (sortValue === 'price_desc') return Number(b.price || 0) - Number(a.price || 0);
     if (sortValue === 'duration') return Number(a.duration_minutes || 0) - Number(b.duration_minutes || 0);
@@ -292,6 +301,7 @@ export default function FlightsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const savedDates = savedTravelDates();
   const savedTrip = savedTravelTrip();
+  const { capabilities, loading: capabilitiesLoading } = useCapabilities();
 
   const [from, setFrom] = useState(searchParams.get('from') || savedTrip.from || 'Moscow');
   const [to, setTo] = useState(searchParams.get('to') || savedTrip.to || 'Singapore');
@@ -375,12 +385,19 @@ export default function FlightsPage() {
           depart_date: legDate,
           currency: 'USD',
         };
-        const res = maxStops === '0'
-          ? await flightsApi.mostSuitable(params)
-          : await flightsApi.top({ ...params, limit: 30, include_alternatives: true });
+        const res = await flightsApi.top({
+          ...params,
+          trip_days: departureDate && returnDate
+            ? Math.max(0, Math.round((new Date(`${returnDate}T00:00:00Z`) - new Date(`${departureDate}T00:00:00Z`)) / 86400000))
+            : undefined,
+          passengers,
+          cabin_class: cabinClass,
+          max_stops: maxStops === '' ? undefined : maxStops,
+          limit: 30,
+          include_alternatives: true,
+        });
 
         const rawTickets = res.data?.data || [];
-        const maxLivePrice = Math.max(...rawTickets.map(ticket => Number(ticket.price || 0)), 1);
         const normalizedTickets = rawTickets.map(ticket => {
           const normalized = normalizeTravelpayoutsTicket(ticket, {
             originCode: legOriginCode,
@@ -392,7 +409,6 @@ export default function FlightsPage() {
           });
           return {
             ...normalized,
-            fairworth_score: scoreFlight(ticket, maxLivePrice),
             is_alternative_date: Boolean(ticket.is_alternative_date) || normalized.departure_date !== legDate,
           };
         });
@@ -403,7 +419,7 @@ export default function FlightsPage() {
             : normalizedTickets.filter(flight => !flight.is_alternative_date)
         );
 
-        const alternatives = results.length < 5 && maxStops !== '0'
+        const alternatives = results.length < 5
           ? buildFlightList(
             normalizedTickets.filter(flight => flight.departure_date !== legDate || flight.is_alternative_date),
             5 - results.length
@@ -483,6 +499,8 @@ export default function FlightsPage() {
     });
     setSearchOpen(false);
   };
+
+  if (!capabilitiesLoading && capabilities?.flights?.status !== 'ready') return <ProviderUnavailable capability="flights" />;
 
   return (
     <div className={styles.page}>
@@ -627,7 +645,7 @@ export default function FlightsPage() {
                 </div>
                 <div className={styles.cards}>
                   {flights.map((flight, i) => (
-                    <FlightCard key={flight.id} flight={flight} isRecommended={i === 0 && sort === 'score'} compact leg="outbound" passengers={passengers} />
+                    <FlightCard key={flight.id} flight={flight} isRecommended={i === 0 && sort === 'score' && flight.top_pick_eligible} compact leg="outbound" passengers={passengers} />
                   ))}
                   {flights.length === 0 && alternativeFlights.length === 0 && (
                     <div className={styles.noResults}>
@@ -664,7 +682,7 @@ export default function FlightsPage() {
                   </div>
                   <div className={styles.cards}>
                     {returnFlights.map((flight, i) => (
-                      <FlightCard key={`return-${flight.id}`} flight={flight} isRecommended={i === 0 && sort === 'score'} compact leg="return" passengers={passengers} />
+                      <FlightCard key={`return-${flight.id}`} flight={flight} isRecommended={i === 0 && sort === 'score' && flight.top_pick_eligible} compact leg="return" passengers={passengers} />
                     ))}
                     {returnFlights.length === 0 && alternativeReturnFlights.length === 0 && (
                       <div className={styles.noResults}>

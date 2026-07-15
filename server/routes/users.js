@@ -4,6 +4,9 @@ const { db } = require('../db/database');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const { sendEmail } = require('../services/email');
+const { accountEmail } = require('../services/emailTemplates');
+const { validate } = require('../middleware/validate');
+const { profileSchema, preferencesSchema } = require('../config/apiSchemas');
 
 // GET /api/users/me
 router.get('/me', async (req, res) => {
@@ -19,7 +22,7 @@ router.get('/me', async (req, res) => {
 });
 
 // PUT /api/users/profile
-router.put('/profile', async (req, res) => {
+router.put('/profile', validate(profileSchema), async (req, res) => {
   try {
     const userId = req.user.id;
     const allowed = ['name', 'phone', 'city', 'country', 'bio', 'website'];
@@ -32,8 +35,6 @@ router.put('/profile', async (req, res) => {
         values.push(value || null);
       }
     });
-    if (req.body.name !== undefined && String(req.body.name).trim().length < 2) return res.status(400).json({ error: 'Name must contain at least 2 characters' });
-    if (!fields.length) return res.status(400).json({ error: 'No profile fields supplied' });
     fields.push('updated_at = CURRENT_TIMESTAMP');
     await db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values, userId);
     const user = await db.prepare('SELECT id, email, name, birth_date, phone, city, country, bio, website, avatar, onboarding_completed FROM users WHERE id = ?').get(userId);
@@ -52,8 +53,8 @@ router.put('/password', async (req, res) => {
     const hash = await bcrypt.hash(newPassword, 10);
     await db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, req.user.id);
     await db.prepare('UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND id != ? AND revoked_at IS NULL').run(req.user.id, req.user.sessionId);
-    const recipient = await db.prepare('SELECT email, name FROM users WHERE id = ?').get(req.user.id);
-    await sendEmail({ to: recipient.email, subject: 'Your Fairworth password was changed', text: `Hello ${recipient.name}, your Fairworth password was changed. Contact support immediately if this was not you.` }).catch(() => null);
+    const recipient = await db.prepare('SELECT email, name, locale FROM users WHERE id = ?').get(req.user.id);
+    await sendEmail({ to: recipient.email, ...accountEmail({ name: recipient.name, event: 'password_changed', locale: recipient.locale }) }).catch(() => null);
     res.json({ changed: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -85,12 +86,12 @@ router.delete('/sessions/:id', async (req, res) => {
 router.delete('/me', async (req, res) => {
   try {
     const { password } = req.body;
-    const user = await db.prepare('SELECT password_hash, email, name FROM users WHERE id = ?').get(req.user.id);
+    const user = await db.prepare('SELECT password_hash, email, name, locale FROM users WHERE id = ?').get(req.user.id);
     if (!password || !await bcrypt.compare(password, user?.password_hash || '')) return res.status(400).json({ error: 'Password is incorrect' });
     await db.transaction(async () => {
       await db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
     });
-    await sendEmail({ to: user.email, subject: 'Your Fairworth account was deleted', text: `Hello ${user.name}, your Fairworth account and associated personal data were deleted.` }).catch(() => null);
+    await sendEmail({ to: user.email, ...accountEmail({ name: user.name, event: 'account_deleted', locale: user.locale }) }).catch(() => null);
     res.status(204).end();
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -99,9 +100,29 @@ router.delete('/me', async (req, res) => {
 
 router.get('/export', async (req, res) => {
   const userId = req.user.id;
-  const tables = ['user_preferences', 'user_preference_weights', 'user_interactions', 'searches', 'compare_sessions', 'bookmarks', 'user_sessions', 'provider_clicks'];
-  const data = { exported_at: new Date().toISOString(), user: await db.prepare('SELECT id, email, name, phone, city, country, bio, website, onboarding_completed, behavioural_tracking_consent, created_at FROM users WHERE id = ?').get(userId) };
-  for (const table of tables) data[table] = await db.prepare(`SELECT * FROM ${table} WHERE user_id = ?`).all(userId);
+  const exportQueries = {
+    user_preferences: `SELECT hotel_stars, room_type, room_view, hotel_amenities, required_hotel_amenities, flight_type, seat_class, seat_position, preferred_airlines, max_stops, travel_style, budget_level, budget_per_night_max, noise_sensitivity, favorite_destinations, avoid_destinations, search_history, booking_history, ai_profile, alert_price_drop, alert_price_rise, alert_booking_reminder, alert_weekly_insights, alert_destination_deals, created_at, updated_at FROM user_preferences WHERE user_id = ?`,
+    user_preference_weights: `SELECT score_weights, declared_weights, learned_weights, learning_confidence, interaction_count, updated_at FROM user_preference_weights WHERE user_id = ?`,
+    contextual_preference_weights: `SELECT context_type, context_value, learned_weights, evidence_strength, interaction_count, updated_at FROM user_context_preference_weights WHERE user_id = ? ORDER BY context_type, context_value`,
+    hotel_feedback: `SELECT hotel_id, context_key, reason, metadata, created_at, updated_at FROM user_hotel_feedback WHERE user_id = ? ORDER BY created_at`,
+    user_interactions: `SELECT hotel_id, event_type, signal, context, session_id, created_at FROM user_interactions WHERE user_id = ? ORDER BY created_at`,
+    searches: `SELECT destination, check_in, check_out, guests, filters, result_count, search_kind, created_at FROM searches WHERE user_id = ? ORDER BY created_at`,
+    compare_sessions: `SELECT hotel_ids, ai_verdict, created_at FROM compare_sessions WHERE user_id = ? ORDER BY created_at`,
+    bookmarks: `SELECT hotel_id, created_at FROM bookmarks WHERE user_id = ? ORDER BY created_at`,
+    user_sessions: `SELECT id, user_agent, ip_address, created_at, last_seen_at, revoked_at FROM user_sessions WHERE user_id = ? ORDER BY created_at`,
+    provider_clicks: `SELECT click_id, hotel_id, provider, destination_url, status, clicked_at, completed_at, booking_reference, amount, currency, created_at FROM provider_clicks WHERE user_id = ? ORDER BY created_at`,
+    price_watches: `SELECT hotel_id, check_in, check_out, guests, currency, baseline_price, last_price, last_notified_price, lowest_price, target_price, notify_on_drop, notify_on_rise, active, last_checked_at, next_check_at, created_at, updated_at FROM price_watches WHERE user_id = ? ORDER BY created_at`,
+    trips: `SELECT title, destination, start_date, end_date, status, reminder_enabled, created_at, updated_at FROM trips WHERE user_id = ? ORDER BY created_at`,
+    notification_jobs: `SELECT channel, type, status, scheduled_at, sent_at, failed_at, created_at FROM notification_jobs WHERE user_id = ? ORDER BY created_at`,
+    travel_visits: `SELECT country_code, country_name, city_name, latitude, longitude, visited_at, created_at FROM user_travel_visits WHERE user_id = ? ORDER BY created_at`,
+    demo_bookings: `SELECT reference, status, currency, hotel_total, flights_total, grand_total, passenger_count, contact_email, itinerary, created_at FROM demo_bookings WHERE user_id = ? ORDER BY created_at`,
+  };
+  const data = {
+    export_version: 1,
+    exported_at: new Date().toISOString(),
+    user: await db.prepare('SELECT id, email, name, phone, city, country, bio, website, onboarding_completed, behavioural_tracking_consent, terms_accepted_at, privacy_accepted_at, terms_version, privacy_version, created_at FROM users WHERE id = ?').get(userId),
+  };
+  for (const [section, sql] of Object.entries(exportQueries)) data[section] = await db.prepare(sql).all(userId);
   res.setHeader('Content-Disposition', 'attachment; filename="fairworth-data.json"');
   res.json(data);
 });
@@ -113,11 +134,11 @@ router.put('/consent', async (req, res) => {
 });
 
 // PUT /api/users/preferences
-router.put('/preferences', async (req, res) => {
+router.put('/preferences', validate(preferencesSchema), async (req, res) => {
   try {
     const userId = req.user.id;
     const {
-      hotel_stars, room_type, room_view, hotel_amenities,
+      hotel_stars, room_type, room_view, hotel_amenities, required_hotel_amenities,
       flight_type, seat_class, seat_position, preferred_airlines, max_stops,
       travel_style, budget_level, budget_per_night_max, noise_sensitivity,
       favorite_destinations, avoid_destinations,
@@ -129,15 +150,15 @@ router.put('/preferences', async (req, res) => {
 
     if (!existing) {
       await db.prepare(`
-        INSERT INTO user_preferences (id, user_id, hotel_stars, room_type, room_view, hotel_amenities,
+        INSERT INTO user_preferences (id, user_id, hotel_stars, room_type, room_view, hotel_amenities, required_hotel_amenities,
           flight_type, seat_class, seat_position, preferred_airlines, max_stops,
           travel_style, budget_level, budget_per_night_max, noise_sensitivity,
           favorite_destinations, avoid_destinations,
           alert_price_drop, alert_price_rise, alert_booking_reminder, alert_weekly_insights, alert_destination_deals)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         uuidv4(), userId,
-        JSON.stringify(hotel_stars), JSON.stringify(room_type), JSON.stringify(room_view), JSON.stringify(hotel_amenities),
+        JSON.stringify(hotel_stars), JSON.stringify(room_type), JSON.stringify(room_view), JSON.stringify(hotel_amenities), JSON.stringify(required_hotel_amenities || []),
         flight_type, seat_class, seat_position, JSON.stringify(preferred_airlines), max_stops,
         JSON.stringify(travel_style), budget_level, budget_per_night_max, noise_sensitivity,
         JSON.stringify(favorite_destinations), JSON.stringify(avoid_destinations || []),
@@ -152,6 +173,7 @@ router.put('/preferences', async (req, res) => {
         room_type: v => JSON.stringify(v),
         room_view: v => JSON.stringify(v),
         hotel_amenities: v => JSON.stringify(v),
+        required_hotel_amenities: v => JSON.stringify(v),
         preferred_airlines: v => JSON.stringify(v),
         travel_style: v => JSON.stringify(v),
         favorite_destinations: v => JSON.stringify(v),
@@ -244,7 +266,8 @@ router.post('/onboarding/complete', async (req, res) => {
     if (!prefs) return res.status(400).json({ error: 'Сначала сохраните предпочтения' });
     const stars = (() => { try { return JSON.parse(prefs.hotel_stars || '[]'); } catch { return []; } })();
     const amenities = (() => { try { return JSON.parse(prefs.hotel_amenities || '[]'); } catch { return []; } })();
-    if (!stars.length || !amenities.length || !prefs.budget_per_night_max) {
+    const requiredAmenities = (() => { try { return JSON.parse(prefs.required_hotel_amenities || '[]'); } catch { return []; } })();
+    if (!stars.length || (!amenities.length && !requiredAmenities.length) || !prefs.budget_per_night_max) {
       return res.status(400).json({ error: 'Выберите звёздность, удобства и бюджет' });
     }
     await db.prepare('UPDATE users SET onboarding_completed = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(userId);

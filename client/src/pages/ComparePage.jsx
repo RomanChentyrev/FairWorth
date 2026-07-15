@@ -29,6 +29,8 @@ export default function ComparePage({ compareList, setCompareList }) {
   const dates = validFutureDates(storedDates);
   const checkIn = dates.check_in;
   const checkOut = dates.check_out;
+  let storedTrip = {};
+  try { storedTrip = JSON.parse(window.sessionStorage.getItem('fairworth_trip') || '{}'); } catch {}
 
   useEffect(() => {
     if (compareList.length >= 2) {
@@ -41,7 +43,7 @@ export default function ComparePage({ compareList, setCompareList }) {
     setError(null);
     try {
       const ids = compareList.map(h => h.id);
-      const res = await compareApi.compare(ids, checkIn, checkOut, lang);
+      const res = await compareApi.compare(ids, checkIn, checkOut, lang, storedTrip.guests || 2, storedTrip.trip_purpose || 'leisure');
       setResult(res.data);
     } catch (e) {
       setError(isRu ? 'Ошибка сравнения. Проверьте что сервер запущен.' : 'Comparison failed. Make sure the server is running.');

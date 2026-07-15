@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { usersApi } from '../api';
+import { usersApi, notificationsApi } from '../api';
 import { Save, Check, Sparkles, User, Settings, Bell, Shield, Camera, MapPin, Globe, Edit2 } from 'lucide-react';
 import { useLang } from '../i18n/LanguageContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styles from './PreferencesPage.module.css';
  
-function ToggleSwitch({ on, onChange }) {
+function ToggleSwitch({ on, onChange, label }) {
   return (
-    <div className={`${styles.toggle} ${on ? styles.toggleOn : ''}`} onClick={() => onChange(!on)}>
+    <button type="button" role="switch" aria-checked={on} aria-label={label || 'Toggle setting'} className={`${styles.toggle} ${on ? styles.toggleOn : ''}`} onClick={() => onChange(!on)}>
       <div className={styles.toggleKnob} />
-    </div>
+    </button>
   );
 }
  
@@ -18,7 +18,7 @@ function MultiSelect({ options, value = [], onChange }) {
   return (
     <div className={styles.chips}>
       {options.map(opt => (
-        <button key={opt.value} className={`${styles.chip} ${value.includes(opt.value) ? styles.chipOn : ''}`} onClick={() => toggle(opt.value)}>
+        <button type="button" aria-pressed={value.includes(opt.value)} key={opt.value} className={`${styles.chip} ${value.includes(opt.value) ? styles.chipOn : ''}`} onClick={() => toggle(opt.value)}>
           {opt.icon && <span>{opt.icon}</span>}{opt.label}
         </button>
       ))}
@@ -30,7 +30,7 @@ function SingleSelect({ options, value, onChange }) {
   return (
     <div className={styles.chips}>
       {options.map(opt => (
-        <button key={opt.value} className={`${styles.chip} ${value === opt.value ? styles.chipOn : ''}`} onClick={() => onChange(opt.value)}>
+        <button type="button" aria-pressed={value === opt.value} key={opt.value} className={`${styles.chip} ${value === opt.value ? styles.chipOn : ''}`} onClick={() => onChange(opt.value)}>
           {opt.label}
         </button>
       ))}
@@ -40,14 +40,14 @@ function SingleSelect({ options, value, onChange }) {
  
 const DEFAULT_PREFS = {
   hotel_stars: ['5'], room_type: ['deluxe'], room_view: ['sea', 'city'],
-  hotel_amenities: ['pool', 'breakfast', 'spa'], flight_type: 'direct',
+  hotel_amenities: ['pool', 'spa', 'restaurant'], required_hotel_amenities: [], flight_type: 'direct',
   seat_class: 'business', seat_position: 'window',
   preferred_airlines: ['Singapore Airlines', 'Emirates'], max_stops: 0,
   travel_style: ['beach', 'gastronomy', 'spa'], budget_level: 'luxury',
   budget_per_night_max: 1500, noise_sensitivity: 80,
   favorite_destinations: ['Asia', 'Maldives', 'UAE'], avoid_destinations: [],
   alert_price_drop: true, alert_price_rise: true,
-  alert_booking_reminder: true, alert_weekly_insights: true, alert_destination_deals: false,
+  alert_booking_reminder: true, alert_weekly_insights: true,
 };
  
 function parsePrefs(raw) {
@@ -56,6 +56,7 @@ function parsePrefs(raw) {
   return {
     hotel_stars: parseArr(raw.hotel_stars), room_type: parseArr(raw.room_type),
     room_view: parseArr(raw.room_view), hotel_amenities: parseArr(raw.hotel_amenities),
+    required_hotel_amenities: parseArr(raw.required_hotel_amenities),
     flight_type: raw.flight_type || 'direct', seat_class: raw.seat_class || 'business',
     seat_position: raw.seat_position || 'window', preferred_airlines: parseArr(raw.preferred_airlines),
     max_stops: raw.max_stops ?? 0, travel_style: parseArr(raw.travel_style),
@@ -64,7 +65,6 @@ function parsePrefs(raw) {
     avoid_destinations: parseArr(raw.avoid_destinations),
     alert_price_drop: !!raw.alert_price_drop, alert_price_rise: !!raw.alert_price_rise,
     alert_booking_reminder: !!raw.alert_booking_reminder, alert_weekly_insights: !!raw.alert_weekly_insights,
-    alert_destination_deals: !!raw.alert_destination_deals,
   };
 }
  
@@ -88,6 +88,13 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
   const [sessions, setSessions] = useState([]);
   const [profileError, setProfileError] = useState('');
   const [stats, setStats] = useState({ searches: 0, saved: 0, comparisons: 0, booking_intents: 0, member_since: null });
+  const [watches, setWatches] = useState([]);
+  const [trips, setTrips] = useState([]);
+  const [notificationSettings, setNotificationSettings] = useState({ locale: lang, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', digest_weekday: 1, digest_hour: 9 });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
  
   useEffect(() => {
     const fetch = async () => {
@@ -104,6 +111,9 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
         setSessions(sessionRes.data.sessions || []);
         const statsRes = await usersApi.getStats();
         setStats(statsRes.data);
+        const [watchesRes, tripsRes, notificationRes] = await Promise.all([notificationsApi.watches(), notificationsApi.trips(), notificationsApi.settings()]);
+        setWatches(watchesRes.data.watches || []); setTrips(tripsRes.data.trips || []);
+        setNotificationSettings(notificationRes.data.settings || notificationSettings);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     };
@@ -111,6 +121,10 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
   }, []);
  
   const set = (k, v) => setPrefs(p => ({ ...p, [k]: v }));
+  const setAmenities = (key, values) => setPrefs(current => {
+    const otherKey = key === 'hotel_amenities' ? 'required_hotel_amenities' : 'hotel_amenities';
+    return { ...current, [key]: values, [otherKey]: (current[otherKey] || []).filter(item => !values.includes(item)) };
+  });
   const setP = (k, v) => setPersonalForm(p => ({ ...p, [k]: v }));
  
   const handleSavePrefs = async () => {
@@ -165,6 +179,35 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
     await usersApi.updateConsent(value);
   };
 
+  const saveNotificationSettings = async () => {
+    setSaving(true);
+    try {
+      await usersApi.updatePreferences(prefs);
+      const response = await notificationsApi.updateSettings({ ...notificationSettings, locale: lang });
+      setNotificationSettings(response.data.settings); setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch (e) { setProfileError(e.response?.data?.error || e.message); }
+    finally { setSaving(false); }
+  };
+
+  const toggleWatch = async watch => {
+    const response = await notificationsApi.updateWatch(watch.id, { active: !watch.active });
+    setWatches(current => current.map(item => item.id === watch.id ? { ...item, ...response.data.watch, active: Boolean(response.data.watch.active) } : item));
+  };
+
+  const removeWatch = async id => {
+    await notificationsApi.deleteWatch(id); setWatches(current => current.filter(item => item.id !== id));
+  };
+
+  const updateWatchTarget = async (watch, value) => {
+    const response = await notificationsApi.updateWatch(watch.id, { target_price: value || null });
+    setWatches(current => current.map(item => item.id === watch.id ? { ...item, target_price: response.data.watch.target_price } : item));
+  };
+
+  const toggleTripReminder = async trip => {
+    const response = await notificationsApi.updateTrip(trip.id, { reminder_enabled: !trip.reminder_enabled });
+    setTrips(current => current.map(item => item.id === trip.id ? { ...item, ...response.data.trip, reminder_enabled: Boolean(response.data.trip.reminder_enabled) } : item));
+  };
+
   const exportData = async () => {
     const response = await usersApi.exportData();
     const url = URL.createObjectURL(response.data);
@@ -173,13 +216,14 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
   };
 
   const deleteAccount = async () => {
-    const password = window.prompt(lang === 'ru' ? 'Введите пароль для удаления аккаунта' : 'Enter your password to delete the account');
-    if (!password) return;
+    if (!deletePassword) return;
+    setDeleting(true); setDeleteError('');
     try {
-      await usersApi.deleteAccount(password);
+      await usersApi.deleteAccount(deletePassword);
       localStorage.removeItem('fw_user');
       window.location.assign('/register');
-    } catch (e) { setProfileError(e.response?.data?.error || e.message); }
+    } catch (e) { setDeleteError(e.response?.data?.error || (lang === 'ru' ? 'Не удалось удалить аккаунт.' : 'Could not delete the account.')); }
+    finally { setDeleting(false); }
   };
  
   const TABS = [
@@ -210,16 +254,30 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
     { value: 'pool', label: lang === 'ru' ? '🏊 Бассейн' : '🏊 Pool' },
     { value: 'mountain', label: lang === 'ru' ? '⛰ Горы' : '⛰ Mountain' },
   ];
-  const AMENITIES = [
-    { value: 'pool', label: lang === 'ru' ? '🏊 Бассейн' : '🏊 Pool' },
-    { value: 'breakfast', label: lang === 'ru' ? '🍳 Завтрак' : '🍳 Breakfast' },
-    { value: 'spa', label: '💆 Spa' },
-    { value: 'gym', label: lang === 'ru' ? '🏋️ Фитнес' : '🏋️ Gym' },
-    { value: 'bar', label: lang === 'ru' ? '🍸 Бар' : '🍸 Bar' },
-    { value: 'restaurant', label: lang === 'ru' ? '🍽 Ресторан' : '🍽 Restaurant' },
-    { value: 'butler', label: lang === 'ru' ? '🛎 Батлер' : '🛎 Butler' },
+  const ESSENTIAL_AMENITIES = [
     { value: 'wifi', label: 'Wi-Fi' },
+    { value: 'pool', label: lang === 'ru' ? 'Бассейн' : 'Pool' },
+    { value: 'parking', label: lang === 'ru' ? 'Парковка' : 'Parking' },
+    { value: 'air_conditioning', label: lang === 'ru' ? 'Кондиционер' : 'Air conditioning' },
   ];
+  const LEISURE_AMENITIES = [
+    { value: 'spa', label: 'SPA' },
+    { value: 'gym', label: lang === 'ru' ? 'Фитнес' : 'Fitness' },
+    { value: 'restaurant', label: lang === 'ru' ? 'Ресторан' : 'Restaurant' },
+    { value: 'beach', label: lang === 'ru' ? 'Пляж' : 'Beach' },
+    { value: 'tennis', label: lang === 'ru' ? 'Теннис' : 'Tennis' },
+    { value: 'airport_shuttle', label: lang === 'ru' ? 'Трансфер' : 'Airport shuttle' },
+  ];
+  const ROOM_AMENITIES = [
+    { value: 'bathtub', label: lang === 'ru' ? 'Ванна' : 'Bathtub' },
+    { value: 'balcony', label: lang === 'ru' ? 'Балкон' : 'Balcony' },
+    { value: 'kitchen', label: lang === 'ru' ? 'Кухня' : 'Kitchen' },
+    { value: 'soundproofing', label: lang === 'ru' ? 'Звукоизоляция' : 'Soundproofing' },
+    { value: 'family_rooms', label: lang === 'ru' ? 'Для семей' : 'Family friendly' },
+    { value: 'pets_allowed', label: lang === 'ru' ? 'С животными' : 'Pet friendly' },
+    { value: 'accessible', label: lang === 'ru' ? 'Доступная среда' : 'Accessible' },
+  ];
+  const ALL_HOTEL_AMENITIES = [...ESSENTIAL_AMENITIES, ...LEISURE_AMENITIES, ...ROOM_AMENITIES];
   const FLIGHT_TYPES = [
     { value: 'direct', label: lang === 'ru' ? 'Только прямые' : 'Direct only' },
     { value: '1stop', label: lang === 'ru' ? 'До 1 пересадки' : 'Up to 1 stop' },
@@ -245,6 +303,9 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
     { value: 'Aeroflot', label: 'Aeroflot' },
   ];
   const TRAVEL_STYLES = [
+    { value: 'family', label: lang === 'ru' ? 'Семейная поездка' : 'Family trip' },
+    { value: 'business', label: lang === 'ru' ? 'Деловая поездка' : 'Business trip' },
+    { value: 'resort', label: lang === 'ru' ? 'Курортный отдых' : 'Resort' },
     { value: 'beach', label: lang === 'ru' ? '🏖 Пляж' : '🏖 Beach' },
     { value: 'gastronomy', label: lang === 'ru' ? '🍷 Гастрономия' : '🍷 Gastronomy' },
     { value: 'culture', label: lang === 'ru' ? '🏛 Культура' : '🏛 Culture' },
@@ -283,7 +344,6 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
     { key: 'alert_price_rise', label: t('prefs_notif_price_rise'), desc: t('prefs_notif_price_rise_desc'), icon: '📈' },
     { key: 'alert_booking_reminder', label: t('prefs_notif_reminder'), desc: t('prefs_notif_reminder_desc'), icon: '⏰' },
     { key: 'alert_weekly_insights', label: t('prefs_notif_insights'), desc: t('prefs_notif_insights_desc'), icon: '📊' },
-    { key: 'alert_destination_deals', label: t('prefs_notif_deals'), desc: t('prefs_notif_deals_desc'), icon: '🔥' },
   ];
  
   if (loading) return (
@@ -435,7 +495,22 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_category')}</div><MultiSelect options={HOTEL_STARS} value={prefs.hotel_stars} onChange={v => set('hotel_stars', v)} /></div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_room_type')}</div><MultiSelect options={ROOM_TYPES} value={prefs.room_type} onChange={v => set('room_type', v)} /></div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_view')}</div><MultiSelect options={VIEWS} value={prefs.room_view} onChange={v => set('room_view', v)} /></div>
-                  <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_amenities_label')}</div><MultiSelect options={AMENITIES} value={prefs.hotel_amenities} onChange={v => set('hotel_amenities', v)} /></div>
+                  <div className={styles.prefSection}>
+                    <div className={styles.prefLabel}>{lang === 'ru' ? 'Обязательные удобства' : 'Required amenities'}</div>
+                    <MultiSelect options={ALL_HOTEL_AMENITIES} value={prefs.required_hotel_amenities} onChange={v => setAmenities('required_hotel_amenities', v)} />
+                  </div>
+                  <div className={styles.prefSection}>
+                    <div className={styles.prefLabel}>{lang === 'ru' ? 'Желательные: основной комфорт' : 'Preferred: essential comfort'}</div>
+                    <MultiSelect options={ESSENTIAL_AMENITIES} value={prefs.hotel_amenities} onChange={v => setAmenities('hotel_amenities', v)} />
+                  </div>
+                  <div className={styles.prefSection}>
+                    <div className={styles.prefLabel}>{lang === 'ru' ? 'Желательные: отдых и инфраструктура' : 'Preferred: leisure and facilities'}</div>
+                    <MultiSelect options={LEISURE_AMENITIES} value={prefs.hotel_amenities} onChange={v => setAmenities('hotel_amenities', v)} />
+                  </div>
+                  <div className={styles.prefSection}>
+                    <div className={styles.prefLabel}>{lang === 'ru' ? 'Желательные: номер и особые условия' : 'Preferred: room and special needs'}</div>
+                    <MultiSelect options={ROOM_AMENITIES} value={prefs.hotel_amenities} onChange={v => setAmenities('hotel_amenities', v)} />
+                  </div>
                 </div>
  
                 <div className={styles.prefCard}>
@@ -474,7 +549,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                   <h2 className={styles.tabTitle}>{t('prefs_notif_title')}</h2>
                   <p className={styles.tabSub}>{t('prefs_notif_sub')}</p>
                 </div>
-                <button className={styles.saveSmBtn} onClick={handleSavePrefs} disabled={saving}>
+                <button className={styles.saveSmBtn} onClick={saveNotificationSettings} disabled={saving}>
                   {saved ? <><Check size={14} />{t('prefs_saved')}</> : <><Save size={14} />{t('prefs_save')}</>}
                 </button>
               </div>
@@ -489,7 +564,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                         <div className={styles.notifLabel}>{n.label}</div>
                         <div className={styles.notifDesc}>{n.desc}</div>
                       </div>
-                      <ToggleSwitch on={prefs[n.key]} onChange={v => set(n.key, v)} />
+                      <ToggleSwitch label={n.label} on={prefs[n.key]} onChange={v => set(n.key, v)} />
                     </div>
                   ))}
                 </div>
@@ -502,9 +577,36 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                         <div className={styles.notifLabel}>{n.label}</div>
                         <div className={styles.notifDesc}>{n.desc}</div>
                       </div>
-                      <ToggleSwitch on={prefs[n.key]} onChange={v => set(n.key, v)} />
+                      <ToggleSwitch label={n.label} on={prefs[n.key]} onChange={v => set(n.key, v)} />
                     </div>
                   ))}
+                </div>
+                <div className={styles.notifGroup}>
+                  <div className={styles.notifGroupTitle}>{lang === 'ru' ? 'Расписание weekly insights' : 'Weekly insights schedule'}</div>
+                  <div className={styles.notifRow}>
+                    <div className={styles.notifText}>
+                      <div className={styles.notifLabel}>{lang === 'ru' ? 'Часовой пояс' : 'Time zone'}</div>
+                      <input className={styles.fieldInput} value={notificationSettings.timezone} onChange={e => setNotificationSettings(value => ({ ...value, timezone: e.target.value }))} placeholder="Europe/Moscow" />
+                    </div>
+                    <label className={styles.notifText}><span className={styles.notifLabel}>{lang === 'ru' ? 'День недели' : 'Weekday'}</span><select className={styles.fieldInput} value={notificationSettings.digest_weekday} onChange={e => setNotificationSettings(value => ({ ...value, digest_weekday: Number(e.target.value) }))}>
+                      {(lang === 'ru' ? ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'] : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']).map((day, index) => <option value={index} key={day}>{day}</option>)}
+                    </select></label>
+                    <label className={styles.notifText}><span className={styles.notifLabel}>{lang === 'ru' ? 'Час отправки' : 'Delivery hour'}</span><input className={styles.fieldInput} type="number" min="0" max="23" value={notificationSettings.digest_hour} onChange={e => setNotificationSettings(value => ({ ...value, digest_hour: Number(e.target.value) }))} /></label>
+                  </div>
+                </div>
+                <div className={styles.notifGroup}>
+                  <div className={styles.notifGroupTitle}>{lang === 'ru' ? 'Отслеживание цен' : 'Price watches'}</div>
+                  {!watches.length && <div className={styles.notifDesc}>{lang === 'ru' ? 'Откройте карточку отеля и нажмите значок колокольчика.' : 'Open a hotel and select the bell icon to track its price.'}</div>}
+                  {watches.map(watch => <div className={styles.notifRow} key={watch.id}>
+                    <div className={styles.notifIcon}>🏨</div><div className={styles.notifText}><div className={styles.notifLabel}>{watch.hotel_name}</div><div className={styles.notifDesc}>{watch.check_in} → {watch.check_out} · {watch.currency} {watch.last_price || '—'} · {watch.last_checked_at ? new Date(watch.last_checked_at).toLocaleString(lang) : (lang === 'ru' ? 'ожидает проверки' : 'waiting for first check')}</div></div>
+                    <label className={styles.notifText}><span className={styles.notifDesc}>{lang === 'ru' ? 'Целевая цена' : 'Target price'}</span><input className={styles.fieldInput} type="number" min="1" defaultValue={watch.target_price || ''} placeholder={watch.currency} onBlur={e => updateWatchTarget(watch, e.target.value)} /></label>
+                    <ToggleSwitch on={watch.active} onChange={() => toggleWatch(watch)} /><button className={styles.revokeBtn} onClick={() => removeWatch(watch.id)}>{lang === 'ru' ? 'Удалить' : 'Delete'}</button>
+                  </div>)}
+                </div>
+                <div className={styles.notifGroup}>
+                  <div className={styles.notifGroupTitle}>{lang === 'ru' ? 'Напоминания о поездках' : 'Trip reminders'}</div>
+                  {!trips.length && <div className={styles.notifDesc}>{lang === 'ru' ? 'Сохраните поездку из корзины, чтобы получать напоминания.' : 'Save your trip basket to receive reminders.'}</div>}
+                  {trips.map(trip => <div className={styles.notifRow} key={trip.id}><div className={styles.notifIcon}>🧳</div><div className={styles.notifText}><div className={styles.notifLabel}>{trip.title}</div><div className={styles.notifDesc}>{trip.start_date} · {trip.status}</div></div><ToggleSwitch on={Boolean(trip.reminder_enabled)} onChange={() => toggleTripReminder(trip)} /></div>)}
                 </div>
               </div>
             </div>
@@ -550,7 +652,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                   <div className={styles.securitySectionTitle}>{lang === 'ru' ? 'Данные и конфиденциальность' : 'Data and privacy'}</div>
                   <div className={styles.sessionRow}>
                     <div><div className={styles.sessionDevice}>{lang === 'ru' ? 'Поведенческая персонализация' : 'Behavioural personalisation'}</div><div className={styles.sessionMeta}>{lang === 'ru' ? 'Разрешает использовать клики и просмотры для настройки Score.' : 'Allows clicks and views to improve your Score.'}</div></div>
-                    <ToggleSwitch on={trackingConsent} onChange={updateTrackingConsent} />
+                    <ToggleSwitch label={lang === 'ru' ? 'Поведенческая персонализация' : 'Behavioural personalisation'} on={trackingConsent} onChange={updateTrackingConsent} />
                   </div>
                   <button className={styles.saveSmBtn} onClick={exportData}>{lang === 'ru' ? 'Экспортировать мои данные' : 'Export my data'}</button>
                 </div>
@@ -578,13 +680,23 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                 <div className={styles.securitySection}>
                   <div className={styles.securitySectionTitle} style={{color:'var(--red)'}}>{t('prefs_danger')}</div>
                   <p className={styles.dangerDesc}>{t('prefs_danger_desc')}</p>
-                  <button className={styles.dangerBtn} onClick={deleteAccount}>{t('prefs_delete')}</button>
+                  <button className={styles.dangerBtn} onClick={() => { setDeleteError(''); setDeletePassword(''); setDeleteDialogOpen(true); }}>{t('prefs_delete')}</button>
                 </div>
               </div>
             </div>
           )}
         </main>
       </div>
+      {deleteDialogOpen && <div className={styles.modalBackdrop} onMouseDown={event => { if (event.target === event.currentTarget && !deleting) setDeleteDialogOpen(false); }}>
+        <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
+          <h2 id="delete-account-title">{lang === 'ru' ? 'Удалить аккаунт?' : 'Delete account?'}</h2>
+          <p>{lang === 'ru' ? 'Данные будут удалены без возможности восстановления. Для подтверждения введите пароль.' : 'Your data will be permanently deleted. Enter your password to confirm.'}</p>
+          <label className={styles.fieldLabel} htmlFor="delete-account-password">{lang === 'ru' ? 'Текущий пароль' : 'Current password'}</label>
+          <input id="delete-account-password" className={styles.fieldInput} type="password" autoComplete="current-password" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} autoFocus onKeyDown={event => { if (event.key === 'Escape' && !deleting) setDeleteDialogOpen(false); }} />
+          {deleteError && <div className={styles.pwError} role="alert">{deleteError}</div>}
+          <div className={styles.modalActions}><button type="button" className={styles.cancelBtn} disabled={deleting} onClick={() => setDeleteDialogOpen(false)}>{lang === 'ru' ? 'Отмена' : 'Cancel'}</button><button type="button" className={styles.dangerBtn} disabled={!deletePassword || deleting} onClick={deleteAccount}>{deleting ? (lang === 'ru' ? 'Удаляем…' : 'Deleting…') : t('prefs_delete')}</button></div>
+        </div>
+      </div>}
     </div>
   );
 }

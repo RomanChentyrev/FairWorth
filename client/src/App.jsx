@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
@@ -15,9 +15,14 @@ import ApiStatusBanner from './components/ApiStatusBanner';
 import NotFoundPage from './pages/NotFoundPage';
 import LegalPage from './pages/LegalPage';
 import BookingReturnPage from './pages/BookingReturnPage';
+import DemoBookingPage from './pages/DemoBookingPage';
 import { VerifyEmailPage, ForgotPasswordPage, ResetPasswordPage } from './pages/AuthActionPage';
 import AdminPage from './pages/AdminPage';
+import UnsubscribePage from './pages/UnsubscribePage';
 import { authApi, interactionsApi } from './api';
+import { useLang } from './i18n/LanguageContext';
+
+const AchievementsPage = React.lazy(() => import('./pages/AchievementsPage'));
 
 function RequireAuth({ user, children }) {
   if (!user) return <Navigate to="/register" replace />;
@@ -38,6 +43,7 @@ function RequireAdmin({ user, children }) {
 }
 
 export default function App() {
+  const { lang } = useLang();
   const [compareList, setCompareList] = useState([]);
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('fw_user')); } catch { return null; }
@@ -96,12 +102,13 @@ export default function App() {
   const isInCompare = (id) => compareList.some(h => h.id === id);
 
   return (
-    <Routes>
+    <><a className="skip-link" href="#app-content">{lang === 'ru' ? 'К содержанию' : 'Skip to content'}</a><div id="app-content" tabIndex="-1"><Routes>
       <Route path="/register" element={<RegisterPage onLogin={handleLogin} />} />
       <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/unsubscribe" element={<UnsubscribePage />} />
       <Route path="/legal/:type" element={<><ApiStatusBanner /><LegalPage /></>} />
       <Route path="*" element={
         <>
@@ -126,6 +133,13 @@ export default function App() {
                 <InsightsPage />
               </RequireAuth>
             } />
+            <Route path="/achievements" element={
+              <RequireAuth user={user}>
+                <Suspense fallback={<main className="system-page"><p>{lang === 'ru' ? 'Загружаем карту...' : 'Loading your map...'}</p></main>}>
+                  <AchievementsPage />
+                </Suspense>
+              </RequireAuth>
+            } />
             <Route path="/hotel/:id" element={
               <RequireAuth user={user}>
                 <RequireVerified user={user}><RequireOnboarding user={user}><HotelDetailPage compareList={compareList} toggleCompare={toggleCompare} isInCompare={isInCompare} /></RequireOnboarding></RequireVerified>
@@ -142,11 +156,12 @@ export default function App() {
               </RequireAuth>
             } />
             <Route path="/booking/return" element={<RequireAuth user={user}><BookingReturnPage /></RequireAuth>} />
+            <Route path="/booking/demo" element={<RequireAuth user={user}><RequireVerified user={user}><RequireOnboarding user={user}><DemoBookingPage /></RequireOnboarding></RequireVerified></RequireAuth>} />
             <Route path="/admin" element={<RequireAuth user={user}><RequireAdmin user={user}><AdminPage /></RequireAdmin></RequireAuth>} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </>
       } />
-    </Routes>
+    </Routes></div></>
   );
 }

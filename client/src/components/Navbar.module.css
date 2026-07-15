@@ -12,6 +12,7 @@
 }
 .links { display: flex; gap: 24px; flex: 1; }
 .link {
+  display: flex; align-items: center; gap: 5px;
   font-size: 13px; font-weight: 500; color: var(--text-secondary);
   transition: color 0.15s; padding: 4px 0;
   border-bottom: 2px solid transparent;
@@ -79,3 +80,22 @@
   font-size: 13px; font-weight: 600; transition: background 0.15s;
 }
 .loginBtn:hover { background: var(--navy-mid); }
+
+@media (max-width: 1100px) {
+  .inner { gap: 16px; padding: 0 16px; }
+  .links { gap: 14px; }
+  .prefsBtn { width: 34px; height: 34px; justify-content: center; padding: 0; font-size: 0; }
+  .userName { display: none; }
+}
+
+@media (max-width: 760px) {
+  .inner { gap: 10px; padding: 0 12px; }
+  .logo { font-size: 18px; }
+  .links { min-width: 0; overflow-x: auto; gap: 14px; scrollbar-width: none; }
+  .links::-webkit-scrollbar { display: none; }
+  .link { flex-shrink: 0; font-size: 12px; }
+  .actions { flex-shrink: 0; }
+  .langFlag, .prefsBtn, .userAvatar { display: none; }
+  .langBtn { width: 32px; height: 32px; justify-content: center; padding: 0; }
+  .logoutBtn { padding: 7px; }
+}

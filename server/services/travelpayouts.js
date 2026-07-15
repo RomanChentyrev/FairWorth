@@ -58,7 +58,10 @@ function getOnce(hostname, path, token) {
         try {
           const body = Buffer.concat(chunks).toString('utf-8');
           if (res.statusCode < 200 || res.statusCode >= 300) {
-            reject(new Error(`Travelpayouts HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
+            const error = new Error(`Travelpayouts HTTP ${res.statusCode}: ${body.slice(0, 200)}`);
+            error.status = res.statusCode;
+            error.provider = 'Travelpayouts';
+            reject(error);
             return;
           }
           resolve(JSON.parse(body));
@@ -70,13 +73,23 @@ function getOnce(hostname, path, token) {
     });
 
     req.on('error', reject);
-    req.setTimeout(25000, () => { req.destroy(); reject(new Error('Timeout')); });
+    req.setTimeout(Number(process.env.TRAVELPAYOUTS_TIMEOUT_MS || 25000), () => {
+      const error = new Error('Travelpayouts request timed out');
+      error.name = 'TimeoutError';
+      error.code = 'ETIMEDOUT';
+      error.provider = 'Travelpayouts';
+      req.destroy(error);
+    });
     req.end();
   });
 }
 
 function get(hostname, path, token) {
-  return withRetry(() => getOnce(hostname, path, token), { attempts: 3, baseDelayMs: 300 });
+  return withRetry(() => getOnce(hostname, path, token), {
+    attempts: 3,
+    baseDelayMs: 300,
+    shouldRetry: error => !error.status || error.status >= 500 || error.status === 429,
+  });
 }
 
 // ─── Статичные JSON-файлы (скачиваются один раз, кэшируются на диске) ─────────

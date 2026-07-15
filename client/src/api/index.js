@@ -83,6 +83,33 @@ export const usersApi = {
   updateConsent: (behavioural_tracking_consent) => api.put('/users/consent', { behavioural_tracking_consent }),
 };
 
+export const notificationsApi = {
+  watches: () => api.get('/notifications/watches'),
+  createWatch: data => api.post('/notifications/watches', data),
+  updateWatch: (id, data) => api.patch(`/notifications/watches/${id}`, data),
+  deleteWatch: id => api.delete(`/notifications/watches/${id}`),
+  settings: () => api.get('/notifications/settings'),
+  updateSettings: data => api.put('/notifications/settings', data),
+  trips: () => api.get('/notifications/trips'),
+  createTrip: data => api.post('/notifications/trips', data),
+  updateTrip: (id, data) => api.patch(`/notifications/trips/${id}`, data),
+  unsubscribe: token => api.post('/notifications/unsubscribe', { token }),
+};
+
+export const legalApi = { current: () => api.get('/legal/current') };
+export const capabilitiesApi = { current: () => api.get('/capabilities') };
+
+export const achievementsApi = {
+  get: () => api.get('/achievements'),
+  addVisit: data => api.post('/achievements/visits', data),
+  removeVisit: id => api.delete(`/achievements/visits/${id}`),
+};
+
+export const bookingsApi = {
+  createDemo: data => api.post('/bookings', data),
+  get: reference => api.get(`/bookings/${encodeURIComponent(reference)}`),
+};
+
 export const authApi = {
   me: () => api.get('/auth/me'),
   logout: () => api.post('/auth/logout'),
@@ -104,6 +131,7 @@ export const adminApi = {
   catalogSyncs: () => api.get('/admin/catalog/syncs'),
   mappingReviews: (status = 'open') => api.get('/admin/catalog/mapping-reviews', { params: { status } }),
   resolveMapping: (id, status) => api.patch(`/admin/catalog/mapping-reviews/${id}`, { status }),
+  auditLog: (limit = 100) => api.get('/admin/audit-log', { params: { limit } }),
 };
 
 function interactionSessionId() {
@@ -136,8 +164,8 @@ export const interactionsApi = {
 };
 
 export const compareApi = {
-  compare: (hotel_ids, check_in, check_out, language = 'en') =>
-    api.post('/compare', { hotel_ids, check_in, check_out, language }),
+  compare: (hotel_ids, check_in, check_out, language = 'en', guests = 2, trip_purpose = 'leisure') =>
+    api.post('/compare', { hotel_ids, check_in, check_out, language, guests, trip_purpose }),
 };
 
 export default api;

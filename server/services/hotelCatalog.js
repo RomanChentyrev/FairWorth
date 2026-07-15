@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db/database');
 const liteapi = require('./liteapi');
 const travelpayouts = require('./travelpayouts');
+const { normalizedAmenity } = require('../config/hotelAmenities');
 
 const activeSyncs = new Map();
 
@@ -45,17 +46,6 @@ function matchConfidence(source, candidate) {
   const geo = distance == null ? 0 : distance <= 0.1 ? 0.25 : distance <= 0.5 ? 0.2 : distance <= 2 ? 0.1 : 0;
   const city = normalize(source.city) === normalize(candidate.city) ? 0.05 : 0;
   return Math.min(1, name * 0.65 + address * 0.1 + geo + city);
-}
-
-function normalizedAmenity(name = '') {
-  const value = normalize(name);
-  const rules = [
-    [/wifi|internet/, 'wifi'], [/pool|swimming/, 'pool'], [/spa|massage|sauna/, 'spa'],
-    [/fitness|gym/, 'gym'], [/breakfast/, 'breakfast'], [/restaurant/, 'restaurant'],
-    [/bar|lounge/, 'bar'], [/beach/, 'beach'], [/parking/, 'parking'], [/concierge/, 'concierge'],
-    [/airport.*shuttle|shuttle.*airport/, 'airport_shuttle'],
-  ];
-  return rules.find(([pattern]) => pattern.test(value))?.[1] || value.replace(/ /g, '_').slice(0, 80);
 }
 
 async function resolveIata(city) {
@@ -109,8 +99,57 @@ async function upsertHotel(source, facilities, iataCode, claimedHotelIds = new S
     await db.prepare(`INSERT INTO hotel_mapping_reviews (id, hotel_id, candidate_hotel_id, provider, provider_hotel_id, confidence, evidence) VALUES (?, ?, ?, 'liteapi', ?, ?, ?)`)
       .run(uuidv4(), hotelId, match.row.id, source.id, match.confidence, JSON.stringify({ source_name: source.name, candidate_name: match.row.name, distance_km: distanceKm(source, match.row) }));
   }
-  await db.prepare(`INSERT INTO hotel_reviews (id, hotel_id, rating, count, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (hotel_id) DO UPDATE SET rating = EXCLUDED.rating, count = EXCLUDED.count, updated_at = CURRENT_TIMESTAMP`)
-    .run(uuidv4(), hotelId, Number(source.rating || 0) > 5 ? Number(source.rating) / 2 : Number(source.rating || 0), Number(source.reviewCount || 0));
+  const reviewDates = [];
+  const reviewRatings = [];
+  let verifiedReviews = 0;
+  let suspiciousReviews = 0;
+  let structuredReviews = 0;
+  const collectReviewDates = (value, reviewContext = false) => {
+    if (!value) return;
+    if (Array.isArray(value)) return value.forEach(item => collectReviewDates(item, reviewContext));
+    if (typeof value !== 'object') return;
+    Object.entries(value).forEach(([keyName, item]) => {
+      const nextReviewContext = reviewContext || /review|guest.*comment|testimonial/i.test(keyName);
+      if (nextReviewContext && item && typeof item === 'object' && !Array.isArray(item)) {
+        const reviewRating = Number(item.rating ?? item.score ?? item.rate);
+        if (Number.isFinite(reviewRating) && reviewRating > 0) reviewRatings.push(reviewRating > 5 ? reviewRating / 2 : reviewRating);
+        const verified = item.verified ?? item.verifiedStay ?? item.verified_stay ?? item.isVerified;
+        const suspicious = item.suspicious ?? item.isSuspicious ?? item.flagged;
+        if (verified !== undefined || suspicious !== undefined) structuredReviews += 1;
+        if (verified === true || verified === 1) verifiedReviews += 1;
+        if (suspicious === true || suspicious === 1) suspiciousReviews += 1;
+      }
+      if (nextReviewContext && /date|created|published/i.test(keyName) && typeof item === 'string') {
+        const parsed = new Date(item);
+        if (!Number.isNaN(parsed.getTime()) && parsed <= new Date()) reviewDates.push(parsed);
+      }
+      collectReviewDates(item, nextReviewContext);
+    });
+  };
+  collectReviewDates(source);
+  reviewDates.sort((a, b) => b - a);
+  const latestReviewAt = reviewDates[0]?.toISOString() || null;
+  const recentCutoff = Date.now() - 365 * 86400000;
+  const recentReviewShare = reviewDates.length ? reviewDates.filter(date => date.getTime() >= recentCutoff).length / reviewDates.length : null;
+  const ratingMean = reviewRatings.length ? reviewRatings.reduce((sum, value) => sum + value, 0) / reviewRatings.length : null;
+  const ratingStddev = ratingMean === null ? null : Math.sqrt(reviewRatings.reduce((sum, value) => sum + ((value - ratingMean) ** 2), 0) / reviewRatings.length);
+  const verifiedReviewShare = structuredReviews ? verifiedReviews / structuredReviews : null;
+  const suspiciousReviewShare = structuredReviews ? suspiciousReviews / structuredReviews : null;
+  const rating = Number(source.rating || 0) > 5 ? Number(source.rating) / 2 : Number(source.rating || 0);
+  const previousReview = await db.prepare('SELECT rating FROM hotel_reviews WHERE hotel_id = ?').get(hotelId);
+  const previousRating = Number.isFinite(Number(previousReview?.rating)) ? Number(previousReview.rating) : null;
+  const ratingTrend = previousRating === null ? null : rating - previousRating;
+  await db.prepare(`INSERT INTO hotel_review_sources (id, hotel_id, provider, rating, review_count, rating_stddev, suspicious_review_share, verified_review_share, latest_review_at) VALUES (?, ?, 'liteapi', ?, ?, ?, ?, ?, ?) ON CONFLICT (hotel_id, provider) DO UPDATE SET rating = EXCLUDED.rating, review_count = EXCLUDED.review_count, rating_stddev = COALESCE(EXCLUDED.rating_stddev, hotel_review_sources.rating_stddev), suspicious_review_share = COALESCE(EXCLUDED.suspicious_review_share, hotel_review_sources.suspicious_review_share), verified_review_share = COALESCE(EXCLUDED.verified_review_share, hotel_review_sources.verified_review_share), latest_review_at = COALESCE(EXCLUDED.latest_review_at, hotel_review_sources.latest_review_at), updated_at = CURRENT_TIMESTAMP`)
+    .run(uuidv4(), hotelId, rating, Number(source.reviewCount || 0), ratingStddev, suspiciousReviewShare, verifiedReviewShare, latestReviewAt);
+  const sourceStats = await db.prepare(`SELECT COUNT(*) AS source_count, CASE WHEN COUNT(*) >= 2 THEN GREATEST(0, 1 - (MAX(rating) - MIN(rating)) / 2.0) ELSE NULL END AS source_consistency FROM hotel_review_sources WHERE hotel_id = ? AND rating IS NOT NULL`).get(hotelId);
+  await db.prepare(`INSERT INTO hotel_reviews (id, hotel_id, rating, count, latest_review_at, recent_review_share, previous_rating, rating_trend, rating_stddev, suspicious_review_share, verified_review_share, review_source_count, review_source_consistency, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT (hotel_id) DO UPDATE SET previous_rating = hotel_reviews.rating, rating = EXCLUDED.rating, count = EXCLUDED.count, latest_review_at = COALESCE(EXCLUDED.latest_review_at, hotel_reviews.latest_review_at), recent_review_share = COALESCE(EXCLUDED.recent_review_share, hotel_reviews.recent_review_share), rating_trend = EXCLUDED.rating - hotel_reviews.rating, rating_stddev = COALESCE(EXCLUDED.rating_stddev, hotel_reviews.rating_stddev), suspicious_review_share = COALESCE(EXCLUDED.suspicious_review_share, hotel_reviews.suspicious_review_share), verified_review_share = COALESCE(EXCLUDED.verified_review_share, hotel_reviews.verified_review_share), review_source_count = EXCLUDED.review_source_count, review_source_consistency = EXCLUDED.review_source_consistency, updated_at = CURRENT_TIMESTAMP`)
+    .run(uuidv4(), hotelId, rating, Number(source.reviewCount || 0), latestReviewAt, recentReviewShare, previousRating, ratingTrend, ratingStddev, suspiciousReviewShare, verifiedReviewShare, Number(sourceStats?.source_count || 1), sourceStats?.source_consistency);
+  const lastSnapshot = await db.prepare(`SELECT rating, captured_at FROM hotel_review_snapshots WHERE hotel_id = ? AND provider = 'liteapi' ORDER BY captured_at DESC LIMIT 1`).get(hotelId);
+  const snapshotAge = lastSnapshot?.captured_at ? Date.now() - new Date(lastSnapshot.captured_at).getTime() : Infinity;
+  if (!lastSnapshot || Number(lastSnapshot.rating) !== rating || snapshotAge >= 7 * 86400000) {
+    await db.prepare(`INSERT INTO hotel_review_snapshots (id, hotel_id, provider, rating, review_count, latest_review_at) VALUES (?, ?, 'liteapi', ?, ?, ?)`)
+      .run(uuidv4(), hotelId, rating, Number(source.reviewCount || 0), latestReviewAt);
+  }
   await db.prepare(`DELETE FROM hotel_images WHERE hotel_id = ? AND provider = 'liteapi'`).run(hotelId);
   for (const [index, url] of [source.main_photo, source.thumbnail].filter(Boolean).entries()) {
     await db.prepare(`INSERT INTO hotel_images (id, hotel_id, provider, url, kind, sort_order) VALUES (?, ?, 'liteapi', ?, ?, ?) ON CONFLICT DO NOTHING`).run(uuidv4(), hotelId, url, index ? 'thumbnail' : 'main', index);

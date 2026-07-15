@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { SlidersHorizontal, GitCompare, LogOut } from 'lucide-react';
+import { SlidersHorizontal, GitCompare, LogOut, Map } from 'lucide-react';
 import { useLang } from '../i18n/LanguageContext';
 import styles from './Navbar.module.css';
 import { validFutureDates } from '../utils/dates';
@@ -51,6 +51,10 @@ export default function Navbar({ compareCount, user, onLogout }) {
           <Link to="/insights" className={`${styles.link} ${location.pathname === '/insights' ? styles.active : ''}`}>
             {t('nav_insights')}
           </Link>
+          {user && <Link to="/achievements" className={`${styles.link} ${location.pathname === '/achievements' ? styles.active : ''}`}>
+            <Map size={14} />
+            {lang === 'ru' ? 'Достижения' : 'Achievements'}
+          </Link>}
         </div>
 
         <div className={styles.actions}>

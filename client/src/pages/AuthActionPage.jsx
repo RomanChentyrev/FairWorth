@@ -13,9 +13,18 @@ export function VerifyEmailPage() {
 }
 
 export function ForgotPasswordPage() {
-  const { lang } = useLang(); const [email, setEmail] = useState(''); const [message, setMessage] = useState('');
-  const submit = async e => { e.preventDefault(); const response = await authApi.forgotPassword(email); if (response.data.development_token) sessionStorage.setItem('fairworth_reset_token', response.data.development_token); setMessage(lang === 'ru' ? 'Если аккаунт существует, письмо отправлено.' : 'If the account exists, a reset email was sent.'); };
-  return <main className="system-page"><h1>{lang === 'ru' ? 'Восстановление пароля' : 'Forgot password'}</h1><form onSubmit={submit}><input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="Email" /> <button>{lang === 'ru' ? 'Отправить' : 'Send reset link'}</button></form>{message && <><p>{message}</p><Link to="/reset-password">{lang === 'ru' ? 'Открыть форму сброса' : 'Open reset form'}</Link></>}</main>;
+  const { lang } = useLang(); const [email, setEmail] = useState(''); const [message, setMessage] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
+  const submit = async e => {
+    e.preventDefault(); setLoading(true); setMessage(''); setError('');
+    try {
+      const response = await authApi.forgotPassword(email);
+      if (response.data.development_token) sessionStorage.setItem('fairworth_reset_token', response.data.development_token);
+      setMessage(lang === 'ru' ? 'Если аккаунт существует, письмо отправлено.' : 'If the account exists, a reset email was sent.');
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || (lang === 'ru' ? 'Не удалось связаться с сервисом. Проверьте соединение и попробуйте ещё раз.' : 'Could not reach the service. Check your connection and try again.'));
+    } finally { setLoading(false); }
+  };
+  return <main className="system-page"><h1>{lang === 'ru' ? 'Восстановление пароля' : 'Forgot password'}</h1><form onSubmit={submit}><label htmlFor="forgot-email">Email</label> <input id="forgot-email" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required /> <button disabled={loading}>{loading ? (lang === 'ru' ? 'Отправляем…' : 'Sending…') : (lang === 'ru' ? 'Отправить' : 'Send reset link')}</button></form><div aria-live="polite">{error && <p role="alert">{error}</p>}{message && <><p>{message}</p><Link to="/reset-password">{lang === 'ru' ? 'Открыть форму сброса' : 'Open reset form'}</Link></>}</div></main>;
 }
 
 export function ResetPasswordPage() {

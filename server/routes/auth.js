@@ -7,13 +7,15 @@ const { requireAuth } = require('../middleware/auth');
 const { getUserWeights } = require('../services/personalization');
 const { createToken, consumeToken } = require('../services/tokens');
 const { linkEmail } = require('../services/email');
+const { accountEmail } = require('../services/emailTemplates');
+const { TERMS_VERSION, PRIVACY_VERSION } = require('../config/legal');
+const { effectiveRole } = require('../config/admin');
 const {
   REFRESH_COOKIE, REFRESH_TTL_SECONDS, parseCookies, hashToken, createRefreshToken,
   signAccessToken, setSessionCookies, clearSessionCookies,
 } = require('../services/sessionAuth');
 
 const frontendUrl = () => process.env.FRONTEND_URL || 'http://localhost:5173';
-const roleForEmail = email => String(process.env.ADMIN_EMAILS || '').split(',').map(value => value.trim().toLowerCase()).includes(email) ? 'admin' : 'user';
 const strongPassword = password => typeof password === 'string' && password.length >= 12
   && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
 
@@ -21,7 +23,7 @@ function publicUser(user) {
   return {
     id: user.id, name: user.name, email: user.email,
     phone: user.phone, city: user.city, country: user.country, bio: user.bio, website: user.website,
-    onboarding_completed: Boolean(user.onboarding_completed), email_verified: Boolean(user.email_verified), role: user.role || 'user',
+    onboarding_completed: Boolean(user.onboarding_completed), email_verified: Boolean(user.email_verified), role: effectiveRole(user.email),
     behavioural_tracking_consent: Boolean(user.behavioural_tracking_consent),
   };
 }
@@ -34,6 +36,7 @@ router.post('/register', async (req, res) => {
     const cleanName = String(name || '').trim();
     if (!cleanName || !email || !password) return res.status(400).json({ error: isRu ? 'Заполните все поля' : 'Complete all fields' });
     if (!acceptTerms) return res.status(400).json({ error: isRu ? 'Необходимо принять Условия использования и Политику конфиденциальности' : 'You must accept the Terms and Privacy Policy' });
+    if (req.body.terms_version !== TERMS_VERSION || req.body.privacy_version !== PRIVACY_VERSION) return res.status(409).json({ error: isRu ? 'Юридические документы обновились. Перезагрузите страницу и подтвердите актуальные версии.' : 'The legal documents have changed. Reload the page and accept the current versions.', code: 'LEGAL_VERSION_MISMATCH' });
     if (cleanName.length < 2) return res.status(400).json({ error: isRu ? 'Имя должно содержать минимум 2 символа' : 'Name must contain at least 2 characters' });
     if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: isRu ? 'Некорректный email' : 'Enter a valid email address' });
     if (!strongPassword(password)) return res.status(400).json({ error: isRu ? 'Пароль должен содержать минимум 12 символов, строчную и заглавную буквы, цифру и спецсимвол' : 'Password must be at least 12 characters and include upper/lowercase letters, a number and a symbol' });
@@ -45,7 +48,7 @@ router.post('/register', async (req, res) => {
     const refreshToken = createRefreshToken();
     try {
       await db.transaction(async () => {
-      await db.prepare('INSERT INTO users (id, email, name, password_hash, onboarding_completed, behavioural_tracking_consent, terms_accepted_at, role) VALUES (?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, ?)').run(userId, email, cleanName, passwordHash, trackingConsent ? 1 : 0, roleForEmail(email));
+      await db.prepare('INSERT INTO users (id, email, name, password_hash, onboarding_completed, behavioural_tracking_consent, terms_accepted_at, privacy_accepted_at, terms_version, privacy_version, role, locale) VALUES (?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?, ?)').run(userId, email, cleanName, passwordHash, trackingConsent ? 1 : 0, TERMS_VERSION, PRIVACY_VERSION, 'user', isRu ? 'ru' : 'en');
       await db.prepare(`
         INSERT INTO user_preferences (
           id, user_id, hotel_stars, room_type, room_view, hotel_amenities,
@@ -64,7 +67,7 @@ router.post('/register', async (req, res) => {
     }
     const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
     const verificationToken = await createToken(userId, 'email_verification', 24 * 60);
-    await linkEmail({ to: email, name: cleanName, purpose: 'verify', url: `${frontendUrl()}/verify-email?token=${encodeURIComponent(verificationToken)}` }).catch(() => null);
+    await linkEmail({ to: email, name: cleanName, purpose: 'verify', url: `${frontendUrl()}/verify-email?token=${encodeURIComponent(verificationToken)}`, locale: isRu ? 'ru' : 'en' }).catch(() => null);
     const token = signAccessToken(user, sessionId);
     setSessionCookies(res, token, refreshToken);
     res.status(201).json({ ...(process.env.NODE_ENV !== 'production' ? { token } : {}), user: publicUser(user), verification_required: true, ...(process.env.NODE_ENV !== 'production' ? { development_verification_token: verificationToken } : {}) });
@@ -84,8 +87,6 @@ router.post('/login', async (req, res) => {
     if (!user) return res.status(400).json({ error: isRu ? 'Неверный email или пароль' : 'Incorrect email or password' });
     const valid = await bcrypt.compare(password, user.password_hash || '');
     if (!valid) return res.status(400).json({ error: isRu ? 'Неверный email или пароль' : 'Incorrect email or password' });
-    const configuredRole = roleForEmail(email);
-    if (configuredRole === 'admin' && user.role !== 'admin') { await db.prepare(`UPDATE users SET role = 'admin' WHERE id = ?`).run(user.id); user.role = 'admin'; }
     const sessionId = uuidv4();
     const refreshToken = createRefreshToken();
     await db.prepare(`INSERT INTO user_sessions (id, user_id, user_agent, ip_address, refresh_token_hash, refresh_expires_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP + (? * INTERVAL '1 second'))`)
@@ -136,10 +137,10 @@ router.post('/verify-email', async (req, res) => {
 router.post('/resend-verification', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
-    const user = await db.prepare('SELECT id, email, name, email_verified FROM users WHERE email = ?').get(email);
+    const user = await db.prepare('SELECT id, email, name, email_verified, locale FROM users WHERE email = ?').get(email);
     if (!user || user.email_verified) return res.json({ sent: true });
     const token = await createToken(user.id, 'email_verification', 24 * 60);
-    await linkEmail({ to: user.email, name: user.name, purpose: 'verify', url: `${frontendUrl()}/verify-email?token=${encodeURIComponent(token)}` });
+    await linkEmail({ to: user.email, name: user.name, purpose: 'verify', url: `${frontendUrl()}/verify-email?token=${encodeURIComponent(token)}`, locale: user.locale });
     return res.json({ sent: true, ...(process.env.NODE_ENV !== 'production' ? { development_token: token } : {}) });
   } catch (error) { return res.status(error.status || 500).json({ error: error.message }); }
 });
@@ -147,10 +148,10 @@ router.post('/resend-verification', async (req, res) => {
 router.post('/forgot-password', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
-    const user = await db.prepare('SELECT id, email, name FROM users WHERE email = ?').get(email);
+    const user = await db.prepare('SELECT id, email, name, locale FROM users WHERE email = ?').get(email);
     if (!user) return res.json({ sent: true });
     const token = await createToken(user.id, 'password_reset', 30);
-    await linkEmail({ to: user.email, name: user.name, purpose: 'reset', url: `${frontendUrl()}/reset-password?token=${encodeURIComponent(token)}` });
+    await linkEmail({ to: user.email, name: user.name, purpose: 'reset', url: `${frontendUrl()}/reset-password?token=${encodeURIComponent(token)}`, locale: user.locale });
     return res.json({ sent: true, ...(process.env.NODE_ENV !== 'production' ? { development_token: token } : {}) });
   } catch (error) { return res.status(error.status || 500).json({ error: error.message }); }
 });
@@ -160,13 +161,13 @@ router.post('/reset-password', async (req, res) => {
   if (!strongPassword(password)) return res.status(400).json({ error: 'Password must be at least 12 characters and include upper/lowercase letters, a number and a symbol' });
   const row = await consumeToken(String(req.body.token || ''), 'password_reset');
   if (!row) return res.status(400).json({ error: 'Reset link is invalid or expired' });
-  const user = await db.prepare('SELECT email, name FROM users WHERE id = ?').get(row.user_id);
+  const user = await db.prepare('SELECT email, name, locale FROM users WHERE id = ?').get(row.user_id);
   await db.transaction(async () => {
     await db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(await bcrypt.hash(password, 10), row.user_id);
     await db.prepare('UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL').run(row.user_id);
   });
   const { sendEmail } = require('../services/email');
-  await sendEmail({ to: user.email, subject: 'Your Fairworth password was changed', text: `Hello ${user.name}, your Fairworth password was changed. Contact support immediately if this was not you.` }).catch(() => null);
+  await sendEmail({ to: user.email, ...accountEmail({ name: user.name, event: 'password_changed', locale: user.locale }) }).catch(() => null);
   clearSessionCookies(res);
   return res.json({ reset: true });
 });

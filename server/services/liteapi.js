@@ -1,10 +1,11 @@
 const { withRetry } = require('../utils/retry');
+const { configured: configuredSecret } = require('../config/capabilities');
 
 const BASE_URL = () => (process.env.LITEAPI_BASE_URL || 'https://api.liteapi.travel/v3.0').replace(/\/$/, '');
 let facilitiesCache = null;
 
 function configured() {
-  return Boolean(process.env.LITEAPI_KEY);
+  return configuredSecret(process.env.LITEAPI_KEY);
 }
 
 async function request(path, options = {}) {

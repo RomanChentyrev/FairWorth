@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const travelpayouts = require('../services/travelpayouts');
+const { configured } = require('../config/capabilities');
+const { db } = require('../db/database');
+const { scoreFlights, FLIGHT_SCORE_VERSION } = require('../services/flightScoring');
 
 function getTravelpayoutsToken() {
   return process.env.TRAVELPAYOUTS_TOKEN;
@@ -8,10 +11,11 @@ function getTravelpayoutsToken() {
 
 function requireTravelpayoutsToken(res) {
   const token = getTravelpayoutsToken();
-  if (!token) {
-    res.status(500).json({
+  if (!configured(token)) {
+    res.status(503).json({
       success: false,
       error: 'TRAVELPAYOUTS_TOKEN is not configured on the server',
+      code: 'PROVIDER_NOT_CONFIGURED', capability: 'flights', provider: 'Travelpayouts', retryable: false,
     });
     return null;
   }
@@ -26,6 +30,34 @@ function parseRouteQuery(query) {
     return_date: query.return_date ? String(query.return_date).trim() : undefined,
     currency: String(query.currency || 'USD').trim().toUpperCase(),
   };
+}
+
+async function flightPreferences(userId) {
+  return (await db.prepare(`SELECT flight_type, seat_class, seat_position, preferred_airlines,
+    max_stops, travel_style, budget_level FROM user_preferences WHERE user_id = ?`).get(userId)) || {};
+}
+
+function scoringContext(query) {
+  const departure = query.depart_date ? new Date(`${String(query.depart_date).slice(0, 10)}T00:00:00Z`) : null;
+  const returning = query.return_date ? new Date(`${String(query.return_date).slice(0, 10)}T00:00:00Z`) : null;
+  const calculatedTripDays = departure && returning && !Number.isNaN(departure.getTime()) && !Number.isNaN(returning.getTime())
+    ? Math.max(0, Math.round((returning - departure) / 86400000))
+    : null;
+  return {
+    passengers: Math.min(Math.max(Number(query.passengers) || 1, 1), 9),
+    cabinClass: query.cabin_class ? String(query.cabin_class).toLowerCase() : null,
+    maxStops: query.max_stops,
+    tripDays: Number.isFinite(Number(query.trip_days)) ? Math.max(0, Number(query.trip_days)) : calculatedTripDays,
+  };
+}
+
+function rankedFlights(tickets, preferences, context) {
+  return scoreFlights(tickets, preferences, context)
+    .filter(ticket => ticket.strict_filter_failures.length === 0)
+    .sort((a, b) => Number(b.top_pick_eligible) - Number(a.top_pick_eligible)
+      || b.adjusted_score - a.adjusted_score
+      || b.fairworth_score - a.fairworth_score
+      || Number(a.price || Infinity) - Number(b.price || Infinity));
 }
 
 function validateOriginDestination(res, { origin, destination }, options = {}) {
@@ -60,12 +92,24 @@ function calendarStats(days) {
   return { min, max, avg, cheap };
 }
 
+function isProviderTimeout(error) {
+  return error?.name === 'TimeoutError' || ['ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(error?.code) || /timed?\s*out|timeout/i.test(String(error?.message || ''));
+}
+
 function sendTravelpayoutsError(res, err) {
   console.error('[travelpayouts]', err);
-  res.status(502).json({
+  const timeout = isProviderTimeout(err);
+  res.status(timeout ? 504 : 502).json({
     success: false,
-    error: err.message || 'Travelpayouts API error',
+    error: timeout ? 'Travelpayouts did not respond in time' : 'Travelpayouts request failed',
+    code: timeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_ERROR',
+    provider: 'Travelpayouts',
+    retryable: true,
   });
+}
+
+function preferredProviderError(errors) {
+  return errors.find(isProviderTimeout) || errors[0] || new Error('Travelpayouts request failed');
 }
 
 function uniqueTickets(tickets) {
@@ -188,15 +232,28 @@ router.get('/top', async (req, res) => {
     const requestedDate = params.depart_date;
     const isExactDateSearch = requestedDate.length === 10;
     const requestedMonth = requestedDate.slice(0, 7);
-    let tickets = await travelpayouts.pricesForDates({ ...params, limit, token }).catch(() => []);
+    let tickets = [];
+    let successfulProviderCalls = 0;
+    const providerErrors = [];
+    try {
+      tickets = await travelpayouts.pricesForDates({ ...params, limit, token });
+      successfulProviderCalls += 1;
+    } catch (error) { providerErrors.push(error); }
 
     tickets = filterTicketsByRequestedDate(tickets, requestedDate);
 
     if (!tickets.length) {
-      const [cheapTickets, calendarDays] = await Promise.all([
-        travelpayouts.cheapestTickets({ ...params, token }).catch(() => []),
-        travelpayouts.priceCalendar({ ...params, token }).catch(() => []),
+      const fallbackResults = await Promise.allSettled([
+        travelpayouts.cheapestTickets({ ...params, token }),
+        travelpayouts.priceCalendar({ ...params, token }),
       ]);
+      const [cheapResult, calendarResult] = fallbackResults;
+      for (const result of fallbackResults) {
+        if (result.status === 'fulfilled') successfulProviderCalls += 1;
+        else providerErrors.push(result.reason);
+      }
+      const cheapTickets = cheapResult.status === 'fulfilled' ? cheapResult.value : [];
+      const calendarDays = calendarResult.status === 'fulfilled' ? calendarResult.value : [];
 
       const calendarTickets = calendarDays
         .filter(day => {
@@ -215,13 +272,20 @@ router.get('/top', async (req, res) => {
       ];
     }
 
+    if (!tickets.length && successfulProviderCalls === 0) throw preferredProviderError(providerErrors);
+
     if (includeAlternatives && tickets.length < limit && isExactDateSearch) {
-      const monthTickets = await travelpayouts.pricesForDates({
-        ...params,
-        depart_date: requestedDate.slice(0, 7),
-        limit: 30,
-        token,
-      }).catch(() => []);
+      let monthTickets = [];
+      try {
+        monthTickets = await travelpayouts.pricesForDates({
+          ...params,
+          depart_date: requestedDate.slice(0, 7),
+          limit: 30,
+          token,
+        });
+      } catch (error) {
+        console.warn(`[travelpayouts] optional alternative dates skipped: ${error.message}`);
+      }
 
       const nearbyTickets = monthTickets
         .map(ticket => ({
@@ -243,6 +307,9 @@ router.get('/top', async (req, res) => {
       })
       .slice(0, limit);
     tickets = await enrichArrivalTimes(tickets);
+    const preferences = await flightPreferences(req.user.id);
+    const context = scoringContext(req.query);
+    tickets = rankedFlights(tickets, preferences, context);
 
     res.json({
       success: true,
@@ -251,6 +318,8 @@ router.get('/top', async (req, res) => {
       destination: params.destination,
       currency: params.currency,
       limit,
+      score_version: FLIGHT_SCORE_VERSION,
+      scoring_context: context,
       data: tickets,
     });
   } catch (err) {
@@ -288,15 +357,15 @@ router.get('/most-suitable', async (req, res) => {
   if (!validateOriginDestination(res, params, { destinationRequired: true })) return;
 
   try {
-    const tickets = await travelpayouts.directTickets({ ...params, token });
-    const suitableTickets = tickets
+    const tickets = await travelpayouts.pricesForDates({ ...params, limit: 40, token });
+    const enrichedTickets = await enrichArrivalTimes(filterTicketsByRequestedDate(tickets, params.depart_date));
+    const preferences = await flightPreferences(req.user.id);
+    const context = scoringContext(req.query);
+    const suitableTickets = rankedFlights(enrichedTickets
       .map(ticket => ({
         ...ticket,
-        stops: 0,
-        direct: true,
-        suitability_basis: 'direct_flight',
-      }))
-      .sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+        suitability_basis: 'fairworth_flight_score',
+      })), preferences, context);
 
     res.json({
       success: true,
@@ -304,7 +373,9 @@ router.get('/most-suitable', async (req, res) => {
       origin: params.origin,
       destination: params.destination,
       currency: params.currency,
-      suitability_basis: 'direct_flight',
+      suitability_basis: 'fairworth_flight_score',
+      score_version: FLIGHT_SCORE_VERSION,
+      scoring_context: context,
       data: suitableTickets,
     });
   } catch (err) {

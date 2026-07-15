@@ -4,6 +4,8 @@ import { ArrowRight, Flame, Sparkles, Star, TrendingUp } from 'lucide-react';
 import { hotelsApi } from '../api';
 import { useLang } from '../i18n/LanguageContext';
 import styles from './InsightsPage.module.css';
+import useCapabilities from '../hooks/useCapabilities';
+import ProviderUnavailable from '../components/ProviderUnavailable';
 import { defaultTravelDates } from '../utils/dates';
 import { formatAmount } from '../utils/money';
 
@@ -89,6 +91,7 @@ function OfferCard({ offer, sectionKey }) {
 
 export default function InsightsPage() {
   const { t, lang } = useLang();
+  const { capabilities, loading: capabilitiesLoading } = useCapabilities();
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -96,6 +99,7 @@ export default function InsightsPage() {
   const [empty, setEmpty] = useState(false);
 
   useEffect(() => {
+    if (!capabilities || capabilities.hotels?.status !== 'ready' || capabilities.flights?.status !== 'ready') return undefined;
     let cancelled = false;
     let timer;
     let attempts = 0;
@@ -127,13 +131,16 @@ export default function InsightsPage() {
     };
     load();
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, []);
+  }, [capabilities, lang]);
 
   const retry = async () => {
     setError(''); setEmpty(false); setLoading(true); setRefreshing(true);
     try { await hotelsApi.refreshInsights(); window.setTimeout(() => window.location.reload(), 1200); }
     catch (requestError) { setLoading(false); setRefreshing(false); setError(requestError.response?.data?.error || requestError.message); }
   };
+
+  if (!capabilitiesLoading && capabilities?.hotels?.status !== 'ready') return <ProviderUnavailable capability="hotels" />;
+  if (!capabilitiesLoading && capabilities?.flights?.status !== 'ready') return <ProviderUnavailable capability="flights" />;
 
   return (
     <div className={styles.page}>
