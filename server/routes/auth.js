@@ -10,6 +10,7 @@ const { linkEmail } = require('../services/email');
 const { accountEmail } = require('../services/emailTemplates');
 const { TERMS_VERSION, PRIVACY_VERSION } = require('../config/legal');
 const { effectiveRole } = require('../config/admin');
+const { isEmailVerificationRequired } = require('../config/auth');
 const {
   REFRESH_COOKIE, REFRESH_TTL_SECONDS, parseCookies, hashToken, createRefreshToken,
   signAccessToken, setSessionCookies, clearSessionCookies,
@@ -23,7 +24,7 @@ function publicUser(user) {
   return {
     id: user.id, name: user.name, email: user.email,
     phone: user.phone, city: user.city, country: user.country, bio: user.bio, website: user.website,
-    onboarding_completed: Boolean(user.onboarding_completed), email_verified: Boolean(user.email_verified), role: effectiveRole(user.email),
+    onboarding_completed: Boolean(user.onboarding_completed), email_verified: !isEmailVerificationRequired() || Boolean(user.email_verified), role: effectiveRole(user.email),
     behavioural_tracking_consent: Boolean(user.behavioural_tracking_consent),
   };
 }
@@ -44,11 +45,12 @@ router.post('/register', async (req, res) => {
     if (existing) return res.status(400).json({ error: isRu ? 'Email уже зарегистрирован' : 'This email is already registered' });
     const passwordHash = await bcrypt.hash(password, 10);
     const userId = uuidv4();
+    const verificationRequired = isEmailVerificationRequired();
     const sessionId = uuidv4();
     const refreshToken = createRefreshToken();
     try {
       await db.transaction(async () => {
-      await db.prepare('INSERT INTO users (id, email, name, password_hash, onboarding_completed, behavioural_tracking_consent, terms_accepted_at, privacy_accepted_at, terms_version, privacy_version, role, locale) VALUES (?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?, ?)').run(userId, email, cleanName, passwordHash, trackingConsent ? 1 : 0, TERMS_VERSION, PRIVACY_VERSION, 'user', isRu ? 'ru' : 'en');
+      await db.prepare('INSERT INTO users (id, email, name, password_hash, onboarding_completed, email_verified, behavioural_tracking_consent, terms_accepted_at, privacy_accepted_at, terms_version, privacy_version, role, locale) VALUES (?, ?, ?, ?, 0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?, ?)').run(userId, email, cleanName, passwordHash, verificationRequired ? 0 : 1, trackingConsent ? 1 : 0, TERMS_VERSION, PRIVACY_VERSION, 'user', isRu ? 'ru' : 'en');
       await db.prepare(`
         INSERT INTO user_preferences (
           id, user_id, hotel_stars, room_type, room_view, hotel_amenities,
@@ -66,11 +68,14 @@ router.post('/register', async (req, res) => {
       throw error;
     }
     const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-    const verificationToken = await createToken(userId, 'email_verification', 24 * 60);
-    await linkEmail({ to: email, name: cleanName, purpose: 'verify', url: `${frontendUrl()}/verify-email?token=${encodeURIComponent(verificationToken)}`, locale: isRu ? 'ru' : 'en' }).catch(() => null);
+    let verificationToken = null;
+    if (verificationRequired) {
+      verificationToken = await createToken(userId, 'email_verification', 24 * 60);
+      await linkEmail({ to: email, name: cleanName, purpose: 'verify', url: `${frontendUrl()}/verify-email?token=${encodeURIComponent(verificationToken)}`, locale: isRu ? 'ru' : 'en' }).catch(() => null);
+    }
     const token = signAccessToken(user, sessionId);
     setSessionCookies(res, token, refreshToken);
-    res.status(201).json({ ...(process.env.NODE_ENV !== 'production' ? { token } : {}), user: publicUser(user), verification_required: true, ...(process.env.NODE_ENV !== 'production' ? { development_verification_token: verificationToken } : {}) });
+    res.status(201).json({ ...(process.env.NODE_ENV !== 'production' ? { token } : {}), user: publicUser(user), verification_required: verificationRequired, ...(process.env.NODE_ENV !== 'production' && verificationToken ? { development_verification_token: verificationToken } : {}) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -87,6 +92,10 @@ router.post('/login', async (req, res) => {
     if (!user) return res.status(400).json({ error: isRu ? 'Неверный email или пароль' : 'Incorrect email or password' });
     const valid = await bcrypt.compare(password, user.password_hash || '');
     if (!valid) return res.status(400).json({ error: isRu ? 'Неверный email или пароль' : 'Incorrect email or password' });
+    if (!isEmailVerificationRequired() && !user.email_verified) {
+      await db.prepare('UPDATE users SET email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+      user.email_verified = 1;
+    }
     const sessionId = uuidv4();
     const refreshToken = createRefreshToken();
     await db.prepare(`INSERT INTO user_sessions (id, user_id, user_agent, ip_address, refresh_token_hash, refresh_expires_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP + (? * INTERVAL '1 second'))`)

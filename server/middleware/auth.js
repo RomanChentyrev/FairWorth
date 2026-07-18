@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { db } = require('../db/database');
 const { isAdminEmail } = require('../config/admin');
+const { isEmailVerificationRequired } = require('../config/auth');
 
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'fairworth-dev-secret-change-me');
 
@@ -34,6 +35,7 @@ async function requireOnboarding(req, res, next) {
 }
 
 async function requireEmailVerified(req, res, next) {
+  if (!isEmailVerificationRequired()) return next();
   const user = await db.prepare('SELECT email_verified FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(401).json({ error: 'User not found' });
   if (!user.email_verified) return res.status(403).json({ error: 'Verify your email before searching offers', email_verification_required: true });

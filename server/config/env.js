@@ -16,6 +16,7 @@ const schema = z.object({
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
   TRUST_PROXY: booleanString.default(false),
   AUTH_RATE_LIMIT: z.coerce.number().int().min(1).default(20),
+  EMAIL_VERIFICATION_REQUIRED: booleanString.default(true),
   ADMIN_EMAILS: z.string().optional().default(''),
   SMTP_HOST: z.string().optional().default(''),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),

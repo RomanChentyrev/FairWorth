@@ -27,7 +27,13 @@ test('central environment validation applies typed defaults', () => {
   assert.equal(env.PORT, 3001);
   assert.equal(env.DATABASE_SSL, false);
   assert.equal(env.RUN_MIGRATIONS_ON_START, true);
+  assert.equal(env.EMAIL_VERIFICATION_REQUIRED, true);
   assert.equal(env.PARTNER_BOOKING_ENABLED, false);
+});
+
+test('email verification can be disabled explicitly for a closed MVP', () => {
+  const env = validateEnv(productionEnv({ EMAIL_VERIFICATION_REQUIRED: 'false' }));
+  assert.equal(env.EMAIL_VERIFICATION_REQUIRED, false);
 });
 
 test('central environment validation rejects invalid startup values', () => {

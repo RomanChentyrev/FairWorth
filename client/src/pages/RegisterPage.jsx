@@ -32,7 +32,7 @@ export default function RegisterPage({ onLogin }) {
       localStorage.setItem('fw_user', JSON.stringify(user));
       if (res.data.development_verification_token) sessionStorage.setItem('fairworth_verification_token', res.data.development_verification_token);
       if (onLogin) onLogin(user);
-      navigate('/verify-email');
+      navigate(res.data.verification_required ? '/verify-email' : '/preferences?onboarding=1');
     } catch (err) {
       setError(err.response?.data?.error || (isRu ? 'Ошибка регистрации' : 'Registration failed'));
     } finally {
