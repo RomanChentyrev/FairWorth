@@ -45,6 +45,8 @@ services:
   worker:
     image: ${REGISTRY_IMAGE}/api:${IMAGE_TAG}
     restart: unless-stopped
+    healthcheck:
+      disable: true
     env_file: ${SERVER_ENV_FILE}
     environment:
       NODE_ENV: production
