@@ -14,7 +14,8 @@ const { withRetry } = require('../utils/retry');
 
 const BASE_V1  = 'api.travelpayouts.com';
 const BASE_V2  = 'api.travelpayouts.com';
-const DATA_DIR = path.join(__dirname, '../data');
+const DATA_DIR = process.env.TRAVELPAYOUTS_DATA_DIR
+  || (process.env.NODE_ENV === 'production' ? '/tmp/tripalora-travelpayouts' : path.join(__dirname, '../data'));
 
 // ─── In-memory кэш ────────────────────────────────────────────────────────────
 // Структура: { [key]: { data, expiresAt } }
@@ -140,9 +141,15 @@ async function fetchStaticFile(name) {
   // Скачиваем
   const url = new URL(STATIC_FILES[name]);
   const data = await get(url.hostname, url.pathname, '');
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(data));
-  console.log(`[travelpayouts] cached static file: ${name}.json`);
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(data));
+    console.log(`[travelpayouts] cached static file: ${name}.json`);
+  } catch (error) {
+    // Static metadata remains usable in memory when an immutable container
+    // cannot persist its optional provider cache.
+    console.warn(`[travelpayouts] static cache skipped for ${name}: ${error.message}`);
+  }
   return data;
 }
 
