@@ -10,6 +10,9 @@ const ticket = (overrides = {}) => ({
   airline: 'EK',
   link: 'https://example.test/fare',
   expires_at: '2030-05-01T00:00:00Z',
+  fare_type: 'indicative',
+  fare_observed_at: new Date().toISOString(),
+  fare_cache_status: 'provider_cached',
   ...overrides,
 });
 
@@ -47,4 +50,14 @@ test('party size changes the score when a confirmed seat layout is available', (
   const tripleBlocks = scoreFlights([ticket({ seat_layout: '3-3' })], {}, { passengers: 2 })[0];
   assert.ok(pairFriendly.fairworth_score > tripleBlocks.fairworth_score);
   assert.equal(pairFriendly.price_details.total_for_party, 1000);
+});
+
+test('indicative fares expose conservative confidence and never claim availability', () => {
+  const result = scoreFlights([ticket({ cabin_class: 'economy', taxes_included: true, baggage_included: true, refundable: true })], {}, { passengers: 1 })[0];
+  assert.ok(result.fare_confidence < 80);
+  assert.equal(result.price_details.fare_type, 'indicative');
+  assert.equal(result.price_details.availability_confirmed, false);
+  assert.equal(result.price_details.seat_availability_confirmed, false);
+  assert.equal(result.price_details.requires_provider_verification, true);
+  assert.ok(result.unknown_score_data.includes('confirmed_availability'));
 });

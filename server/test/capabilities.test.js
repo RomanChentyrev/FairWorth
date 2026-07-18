@@ -70,7 +70,10 @@ test('fixtures do not replace real provider credentials', () => {
   assert.equal(capabilities().flights.status, 'unavailable');
   assert.equal(capabilities().ai.status, 'unavailable');
   process.env.TRAVELPAYOUTS_TOKEN = 'test-travelpayouts-token';
-  assert.equal(capabilities().flights.status, 'ready');
+  const flightCapability = capabilities().flights;
+  assert.equal(flightCapability.status, 'ready');
+  assert.equal(flightCapability.features.indicative_fares, true);
+  assert.equal(flightCapability.features.live_fares, undefined);
   if (previous.fixture === undefined) delete process.env.PROVIDER_FIXTURES_ENABLED; else process.env.PROVIDER_FIXTURES_ENABLED = previous.fixture;
   if (previous.liteapi === undefined) delete process.env.LITEAPI_KEY; else process.env.LITEAPI_KEY = previous.liteapi;
   if (previous.token === undefined) delete process.env.TRAVELPAYOUTS_TOKEN; else process.env.TRAVELPAYOUTS_TOKEN = previous.token;

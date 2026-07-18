@@ -33,13 +33,15 @@ const schema = z.object({
   PARTNER_ALLOWED_HOSTS: z.string().optional().default(''),
   PARTNER_DEEP_LINK_TEMPLATE: z.string().optional().default(''),
   PARTNER_POSTBACK_SECRET: z.string().optional().default(''),
+  LEGAL_OPERATOR_TYPE: z.enum(['individual', 'company']).default('company'),
   LEGAL_ACTIVITY_HISTORY_MONTHS: z.coerce.number().int().min(1).max(120).default(24),
   SESSION_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   CACHE_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   TECHNICAL_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
 }).passthrough().superRefine((env, context) => {
   if (env.NODE_ENV !== 'production') return;
-  const required = ['SMTP_HOST', 'EMAIL_FROM', 'ADMIN_EMAILS', 'LEGAL_OPERATOR_NAME', 'LEGAL_REGISTERED_ADDRESS', 'LEGAL_REGISTRATION_NUMBER', 'LEGAL_JURISDICTION', 'LEGAL_CONTACT_EMAIL', 'LEGAL_DATA_HOSTING_COUNTRIES', 'LEGAL_TRANSFER_SAFEGUARD'];
+  const required = ['SMTP_HOST', 'EMAIL_FROM', 'ADMIN_EMAILS', 'LEGAL_OPERATOR_NAME', 'LEGAL_REGISTERED_ADDRESS', 'LEGAL_JURISDICTION', 'LEGAL_CONTACT_EMAIL', 'LEGAL_DATA_HOSTING_COUNTRIES', 'LEGAL_TRANSFER_SAFEGUARD'];
+  if (env.LEGAL_OPERATOR_TYPE === 'company') required.push('LEGAL_REGISTRATION_NUMBER');
   if (env.PARTNER_BOOKING_ENABLED) required.push('PARTNER_POSTBACK_SECRET', 'PARTNER_ALLOWED_HOSTS', 'PARTNER_DEEP_LINK_TEMPLATE');
   for (const key of required) if (!String(env[key] || '').trim()) context.addIssue({ code: 'custom', path: [key], message: 'is required in production' });
   if (env.JWT_SECRET.length < 32) context.addIssue({ code: 'custom', path: ['JWT_SECRET'], message: 'must contain at least 32 characters in production' });

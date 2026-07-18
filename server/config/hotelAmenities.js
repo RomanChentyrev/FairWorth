@@ -7,7 +7,7 @@ const AMENITY_DEFINITIONS = Object.freeze({
   spa: ['spa', 'massage', 'sauna', 'wellness centre', 'wellness center'],
   gym: ['gym', 'fitness', 'health club'],
   restaurant: ['restaurant', 'dining venue'],
-  beach: ['beach', 'private beach', 'beachfront'],
+  beach: ['beach', 'private beach', 'beachfront', 'beach access', 'on site beach', 'beach area'],
   airport_shuttle: ['airport shuttle', 'airport transfer', 'transfer to airport', 'transfer from airport'],
   tennis: ['tennis', 'tennis court'],
   family_rooms: ['family room', 'family rooms', 'kids club', 'children club'],
@@ -53,10 +53,30 @@ function normalizeText(value = '') {
     .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function containsPhrase(value, phrase) {
+  const normalizedValue = normalizeText(value);
+  const normalizedPhrase = normalizeText(phrase);
+  return normalizedValue === normalizedPhrase || ` ${normalizedValue} `.includes(` ${normalizedPhrase} `);
+}
+
+function matchesDefinition(value, key) {
+  const normalizedValue = normalizeText(value);
+  if (!normalizedValue) return false;
+  if (key === 'beach') {
+    return normalizedValue === 'beach'
+      || normalizedValue === 'private beach'
+      || normalizedValue === 'beachfront'
+      || containsPhrase(normalizedValue, 'beach access')
+      || containsPhrase(normalizedValue, 'on site beach')
+      || containsPhrase(normalizedValue, 'beach area');
+  }
+  return (AMENITY_DEFINITIONS[key] || []).some(alias => containsPhrase(normalizedValue, alias));
+}
+
 function normalizedAmenity(name = '') {
   const value = normalizeText(name);
-  for (const [key, aliases] of Object.entries(AMENITY_DEFINITIONS)) {
-    if (aliases.some(alias => value.includes(alias))) return key;
+  for (const key of Object.keys(AMENITY_DEFINITIONS)) {
+    if (matchesDefinition(value, key)) return key;
   }
   return value.replace(/ /g, '_').slice(0, 80);
 }

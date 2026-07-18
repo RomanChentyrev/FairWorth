@@ -8,9 +8,10 @@ function publicLegalConfig() {
     privacy_version: PRIVACY_VERSION,
     effective_date: EFFECTIVE_DATE,
     operator: {
+      type: process.env.LEGAL_OPERATOR_TYPE || 'company',
       name: process.env.LEGAL_OPERATOR_NAME || '[SERVICE OPERATOR NAME]',
       registered_address: process.env.LEGAL_REGISTERED_ADDRESS || '[REGISTERED ADDRESS]',
-      registration_number: process.env.LEGAL_REGISTRATION_NUMBER || '[COMPANY / REGISTRATION NUMBER]',
+      registration_number: process.env.LEGAL_REGISTRATION_NUMBER || '',
       jurisdiction: process.env.LEGAL_JURISDICTION || '[JURISDICTION]',
       contact_email: process.env.LEGAL_CONTACT_EMAIL || '[LEGAL CONTACT EMAIL]',
       privacy_email: process.env.LEGAL_PRIVACY_EMAIL || process.env.LEGAL_CONTACT_EMAIL || '[PRIVACY CONTACT EMAIL]',

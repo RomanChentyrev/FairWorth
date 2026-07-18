@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { Eye, EyeOff } from 'lucide-react';
 import styles from './RegisterPage.module.css';
 import { useLang } from '../i18n/LanguageContext';
 
@@ -32,28 +33,12 @@ export default function LoginPage({ onLogin }) {
   };
 
   return (
-    <div className={styles.page}>
-      <button type="button" onClick={toggleLang} style={{ position: 'fixed', top: 20, right: 24, zIndex: 10, border: '1px solid #d8dde6', borderRadius: 8, padding: '7px 12px', background: '#fff', cursor: 'pointer', fontWeight: 700 }}>{isRu ? 'EN' : 'RU'}</button>
-      <div className={styles.left}>
-        <div className={styles.leftContent}>
-          <div className={styles.logo}>Fairworth</div>
-          <h1 className={styles.headline}>{isRu ? <>С возвращением.<br />Ваши предпочтения <em>ждут вас</em></> : <>Welcome back.<br />Your preferences <em>are waiting</em></>}</h1>
-          <div className={styles.features}>
-            {[
-              { icon: '✦', text: isRu ? 'ИИ помнит ваши предпочтения по отелям и перелётам' : 'AI remembers your hotel and flight preferences' },
-              { icon: '📌', text: isRu ? 'Ваши закладки и история поиска сохранены' : 'Your saved hotels and search history are here' },
-              { icon: '🔔', text: isRu ? 'Алерты о ценах продолжают работать' : 'Your price alerts keep working' },
-              { icon: '⚖️', text: isRu ? 'Незавершённые сравнения ждут вас' : 'Your unfinished comparisons are waiting' },
-            ].map(f => (
-              <div key={f.text} className={styles.feature}>
-                <span className={styles.featureIcon}>{f.icon}</span>
-                <span>{f.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className={styles.right}>
+    <div className={`${styles.page} ${styles.registerPage}`}>
+      <header className={styles.registerHeader}>
+        <Link to="/" className={styles.registerLogo}>Tripalora</Link>
+        <button type="button" className={styles.langBtn} onClick={toggleLang}>{isRu ? 'EN' : 'RU'}</button>
+      </header>
+      <main className={`${styles.registerMain} ${styles.loginMain}`}>
         <div className={styles.formWrap}>
           <div className={styles.formHeader}>
             <h2 className={styles.formTitle}>{t('login_title')}</h2>
@@ -68,7 +53,9 @@ export default function LoginPage({ onLogin }) {
               <label className={styles.label}>{t('reg_password')}</label>
               <div className={styles.passwordWrap}>
                 <input className={styles.input} type={showPassword ? 'text' : 'password'} placeholder={isRu ? 'Ваш пароль' : 'Your password'} value={form.password} onChange={e => set('password', e.target.value)} required />
-                <button type="button" className={styles.eyeBtn} onClick={() => setShowPassword(p => !p)} tabIndex={-1}>{showPassword ? '🙈' : '👁'}</button>
+                <button type="button" className={styles.eyeBtn} onClick={() => setShowPassword(p => !p)} aria-label={showPassword ? (isRu ? 'Скрыть пароль' : 'Hide password') : (isRu ? 'Показать пароль' : 'Show password')}>
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
               </div>
             </div>
             {error && <div className={styles.error}>{error}</div>}
@@ -78,7 +65,7 @@ export default function LoginPage({ onLogin }) {
           </form>
           <p className={styles.terms} style={{ marginTop: 32 }}><Link to="/forgot-password">{isRu ? 'Забыли пароль?' : 'Forgot your password?'}</Link></p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -40,7 +40,7 @@ GitHub repository settings must contain two Environments: `staging` and `product
 - `DEPLOY_KNOWN_HOSTS` (obtain out of band from the host administrator)
 - `VITE_SENTRY_DSN`
 
-Require reviewer approval for the `production` Environment. A successful push to `staging` builds immutable images and deploys staging. Production deployment is started with **Actions → Deploy → Run workflow**, selecting `production` and the already-tested commit SHA.
+Require reviewer approval for the `production` Environment. A successful push to `staging` builds immutable images. Deployment is started with **Actions → Deploy → Run workflow**, selecting the target environment and an already-tested commit SHA. Until a separate staging host, domain and database exist, deploy only `production` manually after CI succeeds.
 
 The workflow does not copy secrets or alter DNS. Its SSH account should be restricted to the deployment host and have only the Docker permissions needed for this stack.
 

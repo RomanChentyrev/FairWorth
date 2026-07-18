@@ -1,4 +1,14 @@
 .page { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; }
+.registerPage { display: block; min-height: 100vh; background: var(--bg); }
+.registerHeader { min-height: 72px; padding: 0 48px; border-bottom: 1px solid var(--border); background: var(--bg-card); display: flex; align-items: center; justify-content: space-between; }
+.registerLogo { font-family: 'Playfair Display', serif; font-size: 25px; font-weight: 700; color: var(--navy); }
+.langBtn { min-width: 42px; min-height: 36px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--navy); font-size: 12px; font-weight: 700; }
+.langBtn:hover { background: var(--bg-subtle); }
+.registerMain { min-height: calc(100vh - 72px); display: flex; justify-content: center; padding: 52px 24px 72px; }
+.loginMain { align-items: center; padding-top: 48px; padding-bottom: 96px; }
+.registerPage .formWrap { max-width: 460px; }
+.registerPage .formTitle { font-size: 34px; }
+.registerPage .formHeader { margin-bottom: 30px; }
 .left { background: #1A2B4A; display: flex; align-items: center; justify-content: center; padding: 60px 48px; position: sticky; top: 0; height: 100vh; }
 .leftContent { max-width: 420px; }
 .logo { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 700; color: #C9A84C; margin-bottom: 40px; }
@@ -15,13 +25,16 @@
 .switchLink { color: #1A2B4A; font-weight: 600; text-decoration: underline; }
 .form { display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
-.label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #9AA5B4; }
+.label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0; color: #9AA5B4; }
 .input { width: 100%; padding: 11px 14px; border: 1.5px solid #E2E8F0; border-radius: 8px; font-size: 15px; color: #1A2B4A; background: #fff; transition: border-color 0.15s, box-shadow 0.15s; }
 .input:focus { border-color: #1A2B4A; box-shadow: 0 0 0 3px rgba(26,43,74,0.08); outline: none; }
 .input::placeholder { color: #C0C8D4; }
 .passwordWrap { position: relative; }
 .passwordWrap .input { padding-right: 44px; }
-.eyeBtn { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; font-size: 16px; cursor: pointer; padding: 4px; }
+.eyeBtn { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; color: var(--text-muted); cursor: pointer; padding: 4px; display: inline-flex; align-items: center; justify-content: center; }
+.consent { display: grid; grid-template-columns: 17px minmax(0, 1fr); align-items: start; gap: 9px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.consent input { width: 15px; height: 15px; margin-top: 2px; accent-color: var(--navy); }
+.consent a { color: var(--navy); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .error { padding: 10px 14px; background: #FFF5F5; border: 1px solid #FEB2B2; border-radius: 8px; font-size: 13px; color: #C53030; }
 .submitBtn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 13px; background: #1A2B4A; color: #fff; border-radius: 10px; font-size: 15px; font-weight: 700; margin-top: 4px; transition: background 0.15s; }
 .submitBtn:hover:not(:disabled) { background: #2D4470; }
@@ -34,3 +47,12 @@
 .nextStep { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #4A5568; }
 .stepNum { width: 26px; height: 26px; border-radius: 50%; background: #1A2B4A; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .terms { font-size: 11px; color: #9AA5B4; text-align: center; line-height: 1.5; }
+
+@media (max-width: 800px) {
+  .page:not(.registerPage) { grid-template-columns: 1fr; }
+  .page:not(.registerPage) .left { display: none; }
+  .right { min-height: 100vh; padding: 72px 24px 40px; }
+  .registerHeader { min-height: 64px; padding: 0 20px; }
+  .registerMain { min-height: calc(100vh - 64px); padding: 36px 20px 52px; }
+  .registerPage .formTitle { font-size: 30px; }
+}

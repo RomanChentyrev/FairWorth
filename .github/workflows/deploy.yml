@@ -1,9 +1,6 @@
 name: Deploy
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
   workflow_dispatch:
     inputs:
       environment:
@@ -19,7 +16,6 @@ permissions:
 
 jobs:
   select:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'staging')
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.values.outputs.environment }}
@@ -29,16 +25,10 @@ jobs:
         env:
           MANUAL_ENV: ${{ inputs.environment }}
           MANUAL_TAG: ${{ inputs.image_tag }}
-          AUTO_TAG: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            printf '%s' "$MANUAL_TAG" | grep -Eq '^[0-9a-f]{40}$' || { echo 'image_tag must be a full commit SHA' >&2; exit 1; }
-            echo "environment=$MANUAL_ENV" >> "$GITHUB_OUTPUT"
-            echo "image_tag=$MANUAL_TAG" >> "$GITHUB_OUTPUT"
-          else
-            echo "environment=staging" >> "$GITHUB_OUTPUT"
-            echo "image_tag=$AUTO_TAG" >> "$GITHUB_OUTPUT"
-          fi
+          printf '%s' "$MANUAL_TAG" | grep -Eq '^[0-9a-f]{40}$' || { echo 'image_tag must be a full commit SHA' >&2; exit 1; }
+          echo "environment=$MANUAL_ENV" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$MANUAL_TAG" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: select

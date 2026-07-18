@@ -127,6 +127,8 @@ test('capability endpoint reports deterministic test providers', async () => {
   assert.equal(response.status, 200);
   assert.equal(response.body.capabilities.hotels.status, 'ready');
   assert.equal(response.body.capabilities.flights.status, 'ready');
+  assert.equal(response.body.capabilities.flights.features.indicative_fares, true);
+  assert.equal(response.body.capabilities.flights.features.live_fares, undefined);
   assert.equal(response.body.capabilities.partner_booking.status, 'ready');
   assert.equal(response.body.capabilities.partner_booking.stage, 'referral_mvp');
 });
@@ -160,6 +162,31 @@ test('hotel filters are applied and filter refresh is not logged as a search', a
   await request(app).get('/api/hotels/search?city=Singapore&search_event=1&search_session_id=test-session').set('Authorization', `Bearer ${user.token}`);
   const afterExplicit = Number((await db.prepare('SELECT COUNT(*) count FROM searches WHERE user_id = ?').get(user.user.id)).count);
   assert.equal(afterExplicit, before + 1);
+});
+
+test('required beach amenity rejects beach accessories without confirmed beach access', async () => {
+  const user = await register('strict-beach');
+  const city = `Strict-Beach-${Date.now()}`;
+  const towelsHotelId = `beach-towels-${crypto.randomUUID()}`;
+  const privateBeachHotelId = `private-beach-${crypto.randomUUID()}`;
+  try {
+    await db.prepare(`INSERT INTO hotels (id, name, location, city, country, stars, amenities) VALUES (?, 'Towels Only Hotel', 'Center', ?, 'Test', 5, '["beach"]')`)
+      .run(towelsHotelId, city);
+    await db.prepare(`INSERT INTO hotels (id, name, location, city, country, stars, amenities) VALUES (?, 'Private Beach Hotel', 'Coast', ?, 'Test', 5, '["beach"]')`)
+      .run(privateBeachHotelId, city);
+    await db.prepare(`INSERT INTO hotel_amenities (id, hotel_id, provider, provider_amenity_id, name, normalized_name) VALUES (?, ?, 'liteapi', 'towels', 'Beach towels', 'beach')`)
+      .run(crypto.randomUUID(), towelsHotelId);
+    await db.prepare(`INSERT INTO hotel_amenities (id, hotel_id, provider, provider_amenity_id, name, normalized_name) VALUES (?, ?, 'liteapi', 'private-beach', 'Private beach', 'beach')`)
+      .run(crypto.randomUUID(), privateBeachHotelId);
+
+    const saved = await request(app).put('/api/users/preferences').set('Authorization', `Bearer ${user.token}`).send({ required_hotel_amenities: ['beach'] });
+    assert.equal(saved.status, 200, saved.text);
+    const response = await request(app).get(`/api/hotels/search?city=${encodeURIComponent(city)}`).set('Authorization', `Bearer ${user.token}`);
+    assert.equal(response.status, 200, response.text);
+    assert.deepEqual(response.body.hotels.map(hotel => hotel.id), [privateBeachHotelId]);
+  } finally {
+    await db.prepare('DELETE FROM hotels WHERE id IN (?, ?)').run(towelsHotelId, privateBeachHotelId);
+  }
 });
 
 test('hotel pagination is applied after global Score ranking', async () => {
@@ -454,6 +481,10 @@ test('flight API distinguishes provider timeout, provider error and a successful
     const empty = await request(app).get(url).set(auth);
     assert.equal(empty.status, 200, empty.text);
     assert.equal(empty.body.success, true); assert.equal(empty.body.count, 0); assert.deepEqual(empty.body.data, []);
+    assert.equal(empty.body.fare_positioning.fare_type, 'indicative');
+    assert.equal(empty.body.fare_positioning.availability_confirmed, false);
+    assert.equal(empty.body.fare_positioning.seat_availability_confirmed, false);
+    assert.equal(empty.body.fare_positioning.requires_provider_verification, true);
   } finally {
     for (const method of methods) travelpayouts[method] = originals[method];
   }

@@ -60,6 +60,18 @@ function rankedFlights(tickets, preferences, context) {
       || Number(a.price || Infinity) - Number(b.price || Infinity));
 }
 
+function indicativeFarePositioning(items = []) {
+  const observed = items.map(item => item.fare_observed_at).filter(Boolean).sort();
+  return {
+    fare_type: 'indicative',
+    latest_observed_at: observed.at(-1) || null,
+    availability_confirmed: false,
+    seat_availability_confirmed: false,
+    requires_provider_verification: true,
+    disclaimer: 'Final price and seat availability must be verified with the provider before booking.',
+  };
+}
+
 function validateOriginDestination(res, { origin, destination }, options = {}) {
   if (!origin) {
     res.status(400).json({ success: false, error: 'origin is required' });
@@ -205,6 +217,7 @@ async function cheapestTicketsHandler(req, res) {
       origin: params.origin,
       destination: params.destination,
       currency: params.currency,
+      fare_positioning: indicativeFarePositioning(tickets),
       data: tickets,
     });
   } catch (err) {
@@ -320,6 +333,7 @@ router.get('/top', async (req, res) => {
       limit,
       score_version: FLIGHT_SCORE_VERSION,
       scoring_context: context,
+      fare_positioning: indicativeFarePositioning(tickets),
       data: tickets,
     });
   } catch (err) {
@@ -342,6 +356,7 @@ router.get('/direct', async (req, res) => {
       origin: params.origin,
       destination: params.destination,
       currency: params.currency,
+      fare_positioning: indicativeFarePositioning(tickets),
       data: tickets,
     });
   } catch (err) {
@@ -376,6 +391,7 @@ router.get('/most-suitable', async (req, res) => {
       suitability_basis: 'fairworth_flight_score',
       score_version: FLIGHT_SCORE_VERSION,
       scoring_context: context,
+      fare_positioning: indicativeFarePositioning(suitableTickets),
       data: suitableTickets,
     });
   } catch (err) {
@@ -403,6 +419,7 @@ router.get('/calendar', async (req, res) => {
       destination: params.destination,
       currency: params.currency,
       stats: calendarStats(days),
+      fare_positioning: indicativeFarePositioning(days),
       data: days,
     });
   } catch (err) {
@@ -428,6 +445,7 @@ router.get('/popular', async (req, res) => {
       count: destinations.length,
       origin,
       currency,
+      fare_positioning: indicativeFarePositioning(destinations),
       data: destinations,
     });
   } catch (err) {
@@ -496,7 +514,7 @@ router.get('/countries', async (req, res) => {
 });
 
 router.get('/search', async (req, res) => {
-  res.status(410).json({ error: 'Demo flight search was removed. Use the live Travelpayouts /top endpoint.' });
+  res.status(410).json({ error: 'Demo flight search was removed. Use the indicative Travelpayouts /top endpoint.' });
 });
 
 module.exports = router;

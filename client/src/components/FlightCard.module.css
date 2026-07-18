@@ -275,6 +275,21 @@
 .meta {
   font-size: 12px;
   color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.meta strong { color: var(--text-secondary); }
+
+.fareWarning {
+  border: 1px solid var(--gold-border);
+  background: var(--gold-bg);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .priceBlock {

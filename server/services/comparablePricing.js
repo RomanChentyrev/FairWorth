@@ -22,6 +22,7 @@ function selectComparableRate(prices, {
   preferredRoomTypes = [],
   breakfastPreferred = false,
   breakfastRequired = false,
+  refundableRequired = false,
   ttlHours = 12,
 } = {}) {
   const requestedGuests = Math.max(1, Number(guests) || 2);
@@ -37,6 +38,7 @@ function selectComparableRate(prices, {
     const refundable = price.refundable === 1 || price.refundable === true || price.cancellation_policy === 'free_cancellation';
     const breakfast = price.includes_breakfast === 1 || price.includes_breakfast === true;
     if (breakfastRequired && !breakfast) return null;
+    if (refundableRequired && !refundable) return null;
     const taxKnown = normalized.tax_status !== 'unknown';
     let adjustment = 1;
     const adjustments = [];
@@ -61,6 +63,29 @@ function selectComparableRate(prices, {
     };
   }).filter(Boolean);
   return candidates.sort((a, b) => a.comparable_nightly_price - b.comparable_nightly_price || a.payable_nightly_price - b.payable_nightly_price)[0] || null;
+}
+
+function rateAvailability(rate, { checkIn, checkOut, guests = 2 } = {}) {
+  const requestedGuests = Math.max(1, Number(guests) || 2);
+  const rateGuests = Number(rate?.rate_guests || rate?.guests || 0) || null;
+  let status = 'unavailable';
+  if (rate?.is_demonstration) status = 'demonstration';
+  else if (rate?.is_stale) status = 'stale';
+  else if (rate && rate.is_displayable !== false && !(Number(rate.payable_nightly_price) > 0)) status = 'invalid_price';
+  else if (rate && (!rateGuests || rateGuests < requestedGuests)) status = 'occupancy_unverified';
+  else if (rate?.is_displayable !== false && Number(rate?.payable_nightly_price) > 0) status = 'available';
+
+  return {
+    availability_status: status,
+    rate_freshness: status === 'available'
+      ? (Number(rate.price_age_hours) <= 0.1 ? 'fresh' : 'cached')
+      : null,
+    rate_checked_for: {
+      check_in: checkIn,
+      check_out: checkOut,
+      guests: requestedGuests,
+    },
+  };
 }
 
 function percentile(sorted, ratio) {
@@ -109,4 +134,4 @@ function benchmarkPriceScore(price, benchmark) {
   return Math.max(0, 50 - ((value - p75) / Math.max(1, p75)) * 50);
 }
 
-module.exports = { roomCategory, selectComparableRate, marketBenchmark, benchmarkPriceScore };
+module.exports = { roomCategory, selectComparableRate, rateAvailability, marketBenchmark, benchmarkPriceScore };

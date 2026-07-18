@@ -176,6 +176,13 @@ function normalizeTravelpayoutsTicket(ticket, context) {
     score_reliability_level: ticket.score_reliability_level,
     fare_confidence: ticket.fare_confidence,
     fare_confidence_level: ticket.fare_confidence_level,
+    fare_type: ticket.price_details?.fare_type || ticket.fare_type || 'indicative',
+    fare_observed_at: ticket.price_details?.fare_observed_at || ticket.fare_observed_at || null,
+    fare_received_at: ticket.price_details?.fare_received_at || ticket.fare_received_at || null,
+    fare_cache_status: ticket.price_details?.fare_cache_status || ticket.fare_cache_status || 'provider_cached',
+    availability_confirmed: false,
+    seat_availability_confirmed: false,
+    requires_provider_verification: true,
     score_version: ticket.score_version,
     score_breakdown: ticket.score_breakdown,
     score_weights: ticket.score_weights,
@@ -237,6 +244,12 @@ function groupFlightFares(flights) {
       arrival_time: flight.arrival_time,
       duration_minutes: flight.duration_minutes,
       duration_label: flight.duration_label,
+      fare_observed_at: flight.fare_observed_at,
+      fare_received_at: flight.fare_received_at,
+      fare_cache_status: flight.fare_cache_status,
+      fare_confidence: flight.fare_confidence,
+      availability_confirmed: false,
+      seat_availability_confirmed: false,
     };
 
     if (!groups.has(key)) {
@@ -270,12 +283,19 @@ function groupFlightFares(flights) {
       arrival_time: cheapestFare?.arrival_time || group.arrival_time,
       duration_minutes: cheapestFare?.duration_minutes || group.duration_minutes,
       duration_label: cheapestFare?.duration_label || group.duration_label,
+      fare_observed_at: cheapestFare?.fare_observed_at || group.fare_observed_at,
+      fare_received_at: cheapestFare?.fare_received_at || group.fare_received_at,
+      fare_cache_status: cheapestFare?.fare_cache_status || group.fare_cache_status,
+      fare_confidence: cheapestFare?.fare_confidence ?? group.fare_confidence,
+      availability_confirmed: false,
+      seat_availability_confirmed: false,
+      requires_provider_verification: true,
       fare_options: fareOptions,
       price: priceMin,
       price_min: priceMin,
       price_max: priceMax,
       fare_count: fareOptions.length,
-      aircraft: fareOptions.length > 1 ? `${fareOptions.length} fares` : group.aircraft,
+      aircraft: fareOptions.length > 1 ? `${fareOptions.length} indicative fares` : group.aircraft,
     };
   });
 }

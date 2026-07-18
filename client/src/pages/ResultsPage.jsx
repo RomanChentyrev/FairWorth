@@ -144,7 +144,7 @@ function savedTravelTrip() {
 function readResultsCache({ city, checkIn, checkOut, guests, tripPurpose }) {
   try {
     const cached = JSON.parse(window.sessionStorage.getItem('fairworth_hotel_results_cache') || 'null');
-    const sameSearch = cached?.version === 15 && cached?.search?.city === city && cached.search.checkIn === checkIn
+    const sameSearch = cached?.version === 16 && cached?.search?.city === city && cached.search.checkIn === checkIn
       && cached.search.checkOut === checkOut && String(cached.search.guests) === String(guests) && cached.search.tripPurpose === tripPurpose;
     if (!sameSearch || Date.now() - cached.savedAt > 15 * 60 * 1000) return null;
     return cached;
@@ -154,6 +154,34 @@ function readResultsCache({ city, checkIn, checkOut, guests, tripPurpose }) {
 function compactCachedHotel(hotel) {
   const { content_raw_json, description, ...cardData } = hotel;
   return cardData;
+}
+
+function isAvailableOffer(hotel) {
+  if (!(Number(hotel?.min_price) > 0)) return false;
+  if (hotel.availability_status) return hotel.availability_status === 'available';
+  return hotel.price_details?.is_displayable !== false
+    && !hotel.price_details?.is_stale
+    && !hotel.price_details?.is_demonstration;
+}
+
+function matchesLivePriceFilters(hotel, { priceRange, freeCancel, breakfastIncl }) {
+  const price = Number(hotel.min_price);
+  if (price < priceRange[0] || price > priceRange[1]) return false;
+  if (freeCancel && !hotel.price_details?.refundable) return false;
+  if (breakfastIncl && !hotel.price_details?.includes_breakfast) return false;
+  return true;
+}
+
+function sortAvailableHotels(hotels, sort) {
+  return [...hotels].sort((a, b) => {
+    if (sort === 'score') return Number(b.top_pick_eligible) - Number(a.top_pick_eligible)
+      || (b.adjusted_score || 0) - (a.adjusted_score || 0)
+      || (b.fairworth_score || 0) - (a.fairworth_score || 0);
+    if (sort === 'price_asc') return Number(a.min_price) - Number(b.min_price);
+    if (sort === 'price_desc') return Number(b.min_price) - Number(a.min_price);
+    if (sort === 'rating') return (b.rating || 0) - (a.rating || 0);
+    return 0;
+  });
 }
 
 function RangeSlider({ min, max, value, onChange, prefix = '$', step = 50 }) {
@@ -208,8 +236,8 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   const cachedResults = useRef(readResultsCache({ city, checkIn, checkOut, guests, tripPurpose })).current;
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const [hotels, setHotels] = useState(cachedResults?.hotels || []);
-  const [loading, setLoading] = useState(!cachedResults);
+  const [hotels, setHotels] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [aiMessage, setAiMessage] = useState(cachedResults?.aiMessage || '');
   const [hoveredId, setHoveredId] = useState(null);
@@ -228,11 +256,12 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   const explicitSearchRef = useRef(true);
   const searchSessionRef = useRef(searchSessionId());
   const [hasMore, setHasMore] = useState(cachedResults?.hasMore ?? true);
-  const [totalResults, setTotalResults] = useState(cachedResults?.totalResults ?? cachedResults?.hotels?.length ?? 0);
+  const [totalResults, setTotalResults] = useState(0);
+  const [catalogOffset, setCatalogOffset] = useState(0);
+  const [checkedCount, setCheckedCount] = useState(0);
+  const [unavailableCount, setUnavailableCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const resultsScrollRef = useRef(null);
-  const skipCachedInitialFetchRef = useRef(Boolean(cachedResults));
-  const activeRateBatchesRef = useRef(new Set());
 
   const nights = Math.ceil((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24)) || 4;
 
@@ -263,8 +292,9 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
     try {
       const existing = JSON.parse(window.sessionStorage.getItem('fairworth_hotel_results_cache') || 'null');
       window.sessionStorage.setItem('fairworth_hotel_results_cache', JSON.stringify({
-        version: 15,
+        version: 16,
         search: { city, checkIn, checkOut, guests, tripPurpose }, hotels: hotels.map(compactCachedHotel), districtOptions, aiMessage, hasMore, totalResults,
+        catalogOffset, checkedCount, unavailableCount,
         filters: { sort, stars, priceRange, ratingMin, amenities, districts, freeCancel, breakfastIncl },
         scrollTop: resultsScrollRef.current?.scrollTop ?? existing?.scrollTop ?? 0,
         savedAt: Date.now(),
@@ -273,31 +303,37 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
       console.warn('Hotel results cache was skipped:', cacheError.message);
       window.sessionStorage.removeItem('fairworth_hotel_results_cache');
     }
-  }, [hotels, loading, error, aiMessage, districtOptions, hasMore, totalResults]);
+  }, [hotels, loading, error, aiMessage, districtOptions, hasMore, totalResults, catalogOffset, checkedCount, unavailableCount]);
 
-  const enrichRateBatch = useCallback((batch) => {
+  const checkRateBatch = useCallback(async (batch) => {
     const hotelIds = batch.map(hotel => hotel.id).filter(Boolean);
-    if (!hotelIds.length) return;
-    const key = `${checkIn}:${checkOut}:${guests}:${hotelIds.join(',')}`;
-    if (activeRateBatchesRef.current.has(key)) return;
-    activeRateBatchesRef.current.add(key);
-    hotelsApi.loadRateBatch({ hotel_ids: hotelIds, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose, language: lang })
-      .then(response => {
-        const updates = new Map((response.data.hotels || []).map(hotel => [hotel.id, hotel]));
-        setHotels(current => {
-          const merged = current.map(hotel => updates.has(hotel.id) ? { ...hotel, ...updates.get(hotel.id) } : hotel);
-          return [...merged].sort((a, b) => {
-            if (sort === 'score') return Number(b.top_pick_eligible) - Number(a.top_pick_eligible) || (b.adjusted_score || 0) - (a.adjusted_score || 0) || (b.fairworth_score || 0) - (a.fairworth_score || 0);
-            if (sort === 'price_asc') return (a.min_price ?? Infinity) - (b.min_price ?? Infinity);
-            if (sort === 'price_desc') return (b.min_price ?? -Infinity) - (a.min_price ?? -Infinity);
-            if (sort === 'rating') return (b.rating || 0) - (a.rating || 0);
-            return 0;
-          });
-        });
-      })
-      .catch(error => console.warn('Progressive hotel rates were not loaded:', error.message))
-      .finally(() => activeRateBatchesRef.current.delete(key));
-  }, [checkIn, checkOut, guests, tripPurpose, lang, sort]);
+    if (!hotelIds.length) return { hotels: [], checked: 0, unavailable: 0 };
+    const response = await hotelsApi.loadRateBatch({
+      hotel_ids: hotelIds,
+      check_in: checkIn,
+      check_out: checkOut,
+      guests,
+      trip_purpose: tripPurpose,
+      language: lang,
+      breakfast: breakfastIncl,
+      free_cancel: freeCancel,
+    });
+    const updates = new globalThis.Map((response.data.hotels || []).map(hotel => [hotel.id, hotel]));
+    const rateAvailable = batch
+      .filter(hotel => updates.has(hotel.id))
+      .map(hotel => ({ ...hotel, ...updates.get(hotel.id) }))
+      .filter(isAvailableOffer);
+    const verified = rateAvailable
+      .filter(hotel => matchesLivePriceFilters(hotel, { priceRange, freeCancel, breakfastIncl }));
+    const checked = Number(response.data.checked ?? batch.length);
+    return {
+      hotels: sortAvailableHotels(verified, sort),
+      checked,
+      unavailable: Array.isArray(response.data.unavailable_hotel_ids)
+        ? response.data.unavailable_hotel_ids.length
+        : Math.max(0, checked - rateAvailable.length),
+    };
+  }, [checkIn, checkOut, guests, tripPurpose, lang, sort, priceRange, freeCancel, breakfastIncl]);
 
   const fetchHotels = useCallback(async () => {
     setLoading(true); setError(null);
@@ -313,25 +349,28 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
       if (priceRange[1] < 2000) params.max_price = priceRange[1];
       if (priceRange[0] > 0) params.min_price = priceRange[0];
       const res = await hotelsApi.search(params);
-      let results = res.data.hotels || [];
+      const results = res.data.hotels || [];
       setDistrictOptions(res.data.facets?.locations || []);
-      if (results.length) {
+      const verified = await checkRateBatch(results);
+      if (verified.hotels.length) {
         interactionsApi.track('impression', {
-          hotel_ids: results.map(hotel => hotel.id),
+          hotel_ids: verified.hotels.map(hotel => hotel.id),
           event_id: `impression:${searchSessionRef.current}:${JSON.stringify(params)}`,
           context: { city, check_in: checkIn, check_out: checkOut, sort },
         }).catch(() => {});
       }
-      setHotels(results);
-      enrichRateBatch(results);
+      setHotels(verified.hotels);
       setHasMore(Boolean(res.data.has_more));
-      setTotalResults(Number(res.data.total ?? results.length));
+      setTotalResults(verified.hotels.length);
+      setCatalogOffset(results.length);
+      setCheckedCount(verified.checked);
+      setUnavailableCount(verified.unavailable);
       explicitSearchRef.current = false;
     } catch (err) {
       setError(err.response?.data?.error || err.message || t('results_error'));
     }
     finally { setLoading(false); }
-  }, [city, checkIn, checkOut, guests, tripPurpose, sort, stars, amenities, districts, priceRange, ratingMin, freeCancel, breakfastIncl, lang, searchNonce, enrichRateBatch]);
+  }, [city, checkIn, checkOut, guests, tripPurpose, sort, stars, amenities, districts, priceRange, ratingMin, freeCancel, breakfastIncl, lang, searchNonce, checkRateBatch]);
 
   useEffect(() => {
     if (loading || sort !== 'score') return;
@@ -349,7 +388,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     try {
-      const params = { city, check_in: checkIn, check_out: checkOut, guests, sort, language: lang, search_session_id: searchSessionRef.current, limit: 30, offset: hotels.length };
+      const params = { city, check_in: checkIn, check_out: checkOut, guests, sort, language: lang, search_session_id: searchSessionRef.current, limit: 30, offset: catalogOffset };
       if (stars.length) params.stars = stars.join(',');
       if (amenities.length) params.amenities = amenities.join(',');
       if (districts.length) params.districts = districts.join(',');
@@ -360,27 +399,25 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
       if (priceRange[0] > 0) params.min_price = priceRange[0];
       const response = await hotelsApi.search(params);
       const nextHotels = response.data.hotels || [];
+      const verified = await checkRateBatch(nextHotels);
       setHotels(current => {
         const existingIds = new Set(current.map(hotel => hotel.id));
-        return [...current, ...nextHotels.filter(hotel => !existingIds.has(hotel.id))];
+        return sortAvailableHotels([...current, ...verified.hotels.filter(hotel => !existingIds.has(hotel.id))], sort);
       });
-      enrichRateBatch(nextHotels);
       setHasMore(Boolean(response.data.has_more));
-      setTotalResults(Number(response.data.total ?? hotels.length + nextHotels.length));
+      setCatalogOffset(current => current + nextHotels.length);
+      setCheckedCount(current => current + verified.checked);
+      setUnavailableCount(current => current + verified.unavailable);
+      setTotalResults(current => current + verified.hotels.length);
     } catch (loadError) {
       setError(loadError.response?.data?.error || loadError.message);
     } finally { setLoadingMore(false); }
   };
 
   useEffect(() => {
-    if (skipCachedInitialFetchRef.current) { skipCachedInitialFetchRef.current = false; return undefined; }
     const timer = window.setTimeout(fetchHotels, 500);
     return () => window.clearTimeout(timer);
   }, [fetchHotels]);
-
-  useEffect(() => {
-    if (cachedResults?.hotels?.length) enrichRateBatch(cachedResults.hotels.slice(0, 30));
-  }, []);
 
   const toggleStar = s => setStars(p => p.includes(s) ? p.filter(x => x !== s) : [...p, s]);
   const toggleAmenity = a => setAmenities(p => p.includes(a) ? p.filter(x => x !== a) : [...p, a]);
@@ -577,6 +614,11 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
             <span className={styles.resultsCount}>
               {loading ? t('results_searching') : `${totalResults} ${t('results_count')} ${city}`}
             </span>
+            {!loading && checkedCount > 0 && (
+              <span className={styles.resultsMeta}>
+                {checkedCount} {t('results_checked')} · {unavailableCount} {t('results_price_pending')}
+              </span>
+            )}
           </div>
           {loading && (
             <div className={styles.cards}>
@@ -611,7 +653,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
                 </div>
               ))}
               {hotels.length === 0 && <div className={styles.noResults}>{t('results_nothing')}</div>}
-              {hotels.length > 0 && hasMore && (
+              {hasMore && (
                 <button type="button" className={styles.loadMoreBtn} onClick={loadMoreHotels} disabled={loadingMore}>
                   {loadingMore ? (lang === 'ru' ? 'Загружаем…' : 'Loading…') : (lang === 'ru' ? 'Загрузить ещё 30 отелей' : 'Load 30 more hotels')}
                 </button>

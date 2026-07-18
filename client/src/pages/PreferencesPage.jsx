@@ -237,9 +237,9 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
  
   // Localised options
   const HOTEL_STARS = [
-    { value: '3', label: lang === 'ru' ? '⭐ 3 звезды' : '⭐ 3 stars' },
-    { value: '4', label: lang === 'ru' ? '⭐⭐ 4 звезды' : '⭐⭐ 4 stars' },
-    { value: '5', label: lang === 'ru' ? '⭐⭐⭐ 5 звёзд' : '⭐⭐⭐ 5 stars' },
+    { value: '3', label: lang === 'ru' ? '3 звезды' : '3 stars' },
+    { value: '4', label: lang === 'ru' ? '4 звезды' : '4 stars' },
+    { value: '5', label: lang === 'ru' ? '5 звёзд' : '5 stars' },
   ];
   const ROOM_TYPES = [
     { value: 'standard', label: lang === 'ru' ? 'Стандарт' : 'Standard' },
@@ -248,11 +248,11 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
     { value: 'villa', label: 'Villa' },
   ];
   const VIEWS = [
-    { value: 'sea', label: lang === 'ru' ? '🌊 Море' : '🌊 Sea' },
-    { value: 'city', label: lang === 'ru' ? '🏙 Город' : '🏙 City' },
-    { value: 'garden', label: lang === 'ru' ? '🌿 Сад' : '🌿 Garden' },
-    { value: 'pool', label: lang === 'ru' ? '🏊 Бассейн' : '🏊 Pool' },
-    { value: 'mountain', label: lang === 'ru' ? '⛰ Горы' : '⛰ Mountain' },
+    { value: 'sea', label: lang === 'ru' ? 'Море' : 'Sea' },
+    { value: 'city', label: lang === 'ru' ? 'Город' : 'City' },
+    { value: 'garden', label: lang === 'ru' ? 'Сад' : 'Garden' },
+    { value: 'pool', label: lang === 'ru' ? 'Бассейн' : 'Pool' },
+    { value: 'mountain', label: lang === 'ru' ? 'Горы' : 'Mountain' },
   ];
   const ESSENTIAL_AMENITIES = [
     { value: 'wifi', label: 'Wi-Fi' },
@@ -290,9 +290,9 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
     { value: 'first', label: lang === 'ru' ? 'Первый' : 'First' },
   ];
   const SEATS = [
-    { value: 'window', label: lang === 'ru' ? '🪟 У окна' : '🪟 Window' },
-    { value: 'aisle', label: lang === 'ru' ? '🚶 У прохода' : '🚶 Aisle' },
-    { value: 'middle', label: lang === 'ru' ? '🪑 Средний' : '🪑 Middle' },
+    { value: 'window', label: lang === 'ru' ? 'У окна' : 'Window' },
+    { value: 'aisle', label: lang === 'ru' ? 'У прохода' : 'Aisle' },
+    { value: 'middle', label: lang === 'ru' ? 'Средний' : 'Middle' },
   ];
   const AIRLINES = [
     { value: 'Singapore Airlines', label: 'Singapore Airlines' },
@@ -306,29 +306,29 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
     { value: 'family', label: lang === 'ru' ? 'Семейная поездка' : 'Family trip' },
     { value: 'business', label: lang === 'ru' ? 'Деловая поездка' : 'Business trip' },
     { value: 'resort', label: lang === 'ru' ? 'Курортный отдых' : 'Resort' },
-    { value: 'beach', label: lang === 'ru' ? '🏖 Пляж' : '🏖 Beach' },
-    { value: 'gastronomy', label: lang === 'ru' ? '🍷 Гастрономия' : '🍷 Gastronomy' },
-    { value: 'culture', label: lang === 'ru' ? '🏛 Культура' : '🏛 Culture' },
-    { value: 'active', label: lang === 'ru' ? '🏃 Активный' : '🏃 Active' },
-    { value: 'spa', label: '💆 Spa' },
-    { value: 'shopping', label: lang === 'ru' ? '🛍 Шопинг' : '🛍 Shopping' },
-    { value: 'nature', label: lang === 'ru' ? '🌿 Природа' : '🌿 Nature' },
-    { value: 'nightlife', label: lang === 'ru' ? '🌙 Ночная жизнь' : '🌙 Nightlife' },
+    { value: 'beach', label: lang === 'ru' ? 'Пляж' : 'Beach' },
+    { value: 'gastronomy', label: lang === 'ru' ? 'Гастрономия' : 'Gastronomy' },
+    { value: 'culture', label: lang === 'ru' ? 'Культура' : 'Culture' },
+    { value: 'active', label: lang === 'ru' ? 'Активный' : 'Active' },
+    { value: 'spa', label: 'Spa' },
+    { value: 'shopping', label: lang === 'ru' ? 'Шопинг' : 'Shopping' },
+    { value: 'nature', label: lang === 'ru' ? 'Природа' : 'Nature' },
+    { value: 'nightlife', label: lang === 'ru' ? 'Ночная жизнь' : 'Nightlife' },
   ];
   const BUDGETS = [
-    { value: 'budget', label: lang === 'ru' ? '💰 Бюджетный' : '💰 Budget' },
-    { value: 'mid', label: lang === 'ru' ? '💳 Средний' : '💳 Mid-range' },
-    { value: 'upscale', label: lang === 'ru' ? '✨ Выше среднего' : '✨ Upscale' },
-    { value: 'luxury', label: lang === 'ru' ? '👑 Люкс' : '👑 Luxury' },
+    { value: 'budget', label: lang === 'ru' ? 'Бюджетный' : 'Budget' },
+    { value: 'mid', label: lang === 'ru' ? 'Средний' : 'Mid-range' },
+    { value: 'upscale', label: lang === 'ru' ? 'Выше среднего' : 'Upscale' },
+    { value: 'luxury', label: lang === 'ru' ? 'Люкс' : 'Luxury' },
   ];
   const DESTINATIONS = [
-    { value: 'Asia', label: '🌏 Asia' },
-    { value: 'Europe', label: '🇪🇺 Europe' },
-    { value: 'Maldives', label: '🏝 Maldives' },
-    { value: 'UAE', label: '🌆 UAE' },
-    { value: 'Americas', label: '🌎 Americas' },
-    { value: 'Africa', label: '🌍 Africa' },
-    { value: 'Oceania', label: '🌊 Oceania' },
+    { value: 'Asia', label: 'Asia' },
+    { value: 'Europe', label: 'Europe' },
+    { value: 'Maldives', label: 'Maldives' },
+    { value: 'UAE', label: 'UAE' },
+    { value: 'Americas', label: 'Americas' },
+    { value: 'Africa', label: 'Africa' },
+    { value: 'Oceania', label: 'Oceania' },
   ];
  
   const TRAVEL_STATS = [

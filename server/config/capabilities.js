@@ -41,7 +41,7 @@ function capabilities() {
     flights: {
       status: flightsReady ? 'ready' : 'unavailable', stage: 'beta', provider: 'Travelpayouts',
       reason: flightsReady ? null : 'TRAVELPAYOUTS_TOKEN is not configured',
-      features: { search: flightsReady, live_fares: flightsReady },
+      features: { search: flightsReady, indicative_fares: flightsReady },
     },
     ai: {
       status: aiReady ? 'ready' : 'unavailable', stage: 'beta', provider: 'OpenRouter', optional: true,

@@ -39,7 +39,7 @@ export default function Navbar({ compareCount, user, onLogout }) {
   return (
     <nav className={styles.nav}>
       <div className={styles.inner}>
-        <Link to="/" className={styles.logo}>Fairworth</Link>
+        <Link to="/" className={styles.logo}>Tripalora</Link>
 
         <div className={styles.links}>
           <Link to={hotelsLink} className={`${styles.link} ${location.pathname === '/results' ? styles.active : ''}`}>

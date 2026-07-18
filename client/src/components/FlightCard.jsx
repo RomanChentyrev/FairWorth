@@ -23,13 +23,23 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
     ? t('flight_direct')
     : `${flight.stops} ${t('flight_stops')}`;
   const meta = flight.source === 'travelpayouts'
-    ? (lang === 'ru' ? 'Тариф Travelpayouts' : 'Travelpayouts fare')
-    : `${flight.seats_left} ${t('flight_seats_left')}`;
+    ? (lang === 'ru' ? 'Ориентировочная цена Travelpayouts' : 'Travelpayouts indicative fare')
+    : (lang === 'ru' ? 'Наличие мест не подтверждено' : 'Seat availability not confirmed');
   const hasFareRange = fareOptions.length > 1 && flight.price_min !== flight.price_max;
   const priceLabel = hasFareRange
     ? `$${formatAmount(flight.price_min, lang)}-$${formatAmount(flight.price_max, lang)}`
     : `$${formatAmount(flight.price, lang)}`;
   const selectedPrice = selectedFare ? `$${formatAmount(selectedFare.price, lang)}` : priceLabel;
+  const fareObservedAt = selectedFare?.fare_observed_at || flight.fare_observed_at;
+  const fareReceivedAt = selectedFare?.fare_received_at || flight.fare_received_at || fareObservedAt;
+  const fareConfidence = selectedFare?.fare_confidence ?? flight.fare_confidence;
+  const observedLabel = fareObservedAt
+    ? new Date(fareObservedAt).toLocaleString(lang)
+    : (lang === 'ru' ? 'время не передано' : 'time unavailable');
+  const receivedLabel = fareReceivedAt
+    ? new Date(fareReceivedAt).toLocaleString(lang)
+    : (lang === 'ru' ? 'время не передано' : 'time unavailable');
+  const hasDistinctObservation = fareObservedAt && fareReceivedAt && new Date(fareObservedAt).getTime() !== new Date(fareReceivedAt).getTime();
   const basketKey = leg === 'return' ? 'returnFlight' : 'outboundFlight';
   const selectedInBasket = leg && basket[basketKey]?.flightId === flight.id && basket[basketKey]?.fareId === selectedFare?.id;
 
@@ -59,6 +69,10 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
       adjustedScore: flight.adjusted_score,
       scoreReliability: flight.score_reliability,
       fareConfidence: flight.fare_confidence,
+      fareType: 'indicative',
+      fareObservedAt,
+      fareReceivedAt,
+      availabilityConfirmed: false,
       scoreVersion: flight.score_version,
     });
   };
@@ -140,13 +154,21 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
 
         <div className={styles.bottomRow}>
           <div className={styles.meta}>
-            {meta}
+            <strong>{meta}</strong>
+            <span>{lang === 'ru' ? 'Получено Fairworth' : 'Received by Fairworth'}: {receivedLabel}</span>
+            {hasDistinctObservation && <span>{lang === 'ru' ? 'Наблюдение источника' : 'Provider observation'}: {observedLabel}</span>}
+            <span>{lang === 'ru' ? 'Уверенность в цене' : 'Fare confidence'}: {fareConfidence ?? '—'}%</span>
           </div>
           <div className={styles.priceBlock}>
-            <span className={styles.priceLabel}>{hasFareRange ? 'selected' : t('card_from')}</span>
+            <span className={styles.priceLabel}>{hasFareRange ? (lang === 'ru' ? 'выбранный ориентир' : 'selected estimate') : (lang === 'ru' ? 'ориентир от' : 'estimate from')}</span>
             <span className={styles.price}>{selectedPrice}</span>
-            <span className={styles.priceNote}>{hasFareRange ? `${priceLabel} range` : t('flight_per_person')}</span>
+            <span className={styles.priceNote}>{hasFareRange ? `${priceLabel} ${lang === 'ru' ? 'диапазон' : 'range'}` : t('flight_per_person')}</span>
           </div>
+        </div>
+        <div className={styles.fareWarning}>
+          {lang === 'ru'
+            ? 'Финальная цена и наличие места не подтверждены. Проверьте их у поставщика перед оформлением.'
+            : 'Final price and seat availability are not confirmed. Verify both with the provider before booking.'}
         </div>
         {fareOptions.length > 0 && (
           <div className={styles.fares}>
@@ -155,7 +177,7 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
               className={styles.faresToggle}
               onClick={() => setFaresOpen(open => !open)}
             >
-              <span>{fareOptions.length} {fareOptions.length === 1 ? 'fare' : 'fares'} available</span>
+              <span>{fareOptions.length} {lang === 'ru' ? 'ориентировочных тарифов' : fareOptions.length === 1 ? 'indicative fare' : 'indicative fares'}</span>
               <ChevronDown size={14} className={faresOpen ? styles.chevronOpen : ''} />
             </button>
             {faresOpen && (

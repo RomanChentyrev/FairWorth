@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { selectComparableRate, marketBenchmark, benchmarkPriceScore } = require('../services/comparablePricing');
+const { selectComparableRate, rateAvailability, marketBenchmark, benchmarkPriceScore } = require('../services/comparablePricing');
 
 function rate(overrides = {}) {
   return {
@@ -41,4 +41,18 @@ test('market benchmark uses a comparable segment and percentile price score', ()
   assert.equal(benchmark.sample_size, 4);
   assert.equal(benchmarkPriceScore(benchmark.median, benchmark), 75);
   assert.equal(benchmarkPriceScore(benchmark.p25, benchmark), 100);
+});
+
+test('strict rate conditions reject non-refundable and room-only offers', () => {
+  const restricted = rate({ refundable: 0, includes_breakfast: 0 });
+  assert.equal(selectComparableRate([restricted], { guests: 2, refundableRequired: true }), null);
+  assert.equal(selectComparableRate([restricted], { guests: 2, breakfastRequired: true }), null);
+});
+
+test('availability requires a current comparable rate for the requested occupancy', () => {
+  const selected = selectComparableRate([rate()], { guests: 2 });
+  assert.equal(rateAvailability(selected, { checkIn: '2026-08-01', checkOut: '2026-08-05', guests: 2 }).availability_status, 'available');
+  assert.equal(rateAvailability({ ...selected, rate_guests: null, guests: null }, { guests: 2 }).availability_status, 'occupancy_unverified');
+  assert.equal(rateAvailability({ ...selected, is_stale: true }, { guests: 2 }).availability_status, 'stale');
+  assert.equal(rateAvailability(null, { guests: 2 }).availability_status, 'unavailable');
 });

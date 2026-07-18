@@ -92,9 +92,10 @@ function seatingScore(ticket, passengers) {
 }
 
 function fareConfidence(ticket, context) {
-  let score = 75; // A live metasearch fare is useful, but not a confirmed booking quote.
-  const unknown = [];
-  if (ticket.source === 'price_calendar') score -= 20;
+  let score = 62; // Travelpayouts Data API fares are indicative cached observations, not booking quotes.
+  const unknown = ['confirmed_availability', 'seat_inventory'];
+  if (ticket.source === 'price_calendar') score -= 15;
+  if (ticket.fare_cache_status === 'local_cache') score -= 5;
   if (ticket.is_alternative_date) score -= 8;
   if (!ticket.link) { score -= 10; unknown.push('booking_link'); }
   if (!ticket.expires_at) { score -= 8; unknown.push('fare_expiry'); }
@@ -103,6 +104,12 @@ function fareConfidence(ticket, context) {
   if (ticket.refundable === undefined) { score -= 6; unknown.push('refundability'); }
   if (!ticketCabin(ticket)) { score -= 8; unknown.push('confirmed_cabin'); }
   if (!ticket.price_for_passengers && context.passengers > 1) { score -= 8; unknown.push('party_price_confirmation'); }
+  const observedAt = ticket.fare_observed_at ? new Date(ticket.fare_observed_at) : null;
+  const ageHours = observedAt && !Number.isNaN(observedAt.getTime()) ? Math.max(0, (Date.now() - observedAt.getTime()) / 3600000) : null;
+  if (ageHours === null) { score -= 8; unknown.push('fare_observed_at'); }
+  else if (ageHours > 24) score -= 18;
+  else if (ageHours > 6) score -= 10;
+  else if (ageHours > 1) score -= 5;
   return { score: round(score), unknown };
 }
 
@@ -228,6 +235,13 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
         benchmark_median: benchmark,
         benchmark_sample_size: benchmarks.sampleSize,
         taxes_included: ticket.taxes_included ?? null,
+        fare_type: ticket.fare_type || 'indicative',
+        fare_observed_at: ticket.fare_observed_at || null,
+        fare_received_at: ticket.fare_received_at || null,
+        fare_cache_status: ticket.fare_cache_status || 'provider_cached',
+        availability_confirmed: false,
+        seat_availability_confirmed: false,
+        requires_provider_verification: true,
       },
     };
   });

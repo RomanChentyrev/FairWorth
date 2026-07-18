@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { Eye, EyeOff } from 'lucide-react';
 import styles from './RegisterPage.module.css';
 import { useLang } from '../i18n/LanguageContext';
 import { legalApi } from '../api';
@@ -40,28 +41,12 @@ export default function RegisterPage({ onLogin }) {
   };
 
   return (
-    <div className={styles.page}>
-      <button type="button" onClick={toggleLang} style={{ position: 'fixed', top: 20, right: 24, zIndex: 10, border: '1px solid #d8dde6', borderRadius: 8, padding: '7px 12px', background: '#fff', cursor: 'pointer', fontWeight: 700 }}>{isRu ? 'EN' : 'RU'}</button>
-      <div className={styles.left}>
-        <div className={styles.leftContent}>
-          <div className={styles.logo}>Fairworth</div>
-          <h1 className={styles.headline}>{isRu ? <>Узнайте, стоит ли<br />ваша поездка <em>своих денег</em></> : <>Find out if your<br />trip is actually <em>worth it</em></>}</h1>
-          <div className={styles.features}>
-            {[
-              { icon: '✦', text: isRu ? 'ИИ подбирает отели под ваши предпочтения' : 'AI selects hotels around your preferences' },
-              { icon: '⚖️', text: isRu ? 'Сравнивайте до 3 вариантов одновременно' : 'Compare up to 3 options side by side' },
-              { icon: '📊', text: isRu ? 'Честный Fairworth Score без платных позиций' : 'An honest Fairworth Score with no paid rankings' },
-              { icon: '🔔', text: isRu ? 'Алерты о снижении цен на сохранённые отели' : 'Price-drop alerts for saved hotels' },
-            ].map(f => (
-              <div key={f.text} className={styles.feature}>
-                <span className={styles.featureIcon}>{f.icon}</span>
-                <span>{f.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className={styles.right}>
+    <div className={`${styles.page} ${styles.registerPage}`}>
+      <header className={styles.registerHeader}>
+        <Link to="/" className={styles.registerLogo}>Tripalora</Link>
+        <button type="button" className={styles.langBtn} onClick={toggleLang}>{isRu ? 'EN' : 'RU'}</button>
+      </header>
+      <main className={styles.registerMain}>
         <div className={styles.formWrap}>
           <div className={styles.formHeader}>
             <h2 className={styles.formTitle}>{t('reg_title')}</h2>
@@ -76,13 +61,15 @@ export default function RegisterPage({ onLogin }) {
               <label className={styles.label}>Email</label>
               <input className={styles.input} type="email" placeholder="alex@example.com" value={form.email} onChange={e => set('email', e.target.value)} required />
             </div>
-            <label><input type="checkbox" checked={form.accept_terms} onChange={e => set('accept_terms', e.target.checked)} required disabled={!legal} />{' '}{isRu ? 'Я принимаю' : 'I accept the'} <Link to="/legal/terms">{isRu ? 'Условия использования' : 'Terms'}{legal ? ` v${legal.terms_version}` : ''}</Link> {isRu ? 'и' : 'and'} <Link to="/legal/privacy">{isRu ? 'Политику конфиденциальности' : 'Privacy Policy'}{legal ? ` v${legal.privacy_version}` : ''}</Link>.</label>
-            <label><input type="checkbox" checked={form.behavioural_tracking_consent} onChange={e => set('behavioural_tracking_consent', e.target.checked)} />{' '}{isRu ? 'Разрешить анализ действий для персонализации Score (необязательно)' : 'Allow behavioural tracking to personalise my Score (optional)'}</label>
+            <label className={styles.consent}><input type="checkbox" checked={form.accept_terms} onChange={e => set('accept_terms', e.target.checked)} required disabled={!legal} /><span>{isRu ? 'Я принимаю' : 'I accept the'} <Link to="/legal/terms">{isRu ? 'Условия использования' : 'Terms'}{legal ? ` v${legal.terms_version}` : ''}</Link> {isRu ? 'и' : 'and'} <Link to="/legal/privacy">{isRu ? 'Политику конфиденциальности' : 'Privacy Policy'}{legal ? ` v${legal.privacy_version}` : ''}</Link>.</span></label>
+            <label className={styles.consent}><input type="checkbox" checked={form.behavioural_tracking_consent} onChange={e => set('behavioural_tracking_consent', e.target.checked)} /><span>{isRu ? 'Разрешить анализ действий для персонализации Score (необязательно)' : 'Allow behavioural tracking to personalise my Score (optional)'}</span></label>
             <div className={styles.field}>
               <label className={styles.label}>{t('reg_password')}</label>
               <div className={styles.passwordWrap}>
                 <input className={styles.input} type={showPassword ? 'text' : 'password'} placeholder={isRu ? '12+ символов: A-z, 0-9, !' : '12+ characters: A-z, 0-9, !'} value={form.password} onChange={e => set('password', e.target.value)} required minLength={12} />
-                <button type="button" className={styles.eyeBtn} onClick={() => setShowPassword(p => !p)} tabIndex={-1}>{showPassword ? '🙈' : '👁'}</button>
+                <button type="button" className={styles.eyeBtn} onClick={() => setShowPassword(p => !p)} aria-label={showPassword ? (isRu ? 'Скрыть пароль' : 'Hide password') : (isRu ? 'Показать пароль' : 'Show password')}>
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
               </div>
             </div>
             {error && <div className={styles.error}>{error}</div>}
@@ -105,7 +92,7 @@ export default function RegisterPage({ onLogin }) {
           </div>
           <p className={styles.terms}>{t('reg_terms')}</p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

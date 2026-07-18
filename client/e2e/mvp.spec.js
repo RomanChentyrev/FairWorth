@@ -54,7 +54,7 @@ test.beforeEach(async ({ page }) => {
     json: {
       capabilities: {
         hotels: { status: 'ready', provider: 'E2E fixture', features: { catalog: true, live_rates: true, price_watches: true } },
-        flights: { status: 'ready', provider: 'E2E fixture', features: { search: true, live_fares: true } },
+        flights: { status: 'ready', provider: 'E2E fixture', features: { search: true, indicative_fares: true } },
         ai: { status: 'ready', provider: 'E2E fixture', optional: true, features: { hotel_analysis: true } },
         hotel_photos: { status: 'ready', provider: 'E2E fixture', optional: true, features: { galleries: true, fallback_images: true } },
         partner_booking: { status: 'pending', stage: 'post_company_registration', features: { redirect: false, postback: false } },
@@ -168,16 +168,17 @@ test('demo checkout shows the cost breakdown and confirms a booking', async ({ p
 test('search → live price → filter → compare → details → booking pending', async ({ page, request }) => {
   const account = await registerAccount(request, { label: 'journey', verify: true, onboard: true });
   const hotels = [
-    { id: 'hotel-marina-bay-sands', name: 'Marina Bay Sands', city: 'Singapore', country: 'Singapore', location: 'Marina Bay', stars: 5, amenities: '["pool"]', min_price: 500, fairworth_score: 91, price_details: { provider: 'Test Partner', currency: 'USD' } },
-    { id: 'hotel-raffles-singapore', name: 'Raffles Singapore', city: 'Singapore', country: 'Singapore', location: 'City Hall', stars: 5, amenities: '["pool"]', min_price: 600, fairworth_score: 89, price_details: { provider: 'Test Partner', currency: 'USD' } },
+    { id: 'hotel-marina-bay-sands', name: 'Marina Bay Sands', city: 'Singapore', country: 'Singapore', location: 'Marina Bay', stars: 5, amenities: '["pool"]', min_price: 500, fairworth_score: 91, top_pick_eligible: true, availability_status: 'available', rate_freshness: 'fresh', price_details: { provider: 'Test Partner', currency: 'USD', refundable: true, includes_breakfast: true } },
+    { id: 'hotel-raffles-singapore', name: 'Raffles Singapore', city: 'Singapore', country: 'Singapore', location: 'City Hall', stars: 5, amenities: '["pool"]', min_price: 600, fairworth_score: 89, availability_status: 'available', rate_freshness: 'cached', price_details: { provider: 'Test Partner', currency: 'USD', refundable: true, includes_breakfast: true } },
   ];
+  const unavailableHotel = { id: 'hotel-price-pending', name: 'Price Pending Hotel', city: 'Singapore', country: 'Singapore', location: 'Orchard', stars: 5, amenities: '[]', min_price: null, fairworth_score: 99, top_pick_eligible: false, availability_status: 'unavailable', price_details: null };
   const searchRequests = [];
 
   await page.route('**/api/hotels/search**', route => {
     searchRequests.push(route.request().url());
-    return route.fulfill({ json: { hotels, total: 2, has_more: false, facets: { locations: ['Marina Bay', 'City Hall'] } } });
+    return route.fulfill({ json: { hotels: [...hotels, unavailableHotel], total: 3, has_more: false, facets: { locations: ['Marina Bay', 'City Hall', 'Orchard'] } } });
   });
-  await page.route('**/api/hotels/rates/batch', route => route.fulfill({ json: { hotels } }));
+  await page.route('**/api/hotels/rates/batch', route => route.fulfill({ json: { hotels: [...hotels, unavailableHotel], checked: 3, available: 2, unavailable_hotel_ids: [unavailableHotel.id] } }));
   await page.route('**/api/interactions', route => route.fulfill({ status: 201, json: { recorded: 1 } }));
   await page.route('**/api/compare', route => route.fulfill({
     json: {
@@ -203,6 +204,8 @@ test('search → live price → filter → compare → details → booking pendi
 
   await page.goto('/results?city=Singapore');
   await expect(page.getByTestId('hotel-card-hotel-marina-bay-sands')).toBeVisible();
+  await expect(page.getByTestId('hotel-card-hotel-price-pending')).toHaveCount(0);
+  await expect(page.getByText(/2 available options in Singapore/i)).toBeVisible();
   await page.getByRole('button', { name: /^Trip 0$/ }).click();
   const basketDrawer = page.getByTestId('trip-basket-drawer');
   await expect(basketDrawer).toBeVisible();
@@ -270,19 +273,21 @@ test('password recovery token is one-time and old sessions are revoked', async (
   cleanupAccounts.push({ token: loggedIn.token, password: 'NewTestPass123!' });
 });
 
-test('flight search renders a live-provider fare', async ({ page, request }) => {
+test('flight search renders an indicative provider fare', async ({ page, request }) => {
   const account = await registerAccount(request, { label: 'flight-search', verify: true, onboard: true });
   const departure = new Date(Date.now() + 35 * 86400000).toISOString().slice(0, 10);
   await page.route('**/api/flights/top**', async route => {
     const query = new URL(route.request().url()).searchParams;
-    await route.fulfill({ json: { success: true, data: [{ origin: 'MOW', destination: 'DXB', airline: 'EK', flight_number: '134', departure_at: `${query.get('depart_date')}T08:30:00Z`, duration_to: 330, transfers: 0, price: 420, link: '/search/EK134' }] } });
+    await route.fulfill({ json: { success: true, data: [{ origin: 'MOW', destination: 'DXB', airline: 'EK', flight_number: '134', departure_at: `${query.get('depart_date')}T08:30:00Z`, duration_to: 330, transfers: 0, price: 420, link: '/search/EK134', fare_type: 'indicative', fare_observed_at: new Date().toISOString(), fare_cache_status: 'provider_cached', availability_confirmed: false, seat_availability_confirmed: false, fare_confidence: 52 }] } });
   });
   await page.context().addCookies([{ name: 'fw_access', value: account.token, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
   await page.addInitScript(user => localStorage.setItem('fw_user', JSON.stringify({ ...user, onboarding_completed: true, email_verified: true })), account.user);
   await page.goto(`/flights?from=MOW&to=DXB&departure_date=${departure}&passengers=1&cabin_class=economy`);
   await expect(page.getByText('Emirates').first()).toBeVisible();
   await expect(page.getByText('$420').first()).toBeVisible();
-  await expect(page.getByText(/Travelpayouts fare/i).first()).toBeVisible();
+  await expect(page.getByText(/Travelpayouts indicative fare/i).first()).toBeVisible();
+  await expect(page.getByText(/Final price and seat availability are not confirmed/i).first()).toBeVisible();
+  await expect(page.getByText(/Fare confidence: 52%/i).first()).toBeVisible();
 });
 
 test('a user can revoke another own session', async ({ request }) => {
@@ -339,6 +344,19 @@ test('registration remains usable on a mobile viewport', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto('/register');
   await expect(page.getByRole('heading', { name: /^create account$/i })).toBeVisible();
+  const dimensions = await page.evaluate(() => ({ viewport: window.innerWidth, content: document.documentElement.scrollWidth }));
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+});
+
+test('login uses the light Fairworth layout on desktop and mobile', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByText('AI remembers your hotel and flight preferences')).toHaveCount(0);
+  const background = await page.locator('main').evaluate(main => getComputedStyle(main.parentElement).backgroundColor);
+  expect(background).toBe('rgb(250, 250, 250)');
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   const dimensions = await page.evaluate(() => ({ viewport: window.innerWidth, content: document.documentElement.scrollWidth }));
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
 });

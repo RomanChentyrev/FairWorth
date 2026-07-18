@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { flattenRates, nightsBetween } = require('../services/hotelRates');
 const { normalizedAmenity, similarity, matchConfidence } = require('../services/hotelCatalog');
+const { amenityMatches } = require('../config/hotelAmenities');
 
 test('LiteAPI stay total is normalized to a nightly price with explicit tax status', () => {
   const rates = flattenRates({ roomTypes: [{ roomTypeId: 'room', offerId: 'offer', supplier: 'Provider', rates: [{ rateId: 'rate', boardName: 'Breakfast included', retailRate: { total: [{ amount: 800, currency: 'USD' }], taxesAndFees: [{ amount: 80, currency: 'USD', included: true }] }, cancellationPolicies: { refundableTag: 'RFN' } }] }] }, 4);
@@ -37,5 +38,9 @@ test('amenities and date ranges are normalized', () => {
   assert.equal(normalizedAmenity('Outdoor tennis court'), 'tennis');
   assert.equal(normalizedAmenity('Private bathroom with bath tub'), 'bathtub');
   assert.equal(normalizedAmenity('Facilities for disabled guests'), 'accessible');
+  assert.equal(normalizedAmenity('Spacious room'), 'spacious_room');
+  assert.equal(normalizedAmenity('Beach towels'), 'beach_towels');
+  assert.equal(amenityMatches(['Beach towels', 'Beach umbrellas'], 'beach'), false);
+  assert.equal(amenityMatches(['Private beach'], 'beach'), true);
   assert.equal(nightsBetween('2026-07-30', '2026-08-03'), 4);
 });

@@ -34,14 +34,28 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
   const hasBreakfast = amenities.includes('breakfast');
   const hasPool = amenities.some(a => a.includes('pool'));
   const hasSpa = amenities.includes('spa');
+  const hasBeach = amenities.includes('beach');
 
   const nights = checkIn && checkOut
     ? Math.ceil((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24))
     : 4;
   const total = (hotel.min_price || 0) * nights;
-  const isLivePrice = ['liteapi', 'xotelo'].includes(hotel.price_source);
+  const isProviderPrice = ['liteapi', 'xotelo'].includes(hotel.price_source);
+  const isCachedPrice = hotel.rate_freshness === 'cached';
   const hasPrice = Number(hotel.min_price) > 0;
   const taxLabels = lang === 'ru' ? { included: 'налоги включены', not_included: 'налоги не включены', unknown: 'налоги неизвестны' } : { included: 'taxes included', not_included: 'taxes not included', unknown: 'tax status unknown' };
+  const rateTerms = hotel.price_details ? [
+    hotel.price_details.refundable === true
+      ? (lang === 'ru' ? 'бесплатная отмена' : 'free cancellation')
+      : hotel.price_details.refundable === false
+        ? (lang === 'ru' ? 'невозвратный тариф' : 'non-refundable')
+        : (lang === 'ru' ? 'условия отмены уточняются' : 'cancellation terms unknown'),
+    hotel.price_details.includes_breakfast === true
+      ? (lang === 'ru' ? 'завтрак включён' : 'breakfast included')
+      : hotel.price_details.includes_breakfast === false
+        ? (lang === 'ru' ? 'без завтрака' : 'breakfast not included')
+        : (lang === 'ru' ? 'питание уточняется' : 'meal plan unknown'),
+  ] : [];
   const isSelectedHotel = basket.hotel?.id === hotel.id;
   const handleSelectHotel = () => {
     selectHotel({
@@ -125,6 +139,7 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
           {hasBreakfast && <span className={`${styles.tag} ${styles.tagGreen}`}>{t('card_breakfast')}</span>}
           {hasPool && <span className={`${styles.tag} ${styles.tagBlue}`}>{t('card_pool')}</span>}
           {hasSpa && <span className={`${styles.tag} ${styles.tagBlue}`}>{t('card_spa')}</span>}
+          {hasBeach && <span className={`${styles.tag} ${styles.tagBlue}`}>{lang === 'ru' ? 'Пляж' : 'Beach'}</span>}
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }} title={hotel.score_explanation}>
           {hotel.price_details?.provider || hotel.price_details?.source || '—'} · {hotel.price_details?.currency || '—'}
@@ -132,11 +147,18 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
           {hotel.price_details?.updated_at ? ` · ${new Date(hotel.price_details.updated_at).toLocaleString(lang)}` : ''}
           {` · Score v${hotel.score_version || '—'} · ${hotel.data_completeness?.score ?? 0}% ${lang === 'ru' ? 'данных' : 'data'}`}
         </div>
+        {rateTerms.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>{rateTerms.join(' · ')}</div>}
         {hotel.price_details?.price_warnings?.length > 0 && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>⚠ {hotel.price_details.price_warnings.join(', ')}</div>}
         <div className={styles.bottomRow}>
           <div className={styles.priceBlock}>
             {hasPrice ? <><span className={styles.priceLabel}>{t('card_from')}</span><span className={styles.price}>${formatAmount(hotel.min_price, lang)}</span><span className={styles.priceNote}>{t('card_per_night')} · {nights} {t('card_nights')} ${formatAmount(total, lang)}</span></> : <span className={styles.price}>{lang === 'ru' ? 'Цена недоступна' : 'Price unavailable'}</span>}
-            {isLivePrice && <span className={styles.liveBadge}>{hotel.price_source === 'liteapi' ? 'LiteAPI live' : 'Xotelo live'}</span>}
+            {isProviderPrice && (
+              <span className={styles.liveBadge}>
+                {isCachedPrice
+                  ? (lang === 'ru' ? 'Кешированная цена' : 'Cached price')
+                  : `${hotel.price_source === 'liteapi' ? 'LiteAPI' : 'Xotelo'} ${lang === 'ru' ? 'проверено' : 'checked'}`}
+              </span>
+            )}
           </div>
           <div className={styles.actions} onClick={e => e.stopPropagation()}>
             <button className={styles.hideBtn} type="button" onClick={() => setHideMenuOpen(true)} title={lang === 'ru' ? 'Скрыть отель' : 'Hide hotel'} aria-label={lang === 'ru' ? 'Скрыть отель' : 'Hide hotel'} data-testid={`hotel-hide-${hotel.id}`}>

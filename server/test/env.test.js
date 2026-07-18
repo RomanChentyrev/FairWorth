@@ -10,6 +10,7 @@ function productionEnv(overrides = {}) {
     SMTP_HOST: 'smtp.example.com',
     EMAIL_FROM: 'Fairworth <mail@example.com>',
     ADMIN_EMAILS: 'admin@example.com',
+    LEGAL_OPERATOR_TYPE: 'company',
     LEGAL_OPERATOR_NAME: 'Fairworth LLC',
     LEGAL_REGISTERED_ADDRESS: 'Address',
     LEGAL_REGISTRATION_NUMBER: '123',
@@ -47,6 +48,14 @@ test('production accepts disabled partner booking without referral configuration
   assert.equal(env.PARTNER_ALLOWED_HOSTS, '');
   assert.equal(env.PARTNER_DEEP_LINK_TEMPLATE, '');
   assert.equal(env.PARTNER_POSTBACK_SECRET, '');
+});
+
+test('production accepts an individual operator without a company registration number', () => {
+  const env = validateEnv(productionEnv({
+    LEGAL_OPERATOR_TYPE: 'individual',
+    LEGAL_REGISTRATION_NUMBER: '',
+  }));
+  assert.equal(env.LEGAL_OPERATOR_TYPE, 'individual');
 });
 
 test('production requires complete referral configuration only when partner booking is enabled', () => {

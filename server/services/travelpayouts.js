@@ -31,6 +31,30 @@ function cacheSet(key, data, ttlMs) {
   memCache[key] = { data, expiresAt: Date.now() + ttlMs };
 }
 
+function validTimestamp(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function markIndicativeFares(items, cacheStatus = 'provider_cached', receivedAt = new Date().toISOString()) {
+  return (items || []).map(item => ({
+    ...item,
+    fare_type: 'indicative',
+    fare_observed_at: validTimestamp(item.fare_observed_at || item.found_at || item.updated_at) || receivedAt,
+    fare_received_at: validTimestamp(item.fare_received_at) || receivedAt,
+    fare_cache_status: cacheStatus,
+    availability_confirmed: false,
+    seat_availability_confirmed: false,
+    requires_provider_verification: true,
+  }));
+}
+
+function cachedIndicativeFares(key) {
+  const cached = cacheGet(key);
+  return cached ? markIndicativeFares(cached, 'local_cache') : null;
+}
+
 // ─── HTTP helper ──────────────────────────────────────────────────────────────
 function getOnce(hostname, path, token) {
   return new Promise((resolve, reject) => {
@@ -130,7 +154,7 @@ async function fetchStaticFile(name) {
  */
 async function cheapestTickets({ origin, destination = '-', depart_date, return_date, currency = 'USD', token }) {
   const cacheKey = `cheap:${origin}:${destination}:${depart_date}:${return_date}:${currency}`;
-  const cached   = cacheGet(cacheKey);
+  const cached   = cachedIndicativeFares(cacheKey);
   if (cached) return cached;
 
   const params = new URLSearchParams({ origin, destination, currency, token });
@@ -149,8 +173,9 @@ async function cheapestTickets({ origin, destination = '-', depart_date, return_
     }
   }
 
-  cacheSet(cacheKey, tickets, 3 * 60 * 60 * 1000); // 3 часа
-  return tickets;
+  const indicativeTickets = markIndicativeFares(tickets);
+  cacheSet(cacheKey, indicativeTickets, 3 * 60 * 60 * 1000); // 3 часа
+  return indicativeTickets;
 }
 
 /**
@@ -159,7 +184,7 @@ async function cheapestTickets({ origin, destination = '-', depart_date, return_
  */
 async function directTickets({ origin, destination, depart_date, return_date, currency = 'USD', token }) {
   const cacheKey = `direct:${origin}:${destination}:${depart_date}:${return_date}:${currency}`;
-  const cached   = cacheGet(cacheKey);
+  const cached   = cachedIndicativeFares(cacheKey);
   if (cached) return cached;
 
   const params = new URLSearchParams({ origin, destination, currency, token });
@@ -176,8 +201,9 @@ async function directTickets({ origin, destination, depart_date, return_date, cu
     }
   }
 
-  cacheSet(cacheKey, tickets, 3 * 60 * 60 * 1000);
-  return tickets;
+  const indicativeTickets = markIndicativeFares(tickets);
+  cacheSet(cacheKey, indicativeTickets, 3 * 60 * 60 * 1000);
+  return indicativeTickets;
 }
 
 /**
@@ -186,7 +212,7 @@ async function directTickets({ origin, destination, depart_date, return_date, cu
  */
 async function priceCalendar({ origin, destination, depart_date, return_date, currency = 'USD', token }) {
   const cacheKey = `calendar:${origin}:${destination}:${depart_date}:${return_date}:${currency}`;
-  const cached   = cacheGet(cacheKey);
+  const cached   = cachedIndicativeFares(cacheKey);
   if (cached) return cached;
 
   const params = new URLSearchParams({
@@ -204,8 +230,9 @@ async function priceCalendar({ origin, destination, depart_date, return_date, cu
     .map(([date, info]) => ({ date, ...info }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  cacheSet(cacheKey, days, 3 * 60 * 60 * 1000);
-  return days;
+  const indicativeDays = markIndicativeFares(days);
+  cacheSet(cacheKey, indicativeDays, 3 * 60 * 60 * 1000);
+  return indicativeDays;
 }
 
 /**
@@ -214,7 +241,7 @@ async function priceCalendar({ origin, destination, depart_date, return_date, cu
  */
 async function popularDestinations({ origin, currency = 'USD', token }) {
   const cacheKey = `popular:${origin}:${currency}`;
-  const cached   = cacheGet(cacheKey);
+  const cached   = cachedIndicativeFares(cacheKey);
   if (cached) return cached;
 
   const params = new URLSearchParams({ origin, currency, token });
@@ -226,8 +253,9 @@ async function popularDestinations({ origin, currency = 'USD', token }) {
     .sort((a, b) => a.price - b.price)
     .slice(0, 20);
 
-  cacheSet(cacheKey, destinations, 6 * 60 * 60 * 1000); // 6 часов
-  return destinations;
+  const indicativeDestinations = markIndicativeFares(destinations);
+  cacheSet(cacheKey, indicativeDestinations, 6 * 60 * 60 * 1000); // 6 часов
+  return indicativeDestinations;
 }
 
 /**
@@ -236,7 +264,7 @@ async function popularDestinations({ origin, currency = 'USD', token }) {
  */
 async function pricesForDates({ origin, destination, depart_date, return_date, currency = 'USD', limit = 5, direct = false, token }) {
   const cacheKey = `prices-for-dates:${origin}:${destination}:${depart_date}:${return_date}:${currency}:${limit}:${direct}`;
-  const cached = cacheGet(cacheKey);
+  const cached = cachedIndicativeFares(cacheKey);
   if (cached) return cached;
 
   const params = new URLSearchParams({
@@ -254,7 +282,7 @@ async function pricesForDates({ origin, destination, depart_date, return_date, c
   const result = await get(BASE_V2, `/aviasales/v3/prices_for_dates?${params}`, token);
   if (!result.success) throw new Error(result.error || 'Travelpayouts error');
 
-  const tickets = Array.isArray(result.data) ? result.data : [];
+  const tickets = markIndicativeFares(Array.isArray(result.data) ? result.data : []);
   cacheSet(cacheKey, tickets, 60 * 60 * 1000);
   return tickets;
 }
@@ -336,4 +364,5 @@ module.exports = {
   getAirlines,
   getPlanes,
   searchAirports,
+  markIndicativeFares,
 };

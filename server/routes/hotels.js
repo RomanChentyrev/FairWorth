@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const { analyzeHotel } = require('../services/ai');
 const { calculateHotelScore, getUserWeights, recordScoreSnapshot, tripContextKey, SCORE_VERSION } = require('../services/personalization');
 const { normalizePrice, roundMoney } = require('../services/pricing');
-const { selectComparableRate, marketBenchmark } = require('../services/comparablePricing');
+const { selectComparableRate, rateAvailability, marketBenchmark } = require('../services/comparablePricing');
 const { requireAuth, requireOnboarding, requireEmailVerified } = require('../middleware/auth');
 const { validateDateRange, defaultTravelDates } = require('../utils/dates');
 const { aiLimiter } = require('../middleware/security');
@@ -14,7 +14,7 @@ const travelpayouts = require('../services/travelpayouts');
 const { ensureCatalogForCity } = require('../services/hotelCatalog');
 const { refreshLiteApiRates } = require('../services/hotelRates');
 const googlePlaces = require('../services/googlePlaces');
-const { amenitySearchTerms } = require('../config/hotelAmenities');
+const { amenitySearchTerms, amenityMatches } = require('../config/hotelAmenities');
 const {
   CACHE_TTL_HOURS,
   HOTEL_CATALOG,
@@ -39,20 +39,30 @@ function parseList(value) {
   try { return JSON.parse(value || '[]'); } catch { return []; }
 }
 
-function comparableRateOptions(preferences, guests) {
+function hasRequiredAmenities(hotel, rooms, catalogAmenities, requiredAmenities) {
+  if (!requiredAmenities.length) return true;
+  const structuredAmenities = catalogAmenities.map(item => item.name).filter(Boolean);
+  const hotelAmenities = structuredAmenities.length ? structuredAmenities : parseList(hotel.amenities);
+  const roomAmenities = rooms.flatMap(room => parseList(room.amenities));
+  const confirmedAmenities = [...hotelAmenities, ...roomAmenities];
+  return requiredAmenities.every(required => amenityMatches(confirmedAmenities, required));
+}
+
+function comparableRateOptions(preferences, guests, constraints = {}) {
   const preferredAmenities = parseList(preferences?.hotel_amenities);
   const requiredAmenities = parseList(preferences?.required_hotel_amenities);
   return {
     guests,
     preferredRoomTypes: parseList(preferences?.room_type),
     breakfastPreferred: preferredAmenities.includes('breakfast'),
-    breakfastRequired: requiredAmenities.includes('breakfast'),
+    breakfastRequired: Boolean(constraints.breakfastRequired) || requiredAmenities.includes('breakfast'),
+    refundableRequired: Boolean(constraints.refundableRequired),
     ttlHours: CACHE_TTL_HOURS,
   };
 }
 
-function comparablePriceContext(hotels, priceRows, preferences, guests) {
-  const options = comparableRateOptions(preferences, guests);
+function comparablePriceContext(hotels, priceRows, preferences, guests, constraints = {}) {
+  const options = comparableRateOptions(preferences, guests, constraints);
   const pricesByHotel = priceRows.reduce((map, row) => ((map[row.hotel_id] ||= []).push(row), map), {});
   const hotelsById = new Map(hotels.map(hotel => [hotel.id, hotel]));
   const ratesByHotel = new Map();
@@ -734,16 +744,32 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
 
     let hotels = await db.prepare(query).all(...params);
 
-    const userWeights = await getUserWeights(userId, { destination: city, check_in: liveCheckIn, check_out: liveCheckOut, guests, trip_purpose });
-    const hotelIds = hotels.map(hotel => hotel.id);
-    const roomRows = hotelIds.length
-      ? await db.prepare(`SELECT hotel_id, name, size_sqm, view_type, amenities FROM hotel_rooms WHERE hotel_id IN (${hotelIds.map(() => '?').join(',')})`).all(...hotelIds)
-      : [];
+    const candidateHotelIds = hotels.map(hotel => hotel.id);
+    const [userWeights, roomRows, catalogAmenityRows] = await Promise.all([
+      getUserWeights(userId, { destination: city, check_in: liveCheckIn, check_out: liveCheckOut, guests, trip_purpose }),
+      candidateHotelIds.length
+        ? db.prepare(`SELECT hotel_id, name, size_sqm, view_type, amenities FROM hotel_rooms WHERE hotel_id IN (${candidateHotelIds.map(() => '?').join(',')})`).all(...candidateHotelIds)
+        : [],
+      candidateHotelIds.length
+        ? db.prepare(`SELECT hotel_id, name FROM hotel_amenities WHERE hotel_id IN (${candidateHotelIds.map(() => '?').join(',')})`).all(...candidateHotelIds)
+        : [],
+    ]);
     const roomsByHotel = roomRows.reduce((result, room) => {
       if (!result[room.hotel_id]) result[room.hotel_id] = [];
       result[room.hotel_id].push(room);
       return result;
     }, {});
+    const catalogAmenitiesByHotel = catalogAmenityRows.reduce((result, amenity) => {
+      if (!result[amenity.hotel_id]) result[amenity.hotel_id] = [];
+      result[amenity.hotel_id].push(amenity);
+      return result;
+    }, {});
+    hotels = hotels.filter(hotel => hasRequiredAmenities(
+      hotel,
+      roomsByHotel[hotel.id] || [],
+      catalogAmenitiesByHotel[hotel.id] || [],
+      strictAmenities,
+    ));
     const scoreCities = [...new Set(hotels.map(hotel => hotel.city).filter(Boolean))];
     const marketRows = scoreCities.length ? await db.prepare(`
       SELECT mp.*, mh.city, mh.location, mh.stars
@@ -832,11 +858,21 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
 // POST /api/hotels/rates/batch — progressively enrich catalog results with live rates.
 router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
   try {
-    const { hotel_ids: hotelIds, check_in: checkIn, check_out: checkOut, guests = 2, trip_purpose: tripPurpose, language = 'en' } = req.body || {};
+    const {
+      hotel_ids: hotelIds,
+      check_in: checkIn,
+      check_out: checkOut,
+      guests = 2,
+      trip_purpose: tripPurpose,
+      language = 'en',
+      breakfast = false,
+      free_cancel: freeCancel = false,
+    } = req.body || {};
     if (!Array.isArray(hotelIds) || !hotelIds.length || hotelIds.length > 50) return res.status(400).json({ error: 'hotel_ids must contain between 1 and 50 items' });
     if (!validateDateRange(checkIn, checkOut)) return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
     const uniqueIds = [...new Set(hotelIds.map(String))];
     const hotels = await db.prepare(`SELECT * FROM hotels WHERE active = 1 AND id IN (${uniqueIds.map(() => '?').join(',')})`).all(...uniqueIds);
+    if (!hotels.length) return res.json({ hotels: [], checked: 0, available: 0, unavailable_hotel_ids: uniqueIds });
     await refreshLiteApiRates(hotels, checkIn, checkOut, { guests });
     await Promise.allSettled(hotels.map(hotel => refreshHotelPricesFromXotelo(hotel, checkIn, checkOut).catch(error => {
       console.warn(`[xotelo] ${hotel.name}: ${error.message}`);
@@ -859,7 +895,10 @@ router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding
       ...hotels.map(hotel => [hotel.id, hotel]),
       ...marketRows.map(row => [row.hotel_id, { id: row.hotel_id, city: row.city, location: row.location, stars: row.stars }]),
     ]).values()];
-    const comparableContext = comparablePriceContext(marketHotels, marketRows, userPrefs, guests);
+    const comparableContext = comparablePriceContext(marketHotels, marketRows, userPrefs, guests, {
+      breakfastRequired: breakfast === true || breakfast === '1',
+      refundableRequired: freeCancel === true || freeCancel === '1',
+    });
     const priceMetadataByHotel = Object.fromEntries(hotels.map(hotel => {
       const comparable = comparableContext.ratesByHotel.get(hotel.id);
       return [hotel.id, comparable ? { ...comparable, provider: comparable.operator } : null];
@@ -888,7 +927,11 @@ router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding
         review_source_count: review?.review_source_count,
         review_source_consistency: review?.review_source_consistency,
       }, userPrefs, userWeights, { roomsByHotel, language, priceMetadataByHotel, priceBenchmarkByHotel: comparableContext.benchmarkByHotel });
-      return { ...scoring, price_source: comparable?.source || prices[0]?.source || null };
+      return {
+        ...scoring,
+        price_source: comparable?.source || prices[0]?.source || null,
+        ...rateAvailability(comparable, { checkIn, checkOut, guests }),
+      };
     });
     await Promise.all(enriched.map(result => recordScoreSnapshot(req.user.id, result)));
     res.json({
@@ -899,6 +942,8 @@ router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding
         return compact;
       }),
       checked: hotels.length,
+      available: enriched.filter(result => result.availability_status === 'available').length,
+      unavailable_hotel_ids: enriched.filter(result => result.availability_status !== 'available').map(result => result.id),
     });
   } catch (error) {
     console.error(error);

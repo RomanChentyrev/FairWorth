@@ -279,6 +279,7 @@
 
 .resultsHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .resultsCount { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.resultsMeta { font-size: 11px; color: var(--text-muted); }
 .loadMoreBtn {
   align-self: center;
   min-width: 220px;
