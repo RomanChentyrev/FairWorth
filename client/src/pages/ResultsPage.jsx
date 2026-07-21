@@ -9,6 +9,14 @@ import { defaultTravelDates, formatLocalDate, validFutureDates } from '../utils/
 import { formatAmount } from '../utils/money';
 import useCapabilities from '../hooks/useCapabilities';
 import ProviderUnavailable from '../components/ProviderUnavailable';
+import {
+  HOTEL_RESULTS_CACHE_KEY,
+  HOTEL_RESULTS_CACHE_VERSION,
+  compactCachedHotel,
+  hotelResultsRequestKey,
+  hotelResultsUserKey,
+  readHotelResultsCache,
+} from '../utils/hotelResultsCache';
 
 function HotelMap({ hotels, hoveredId, checkIn, checkOut, lang }) {
   const mapRef = useRef(null);
@@ -141,21 +149,6 @@ function savedTravelTrip() {
   }
 }
 
-function readResultsCache({ city, checkIn, checkOut, guests, tripPurpose }) {
-  try {
-    const cached = JSON.parse(window.sessionStorage.getItem('fairworth_hotel_results_cache') || 'null');
-    const sameSearch = cached?.version === 16 && cached?.search?.city === city && cached.search.checkIn === checkIn
-      && cached.search.checkOut === checkOut && String(cached.search.guests) === String(guests) && cached.search.tripPurpose === tripPurpose;
-    if (!sameSearch || Date.now() - cached.savedAt > 15 * 60 * 1000) return null;
-    return cached;
-  } catch { return null; }
-}
-
-function compactCachedHotel(hotel) {
-  const { content_raw_json, description, ...cardData } = hotel;
-  return cardData;
-}
-
 function isAvailableOffer(hotel) {
   if (!(Number(hotel?.min_price) > 0)) return false;
   if (hotel.availability_status) return hotel.availability_status === 'available';
@@ -233,15 +226,16 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   const [checkOut, setCheckOut] = useState(initialDates.check_out);
   const [guests, setGuests] = useState(searchParams.get('guests') || '2');
   const [tripPurpose, setTripPurpose] = useState(searchParams.get('trip_purpose') || savedTrip.trip_purpose || 'leisure');
-  const cachedResults = useRef(readResultsCache({ city, checkIn, checkOut, guests, tripPurpose })).current;
+  const cacheSearch = { city, checkIn, checkOut, guests, tripPurpose };
+  const cachedResults = useRef(readHotelResultsCache({ search: cacheSearch, language: lang })).current;
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const [hotels, setHotels] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [hotels, setHotels] = useState(cachedResults?.hotels || []);
+  const [loading, setLoading] = useState(!cachedResults);
   const [error, setError] = useState(null);
   const [aiMessage, setAiMessage] = useState(cachedResults?.aiMessage || '');
   const [hoveredId, setHoveredId] = useState(null);
-  const [viewMode, setViewMode] = useState('list');
+  const [viewMode, setViewMode] = useState(cachedResults?.viewMode || 'list');
 
   const [sort, setSort] = useState(cachedResults?.filters?.sort || 'score');
   const [stars, setStars] = useState(cachedResults?.filters?.stars || []);
@@ -253,15 +247,24 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   const [freeCancel, setFreeCancel] = useState(cachedResults?.filters?.freeCancel || false);
   const [breakfastIncl, setBreakfastIncl] = useState(cachedResults?.filters?.breakfastIncl || false);
   const [searchNonce, setSearchNonce] = useState(0);
-  const explicitSearchRef = useRef(true);
-  const searchSessionRef = useRef(searchSessionId());
+  const explicitSearchRef = useRef(!cachedResults);
+  const searchSessionRef = useRef(cachedResults?.searchSessionId || searchSessionId());
   const [hasMore, setHasMore] = useState(cachedResults?.hasMore ?? true);
-  const [totalResults, setTotalResults] = useState(0);
-  const [catalogOffset, setCatalogOffset] = useState(0);
-  const [checkedCount, setCheckedCount] = useState(0);
-  const [unavailableCount, setUnavailableCount] = useState(0);
+  const [totalResults, setTotalResults] = useState(cachedResults?.totalResults || 0);
+  const [catalogOffset, setCatalogOffset] = useState(cachedResults?.catalogOffset || 0);
+  const [checkedCount, setCheckedCount] = useState(cachedResults?.checkedCount || 0);
+  const [unavailableCount, setUnavailableCount] = useState(cachedResults?.unavailableCount || 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const resultsScrollRef = useRef(null);
+
+  const currentRequestKey = hotelResultsRequestKey({
+    search: { city, checkIn, checkOut, guests, tripPurpose },
+    filters: { sort, stars, priceRange, ratingMin, amenities, districts, freeCancel, breakfastIncl },
+    language: lang,
+  });
+  const restoredRequestKeyRef = useRef(cachedResults
+    ? hotelResultsRequestKey({ search: cachedResults.search, filters: cachedResults.filters, language: cachedResults.language })
+    : null);
 
   const nights = Math.ceil((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24)) || 4;
 
@@ -290,20 +293,22 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   useEffect(() => {
     if (loading || error) return;
     try {
-      const existing = JSON.parse(window.sessionStorage.getItem('fairworth_hotel_results_cache') || 'null');
-      window.sessionStorage.setItem('fairworth_hotel_results_cache', JSON.stringify({
-        version: 16,
+      const existing = JSON.parse(window.sessionStorage.getItem(HOTEL_RESULTS_CACHE_KEY) || 'null');
+      window.sessionStorage.setItem(HOTEL_RESULTS_CACHE_KEY, JSON.stringify({
+        version: HOTEL_RESULTS_CACHE_VERSION,
+        userKey: hotelResultsUserKey(),
+        language: lang,
         search: { city, checkIn, checkOut, guests, tripPurpose }, hotels: hotels.map(compactCachedHotel), districtOptions, aiMessage, hasMore, totalResults,
-        catalogOffset, checkedCount, unavailableCount,
+        catalogOffset, checkedCount, unavailableCount, viewMode, searchSessionId: searchSessionRef.current,
         filters: { sort, stars, priceRange, ratingMin, amenities, districts, freeCancel, breakfastIncl },
         scrollTop: resultsScrollRef.current?.scrollTop ?? existing?.scrollTop ?? 0,
         savedAt: Date.now(),
       }));
     } catch (cacheError) {
       console.warn('Hotel results cache was skipped:', cacheError.message);
-      window.sessionStorage.removeItem('fairworth_hotel_results_cache');
+      window.sessionStorage.removeItem(HOTEL_RESULTS_CACHE_KEY);
     }
-  }, [hotels, loading, error, aiMessage, districtOptions, hasMore, totalResults, catalogOffset, checkedCount, unavailableCount]);
+  }, [hotels, loading, error, aiMessage, districtOptions, hasMore, totalResults, catalogOffset, checkedCount, unavailableCount, viewMode, lang]);
 
   const checkRateBatch = useCallback(async (batch) => {
     const hotelIds = batch.map(hotel => hotel.id).filter(Boolean);
@@ -415,9 +420,11 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   };
 
   useEffect(() => {
+    if (restoredRequestKeyRef.current === currentRequestKey && searchNonce === 0) return;
+    restoredRequestKeyRef.current = null;
     const timer = window.setTimeout(fetchHotels, 500);
     return () => window.clearTimeout(timer);
-  }, [fetchHotels]);
+  }, [fetchHotels, currentRequestKey, searchNonce]);
 
   const toggleStar = s => setStars(p => p.includes(s) ? p.filter(x => x !== s) : [...p, s]);
   const toggleAmenity = a => setAmenities(p => p.includes(a) ? p.filter(x => x !== a) : [...p, a]);
@@ -598,8 +605,8 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
         {/* Hotels */}
         <main className={styles.main} ref={resultsScrollRef} onScroll={event => {
           try {
-            const cached = JSON.parse(window.sessionStorage.getItem('fairworth_hotel_results_cache') || 'null');
-            if (cached) window.sessionStorage.setItem('fairworth_hotel_results_cache', JSON.stringify({ ...cached, scrollTop: event.currentTarget.scrollTop, savedAt: Date.now() }));
+            const cached = JSON.parse(window.sessionStorage.getItem(HOTEL_RESULTS_CACHE_KEY) || 'null');
+            if (cached) window.sessionStorage.setItem(HOTEL_RESULTS_CACHE_KEY, JSON.stringify({ ...cached, scrollTop: event.currentTarget.scrollTop, savedAt: Date.now() }));
           } catch { /* Ignore unavailable session storage. */ }
         }}>
           {aiMessage && !loading && (

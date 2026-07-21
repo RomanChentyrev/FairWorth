@@ -222,6 +222,14 @@ test('search → live price → filter → compare → details → booking pendi
   await page.getByRole('checkbox', { name: 'Tennis court' }).check();
   await expect.poll(() => searchRequests.some(url => new URL(url).searchParams.get('amenities') === 'tennis')).toBe(true);
 
+  const searchRequestCountBeforeDetails = searchRequests.length;
+  await page.getByTestId('hotel-details-hotel-marina-bay-sands').click();
+  await expect(page.getByRole('heading', { name: 'Marina Bay Sands' })).toBeVisible();
+  await page.getByRole('button', { name: /search results/i }).click();
+  await expect(page.getByTestId('hotel-card-hotel-marina-bay-sands')).toBeVisible();
+  await page.waitForTimeout(800);
+  expect(searchRequests).toHaveLength(searchRequestCountBeforeDetails);
+
   await page.getByTestId('hotel-compare-hotel-raffles-singapore').click();
   await page.getByTestId('hotel-compare-hotel-marina-bay-sands').click();
   await page.getByTestId('open-comparison').click();
