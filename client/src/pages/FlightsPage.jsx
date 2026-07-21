@@ -300,6 +300,57 @@ function groupFlightFares(flights) {
   });
 }
 
+function normalizeRouteOptions(items = []) {
+  return items.map((item, index) => {
+    const option = item.route_graph_option || item;
+    return {
+      id: item.id || `route-option-${index}`,
+      label: option.label || (option.airports || []).join(' → '),
+      airports: option.airports || [],
+      stops: Number(option.stops || 0),
+      connectionAirports: option.connection_airports || [],
+      suggestedAirlines: option.suggested_airlines || [],
+      routeConfidence: Number(option.route_confidence || item.score_reliability || 0),
+      caveat: item.missing_live_fare_reason || option.missing_live_fare_reason,
+    };
+  });
+}
+
+function RouteOptionsPanel({ options, lang }) {
+  if (!options.length) return null;
+  return (
+    <div className={styles.routeOptions}>
+      <div>
+        <div className={styles.routeOptionsTitle}>
+          {lang === 'ru' ? 'Маршрут возможен, но тариф не найден' : 'Route possible, but no fare found'}
+        </div>
+        <div className={styles.routeOptionsText}>
+          {lang === 'ru'
+            ? 'Мы нашли вероятные варианты перелёта через маршрутный граф, но провайдер не вернул цену на выбранную дату. Это не подтверждённое расписание и не билет.'
+            : 'Fairworth found likely routes through the route graph, but the provider did not return a fare for the selected date. This is not a confirmed schedule or ticket.'}
+        </div>
+      </div>
+      <div className={styles.routeOptionList}>
+        {options.map(option => (
+          <div key={option.id} className={styles.routeOption}>
+            <div className={styles.routeOptionPath}>{option.label}</div>
+            <div className={styles.routeOptionMeta}>
+              <span>{option.stops === 0 ? (lang === 'ru' ? 'без пересадок' : 'direct') : `${option.stops} ${lang === 'ru' ? 'пересадка' : 'stop'}`}</span>
+              <span>{lang === 'ru' ? 'уверенность маршрута' : 'route confidence'} {option.routeConfidence}/100</span>
+              {option.suggestedAirlines.length > 0 && <span>{option.suggestedAirlines.join(', ')}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className={styles.routeOptionsText}>
+        {lang === 'ru'
+          ? 'Следующий шаг для production-точности: подключить поисковый или расписательный API, который подтвердит рейс, цену и наличие мест.'
+          : 'Next step for production accuracy: connect a search or schedule API that confirms the flight, fare and seat availability.'}
+      </div>
+    </div>
+  );
+}
+
 function savedTravelDates() {
   try {
     return validFutureDates(JSON.parse(window.sessionStorage.getItem('fairworth_dates') || '{}'));
@@ -333,8 +384,10 @@ export default function FlightsPage() {
 
   const [flights, setFlights] = useState([]);
   const [alternativeFlights, setAlternativeFlights] = useState([]);
+  const [routeOptions, setRouteOptions] = useState([]);
   const [returnFlights, setReturnFlights] = useState([]);
   const [alternativeReturnFlights, setAlternativeReturnFlights] = useState([]);
+  const [returnRouteOptions, setReturnRouteOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [aiMessage, setAiMessage] = useState('');
@@ -397,7 +450,7 @@ export default function FlightsPage() {
       };
 
       const loadLeg = async ({ legOriginCode, legDestinationCode, legFromLabel, legToLabel, legDate }) => {
-        if (!legDate) return { results: [], alternatives: [] };
+        if (!legDate) return { results: [], alternatives: [], routeOptions: [] };
 
         const params = {
           origin: legOriginCode,
@@ -418,6 +471,7 @@ export default function FlightsPage() {
         });
 
         const rawTickets = res.data?.data || [];
+        const rawRouteOptions = res.data?.route_options || [];
         const normalizedTickets = rawTickets.map(ticket => {
           const normalized = normalizeTravelpayoutsTicket(ticket, {
             originCode: legOriginCode,
@@ -446,7 +500,7 @@ export default function FlightsPage() {
           )
           : [];
 
-        return { results, alternatives };
+        return { results, alternatives, routeOptions: normalizeRouteOptions(rawRouteOptions) };
       };
 
       const outbound = await loadLeg({
@@ -465,15 +519,17 @@ export default function FlightsPage() {
           legToLabel: normalizePlaceInput(from) || originCode,
           legDate: returnDate,
         })
-        : { results: [], alternatives: [] };
+        : { results: [], alternatives: [], routeOptions: [] };
 
       let results = outbound.results;
       const alternatives = outbound.alternatives;
 
       setFlights(results);
       setAlternativeFlights(alternatives);
+      setRouteOptions(outbound.routeOptions);
       setReturnFlights(inbound.results);
       setAlternativeReturnFlights(inbound.alternatives);
+      setReturnRouteOptions(inbound.routeOptions);
       if (results.length) {
         const best = results[0];
         setAiMessage(lang === 'ru'
@@ -485,9 +541,12 @@ export default function FlightsPage() {
     } catch (err) {
       console.error(err);
       setError(err.message || t('results_error'));
+      setFlights([]);
       setAlternativeFlights([]);
+      setRouteOptions([]);
       setReturnFlights([]);
       setAlternativeReturnFlights([]);
+      setReturnRouteOptions([]);
     } finally {
       setLoading(false);
     }
@@ -667,10 +726,13 @@ export default function FlightsPage() {
                   {flights.map((flight, i) => (
                     <FlightCard key={flight.id} flight={flight} isRecommended={i === 0 && sort === 'score' && flight.top_pick_eligible} compact leg="outbound" passengers={passengers} />
                   ))}
-                  {flights.length === 0 && alternativeFlights.length === 0 && (
+                  {flights.length === 0 && alternativeFlights.length === 0 && routeOptions.length === 0 && (
                     <div className={styles.noResults}>
                       {lang === 'ru' ? 'Рейсы туда на выбранную дату не найдены.' : 'No outbound flights found for the selected date.'}
                     </div>
+                  )}
+                  {flights.length === 0 && routeOptions.length > 0 && (
+                    <RouteOptionsPanel options={routeOptions} lang={lang} />
                   )}
                 </div>
                 {alternativeFlights.length > 0 && (
@@ -704,10 +766,13 @@ export default function FlightsPage() {
                     {returnFlights.map((flight, i) => (
                       <FlightCard key={`return-${flight.id}`} flight={flight} isRecommended={i === 0 && sort === 'score' && flight.top_pick_eligible} compact leg="return" passengers={passengers} />
                     ))}
-                    {returnFlights.length === 0 && alternativeReturnFlights.length === 0 && (
+                    {returnFlights.length === 0 && alternativeReturnFlights.length === 0 && returnRouteOptions.length === 0 && (
                       <div className={styles.noResults}>
                         {lang === 'ru' ? 'Обратные рейсы на выбранную дату не найдены.' : 'No return flights found for the selected date.'}
                       </div>
+                    )}
+                    {returnFlights.length === 0 && returnRouteOptions.length > 0 && (
+                      <RouteOptionsPanel options={returnRouteOptions} lang={lang} />
                     )}
                   </div>
                   {alternativeReturnFlights.length > 0 && (

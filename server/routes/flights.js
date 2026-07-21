@@ -4,6 +4,7 @@ const travelpayouts = require('../services/travelpayouts');
 const { configured } = require('../config/capabilities');
 const { db } = require('../db/database');
 const { scoreFlights, FLIGHT_SCORE_VERSION } = require('../services/flightScoring');
+const { buildRouteGraph, routeFallbackTickets } = require('../services/flightRouteGraph');
 
 function getTravelpayoutsToken() {
   return process.env.TRAVELPAYOUTS_TOKEN;
@@ -70,6 +71,15 @@ function indicativeFarePositioning(items = []) {
     requires_provider_verification: true,
     disclaimer: 'Final price and seat availability must be verified with the provider before booking.',
   };
+}
+
+function routeGraphForQuery(params, query) {
+  return buildRouteGraph({
+    origin: params.origin,
+    destination: params.destination,
+    maxStops: String(query.max_stops || '') === '0' ? 0 : 2,
+    limit: 5,
+  });
 }
 
 function validateOriginDestination(res, { origin, destination }, options = {}) {
@@ -323,17 +333,27 @@ router.get('/top', async (req, res) => {
     const preferences = await flightPreferences(req.user.id);
     const context = scoringContext(req.query);
     tickets = rankedFlights(tickets, preferences, context);
+    const routeGraph = routeGraphForQuery(params, req.query);
+    const routeOptions = tickets.length
+      ? []
+      : routeFallbackTickets(routeGraph, { departDate: requestedDate, currency: params.currency });
 
     res.json({
       success: true,
       count: tickets.length,
+      route_option_count: routeOptions.length,
       origin: params.origin,
       destination: params.destination,
       currency: params.currency,
       limit,
       score_version: FLIGHT_SCORE_VERSION,
       scoring_context: context,
-      fare_positioning: indicativeFarePositioning(tickets),
+      route_graph: routeGraph,
+      route_options: routeOptions,
+      fare_positioning: {
+        ...indicativeFarePositioning(tickets),
+        route_options_available: routeOptions.length > 0,
+      },
       data: tickets,
     });
   } catch (err) {
