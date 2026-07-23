@@ -20,6 +20,10 @@ test -n "$SERVER_ENV_FILE"
 export IMAGE_TAG="$NEW_TAG"
 docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" pull
 docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" up -d --remove-orphans
+docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" exec -T caddy \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" exec -T caddy \
+  caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 
 APP_DOMAIN=$(sed -n 's/^APP_DOMAIN=//p' "$ENV_FILE" | tail -n 1)
 attempt=0

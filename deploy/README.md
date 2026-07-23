@@ -30,6 +30,22 @@ docker login ghcr.io
 
 Do not place secrets in Compose, GitHub workflow files or Docker images.
 
+### Closed MVP access gate
+
+The deployment protects every page and API endpoint with Caddy Basic Auth except
+`/api/ready`, which remains public for deployment readiness checks.
+
+Generate a password hash without storing the plaintext password in Git:
+
+```bash
+docker run --rm -i caddy:2.8-alpine caddy hash-password
+```
+
+Set `ACCESS_GATE_USER` and the resulting bcrypt hash in the protected deployment
+environment file. Keep the hash single-quoted because it contains `$` characters.
+Share the HTTPS URL, username and plaintext password with approved testers through
+a password manager or another secure channel.
+
 ## 2. Environments
 
 GitHub repository settings must contain two Environments: `staging` and `production`. Add these secrets to each environment:

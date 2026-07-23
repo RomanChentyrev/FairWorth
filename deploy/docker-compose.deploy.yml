@@ -7,6 +7,8 @@ services:
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
       ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      ACCESS_GATE_USER: ${ACCESS_GATE_USER:?ACCESS_GATE_USER is required}
+      ACCESS_GATE_PASSWORD_HASH: ${ACCESS_GATE_PASSWORD_HASH:?ACCESS_GATE_PASSWORD_HASH is required}
     ports:
       - "80:80"
       - "443:443"
