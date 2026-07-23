@@ -19,7 +19,7 @@ test -n "$SERVER_ENV_FILE"
 
 export IMAGE_TAG="$NEW_TAG"
 docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" pull
-docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" run --rm --no-deps caddy \
+docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" run --rm --no-deps --entrypoint caddy caddy \
   validate --config /etc/caddy/Caddyfile --adapter caddyfile
 docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" up -d --remove-orphans
 docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" restart caddy
