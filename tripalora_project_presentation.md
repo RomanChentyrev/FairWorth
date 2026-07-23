@@ -541,6 +541,7 @@ AI-анализ сохраняется в `ai_analyses`. Он дополняет
 
 - React `FlightsPage`;
 - `/api/flights/*`;
+- SearchAPI Google Flights API;
 - Travelpayouts Data API;
 - справочники аэропортов и авиакомпаний;
 - Flight Index;
@@ -548,7 +549,7 @@ AI-анализ сохраняется в `ai_analyses`. Он дополняет
 
 ## 9.2. Получение предложений
 
-Tripalora может обращаться к нескольким endpoint Travelpayouts:
+Для точной даты Tripalora обращается к SearchAPI Google Flights API и получает прямые и стыковочные варианты с сегментами, длительностью и деталями пересадок. Параллельно система может обращаться к endpoint Travelpayouts:
 
 - cheap/top fares;
 - direct fares;
@@ -556,16 +557,16 @@ Tripalora может обращаться к нескольким endpoint Trave
 - popular routes;
 - static airport, city, country и airline data.
 
-Ответ нормализуется. Каждому предложению добавляются:
+SearchAPI-предложения получают `fare_type = current_metasearch_fare`; Travelpayouts остаётся индикативным источником. Каждому предложению добавляются:
 
-- `fare_type = indicative`;
+- тип и источник тарифа;
 - момент наблюдения и получения цены;
 - статус provider/local cache;
 - `availability_confirmed = false`;
 - `seat_availability_confirmed = false`;
 - требование финальной проверки у поставщика.
 
-Локальный кеш обычно хранится до трёх часов. Статические справочники кешируются примерно на сутки.
+SearchAPI-результат кешируется локально на 15 минут, чтобы повторный просмотр не расходовал запросы и не менял выдачу без необходимости. Статические справочники Travelpayouts кешируются примерно на сутки.
 
 ## 9.3. Расчёт индекса и сортировка
 
@@ -593,7 +594,7 @@ Tripalora может обращаться к нескольким endpoint Trave
 - время получения цены;
 - предупреждение о том, что цена и место требуют проверки.
 
-Если Travelpayouts не передал багаж, налоги, refundability, cabin или seat layout, Tripalora не придумывает эти данные.
+Если провайдер не передал багаж, refundability, cabin, availability или seat layout, Tripalora не придумывает эти данные.
 
 ---
 
@@ -1053,7 +1054,7 @@ Default weights:
 ## 14.4. Itinerary
 
 ```text
-Itinerary = Duration Score * 55% + Stops Score * 45%
+Itinerary = Duration Score * 45% + Stops Score * 35% + Connection Score * 20%
 ```
 
 Duration сравнивается с самым быстрым credible itinerary cohort. Чем больше отношение к baseline, тем ниже оценка; нижняя граница около 30.
@@ -1065,7 +1066,7 @@ Stops:
 - leisure допускает их немного мягче;
 - 3+ stops получает минимальную применимую оценку.
 
-Layover duration, airport changes и overnight connections предусмотрены моделью данных, но остаются unknown, пока провайдер не отдаёт segments.
+SearchAPI передаёт segments и layovers. Ночные, чрезмерно длинные, слишком короткие и самостоятельные пересадки снижают Connection Score. Если деталей нет, компонент остаётся unknown и не штрафует Base Score.
 
 ## 14.5. Schedule
 
@@ -1102,11 +1103,11 @@ Cabin mismatch и превышение подтверждённого max stops 
 - если группу придётся делить на несколько рядов, оценка снижается;
 - если layout неизвестен, результат unknown и base score не штрафуется.
 
-Travelpayouts обычно не предоставляет надёжную seat map, поэтому Tripalora не угадывает компоновку по airline или flight number.
+SearchAPI и Travelpayouts обычно не предоставляют надёжную seat map, поэтому Tripalora не угадывает компоновку по airline или flight number.
 
 ## 14.8. Fare Confidence
 
-Начальная оценка Travelpayouts Data API — 62, поскольку это индикативный cached observation.
+Начальная оценка SearchAPI — 84: это актуальный Google Flights metasearch result, но не подтверждённый booking inventory. Начальная оценка Travelpayouts Data API — 62, поскольку это индикативный cached observation.
 
 Она снижается при:
 

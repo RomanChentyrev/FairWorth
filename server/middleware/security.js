@@ -10,7 +10,7 @@ const authLimiter = rateLimit({
 });
 
 const apiLimiter = rateLimit({
-  ...standard, windowMs: 60 * 1000, limit: 180,
+  ...standard, windowMs: 60 * 1000, limit: Number(process.env.API_RATE_LIMIT || (process.env.NODE_ENV === 'test' ? 10000 : 180)),
   message: { error: 'Too many requests. Try again shortly.' },
 });
 

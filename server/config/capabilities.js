@@ -23,7 +23,9 @@ function capabilities() {
   const liteApiReady = configured(process.env.LITEAPI_KEY);
   const xoteloReady = xoteloHotelFallbackEnabled();
   const hotelsReady = liteApiReady || xoteloReady;
-  const flightsReady = configured(process.env.TRAVELPAYOUTS_TOKEN);
+  const travelpayoutsReady = configured(process.env.TRAVELPAYOUTS_TOKEN);
+  const searchApiReady = configured(process.env.SEARCHAPI_KEY);
+  const flightsReady = travelpayoutsReady || searchApiReady;
   const aiReady = configured(process.env.OPENROUTER_API_KEY);
   const hotelPhotosReady = configured(process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY)
     && process.env.GOOGLE_PLACES_PHOTOS_ENABLED !== 'false';
@@ -39,9 +41,16 @@ function capabilities() {
       features: { catalog: hotelsReady, live_rates: hotelsReady, price_watches: hotelsReady },
     },
     flights: {
-      status: flightsReady ? 'ready' : 'unavailable', stage: 'beta', provider: 'Travelpayouts',
-      reason: flightsReady ? null : 'TRAVELPAYOUTS_TOKEN is not configured',
-      features: { search: flightsReady, indicative_fares: flightsReady },
+      status: flightsReady ? 'ready' : 'unavailable', stage: 'beta',
+      provider: searchApiReady && travelpayoutsReady ? 'SearchAPI + Travelpayouts' : searchApiReady ? 'SearchAPI' : 'Travelpayouts',
+      reason: flightsReady ? null : 'SEARCHAPI_KEY or TRAVELPAYOUTS_TOKEN must be configured',
+      features: {
+        search: flightsReady,
+        live_offers: false,
+        current_metasearch_fares: searchApiReady,
+        connecting_itineraries: searchApiReady,
+        indicative_fares: travelpayoutsReady,
+      },
     },
     ai: {
       status: aiReady ? 'ready' : 'unavailable', stage: 'beta', provider: 'OpenRouter', optional: true,

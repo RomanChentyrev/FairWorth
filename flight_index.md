@@ -1,8 +1,8 @@
-# Fairworth Flight Index
+# Tripalora Flight Index
 
 ## Purpose
 
-The Flight Index ranks comparable live fares for the current user and trip. Version `1.0.0` is calculated on the server. The UI never recalculates it from the visible result set.
+The Flight Index ranks comparable current metasearch and indicative fares for the current user and trip. Version `1.2.0` is calculated on the server. The UI never recalculates it from the visible result set.
 
 ## Scores
 
@@ -23,13 +23,13 @@ The adjusted score is used for ranking. Base score remains the user-facing suita
 
 Price is compared with the median of comparable results for the exact date and the same number of stops. It is not compared with the most expensive item in the response. The response also exposes the unit price, passenger count and calculated party total.
 
-The provider currently does not consistently confirm that a quote covers the whole party. This does not reduce Base Score, but lowers Fare Confidence.
+SearchAPI is queried with the selected party size and its returned total is preserved separately from the per-person display price. Indicative providers may not consistently confirm that a quote covers the whole party. Missing confirmation does not reduce Base Score, but lowers Fare Confidence.
 
 ## Itinerary
 
 Duration is measured relative to the fastest credible itinerary in the route cohort. Stops have context-dependent penalties: business and family trips are less tolerant of connections.
 
-Layover duration, airport changes and overnight connections are supported conceptually but remain unknown until the provider supplies segment-level data.
+Itinerary is composed of duration (45%), number of stops (35%) and connection quality (20%). SearchAPI segment data lets the index penalize overnight or excessively long layovers and self-transfers. Very short connections are treated cautiously. If connection details are missing, this component is excluded instead of lowering Base Score.
 
 ## Preferences And Strict Filters
 
@@ -39,7 +39,7 @@ Preferred airlines, requested cabin, maximum stops and travel style are read fro
 
 Party price is calculated for the selected passenger count. When a provider supplies a confirmed cabin layout (`seat_blocks`, `seat_layout` such as `2-4-2`, or `seats_abreast`), group seating affects preference fit. A pair receives a better fit for a two-seat side block than for a three-seat block.
 
-Travelpayouts does not currently provide a dependable aircraft seat map in the price endpoint. In that case seating fit is unknown, Base Score is unchanged, and Score Reliability identifies the missing `aircraft_seat_layout` field. Fairworth must not infer a layout from an airline or flight number.
+Neither SearchAPI nor Travelpayouts currently provides a dependable aircraft seat map in the fare response. In that case seating fit is unknown, Base Score is unchanged, and Score Reliability identifies the missing `aircraft_seat_layout` field. Tripalora must not infer a layout from an airline or flight number.
 
 ## Confidence
 
@@ -53,4 +53,4 @@ A fare is eligible only when it passes strict filters, is on the requested date,
 
 ## Provider Limitations
 
-The current Travelpayouts metasearch feed often lacks taxes, baggage, refund rules, confirmed cabin, segment layovers and seat layout. These values are displayed as unknown rather than fabricated. A richer fare/booking provider can populate the existing scoring fields later without changing the public score contract.
+SearchAPI supplies current Google Flights results, segments and layovers, but it does not confirm seat inventory or the final seller total. Its fares are labelled `current_metasearch_fare` and must be revalidated before checkout. Travelpayouts remains a broader indicative/cached fallback. Missing baggage, refund rules, seat layout or availability are displayed as unknown rather than fabricated.

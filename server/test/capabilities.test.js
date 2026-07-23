@@ -7,6 +7,7 @@ test('provider capabilities are unavailable without live keys', () => {
     fixture: process.env.PROVIDER_FIXTURES_ENABLED,
     liteapi: process.env.LITEAPI_KEY,
     travelpayouts: process.env.TRAVELPAYOUTS_TOKEN,
+    searchapi: process.env.SEARCHAPI_KEY,
     openrouter: process.env.OPENROUTER_API_KEY,
     hotelRateProviders: process.env.HOTEL_RATE_PROVIDERS,
     partnerBooking: process.env.PARTNER_BOOKING_ENABLED,
@@ -15,13 +16,14 @@ test('provider capabilities are unavailable without live keys', () => {
   process.env.HOTEL_RATE_PROVIDERS = 'none';
   process.env.PARTNER_BOOKING_ENABLED = 'false';
   delete process.env.LITEAPI_KEY; delete process.env.TRAVELPAYOUTS_TOKEN; delete process.env.OPENROUTER_API_KEY;
+  delete process.env.SEARCHAPI_KEY;
   const result = capabilities();
   assert.equal(result.hotels.status, 'unavailable');
   assert.equal(result.flights.status, 'unavailable');
   assert.equal(result.ai.status, 'unavailable');
   assert.equal(result.partner_booking.stage, 'post_company_registration');
   for (const [key, value] of Object.entries(previous)) {
-    const envKey = { fixture: 'PROVIDER_FIXTURES_ENABLED', liteapi: 'LITEAPI_KEY', travelpayouts: 'TRAVELPAYOUTS_TOKEN', openrouter: 'OPENROUTER_API_KEY', hotelRateProviders: 'HOTEL_RATE_PROVIDERS', partnerBooking: 'PARTNER_BOOKING_ENABLED' }[key];
+    const envKey = { fixture: 'PROVIDER_FIXTURES_ENABLED', liteapi: 'LITEAPI_KEY', travelpayouts: 'TRAVELPAYOUTS_TOKEN', searchapi: 'SEARCHAPI_KEY', openrouter: 'OPENROUTER_API_KEY', hotelRateProviders: 'HOTEL_RATE_PROVIDERS', partnerBooking: 'PARTNER_BOOKING_ENABLED' }[key];
     if (value === undefined) delete process.env[envKey]; else process.env[envKey] = value;
   }
 });
@@ -58,12 +60,14 @@ test('fixtures do not replace real provider credentials', () => {
     fixture: process.env.PROVIDER_FIXTURES_ENABLED,
     liteapi: process.env.LITEAPI_KEY,
     token: process.env.TRAVELPAYOUTS_TOKEN,
+    searchapi: process.env.SEARCHAPI_KEY,
     openrouter: process.env.OPENROUTER_API_KEY,
     hotelRateProviders: process.env.HOTEL_RATE_PROVIDERS,
   };
   process.env.PROVIDER_FIXTURES_ENABLED = 'true';
   process.env.HOTEL_RATE_PROVIDERS = 'none';
   delete process.env.TRAVELPAYOUTS_TOKEN;
+  delete process.env.SEARCHAPI_KEY;
   delete process.env.OPENROUTER_API_KEY;
   delete process.env.LITEAPI_KEY;
   assert.equal(capabilities().hotels.status, 'unavailable');
@@ -77,6 +81,27 @@ test('fixtures do not replace real provider credentials', () => {
   if (previous.fixture === undefined) delete process.env.PROVIDER_FIXTURES_ENABLED; else process.env.PROVIDER_FIXTURES_ENABLED = previous.fixture;
   if (previous.liteapi === undefined) delete process.env.LITEAPI_KEY; else process.env.LITEAPI_KEY = previous.liteapi;
   if (previous.token === undefined) delete process.env.TRAVELPAYOUTS_TOKEN; else process.env.TRAVELPAYOUTS_TOKEN = previous.token;
+  if (previous.searchapi === undefined) delete process.env.SEARCHAPI_KEY; else process.env.SEARCHAPI_KEY = previous.searchapi;
   if (previous.openrouter === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = previous.openrouter;
   if (previous.hotelRateProviders === undefined) delete process.env.HOTEL_RATE_PROVIDERS; else process.env.HOTEL_RATE_PROVIDERS = previous.hotelRateProviders;
+});
+
+test('SearchAPI enables current connecting flight fares without Travelpayouts', () => {
+  const keys = ['SEARCHAPI_KEY', 'TRAVELPAYOUTS_TOKEN'];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    process.env.SEARCHAPI_KEY = 'test-searchapi-key';
+    delete process.env.TRAVELPAYOUTS_TOKEN;
+    const flights = capabilities().flights;
+    assert.equal(flights.status, 'ready');
+    assert.equal(flights.provider, 'SearchAPI');
+    assert.equal(flights.features.live_offers, false);
+    assert.equal(flights.features.current_metasearch_fares, true);
+    assert.equal(flights.features.connecting_itineraries, true);
+    assert.equal(flights.features.indicative_fares, false);
+  } finally {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
+    }
+  }
 });

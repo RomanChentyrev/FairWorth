@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { scoreFlights, priceValueScore, durationScore, seatingScore } = require('../services/flightScoring');
+const { scoreFlights, priceValueScore, durationScore, seatingScore, connectionScore } = require('../services/flightScoring');
 
 const ticket = (overrides = {}) => ({
   price: 500,
@@ -52,6 +52,12 @@ test('party size changes the score when a confirmed seat layout is available', (
   assert.equal(pairFriendly.price_details.total_for_party, 1000);
 });
 
+test('connection quality penalizes overnight and excessively long layovers', () => {
+  const comfortable = connectionScore({ transfers: 1, layovers: [{ duration_minutes: 105 }] });
+  const difficult = connectionScore({ transfers: 1, layovers: [{ duration_minutes: 480, overnight: true }] });
+  assert.ok(comfortable > difficult);
+});
+
 test('indicative fares expose conservative confidence and never claim availability', () => {
   const result = scoreFlights([ticket({ cabin_class: 'economy', taxes_included: true, baggage_included: true, refundable: true })], {}, { passengers: 1 })[0];
   assert.ok(result.fare_confidence < 80);
@@ -60,4 +66,27 @@ test('indicative fares expose conservative confidence and never claim availabili
   assert.equal(result.price_details.seat_availability_confirmed, false);
   assert.equal(result.price_details.requires_provider_verification, true);
   assert.ok(result.unknown_score_data.includes('confirmed_availability'));
+});
+
+test('current metasearch fares preserve party total without claiming availability', () => {
+  const result = scoreFlights([ticket({
+    source: 'searchapi', fare_type: 'current_metasearch_fare', fare_cache_status: 'current_metasearch', total_price: 900,
+    price: 450, price_for_passengers: true, availability_confirmed: false, seat_availability_confirmed: false,
+    booking_token_available: true,
+    cabin_class: 'economy', taxes_included: true, baggage_included: true,
+  })], {}, { passengers: 2, cabinClass: 'economy' })[0];
+  assert.ok(result.fare_confidence >= 55);
+  assert.equal(result.price_details.total_for_party, 900);
+  assert.equal(result.price_details.availability_confirmed, false);
+  assert.equal(result.price_details.seat_availability_confirmed, false);
+  assert.equal(result.unknown_score_data.includes('confirmed_availability'), true);
+});
+
+test('live offer with too few bookable seats fails party availability', () => {
+  const result = scoreFlights([ticket({
+    source: 'confirmed-provider', fare_type: 'live_offer', seats_left: 1, availability_confirmed: true,
+    seat_availability_confirmed: false, cabin_class: 'economy', taxes_included: true,
+  })], {}, { passengers: 2, cabinClass: 'economy' })[0];
+  assert.ok(result.strict_filter_failures.includes('party_availability'));
+  assert.equal(result.top_pick_eligible, false);
 });

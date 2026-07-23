@@ -1,4 +1,6 @@
 require('dotenv').config();
+process.env.AUTH_RATE_LIMIT = '10000';
+process.env.API_RATE_LIMIT = '10000';
 process.env.PARTNER_POSTBACK_SECRET = 'integration-postback-secret';
 process.env.PARTNER_ALLOWED_HOSTS = 'partner.example,tripadvisor.com,booking.com,expedia.com,agoda.com';
 process.env.PARTNER_DEEP_LINK_TEMPLATE = 'https://partner.example/hotel?target={url}&click_id={click_id}&return_url={return_url}';
@@ -15,6 +17,7 @@ const { defaultTravelDates } = require('../utils/dates');
 const crypto = require('crypto');
 const { TERMS_VERSION, PRIVACY_VERSION } = require('../config/legal');
 const travelpayouts = require('../services/travelpayouts');
+const searchApiFlights = require('../services/searchApiFlights');
 const legalAcceptance = { terms_version: TERMS_VERSION, privacy_version: PRIVACY_VERSION };
 
 const users = [];
@@ -487,6 +490,82 @@ test('flight API distinguishes provider timeout, provider error and a successful
     assert.equal(empty.body.fare_positioning.requires_provider_verification, true);
   } finally {
     for (const method of methods) travelpayouts[method] = originals[method];
+  }
+});
+
+test('flight API ranks SearchAPI connecting offers with metasearch fare confidence', async () => {
+  const account = await register('searchapi-flight-offer');
+  const previous = {
+    key: process.env.SEARCHAPI_KEY,
+    token: process.env.TRAVELPAYOUTS_TOKEN,
+    search: searchApiFlights.flightOffersSearch,
+  };
+  process.env.SEARCHAPI_KEY = 'integration-searchapi-key';
+  delete process.env.TRAVELPAYOUTS_TOKEN;
+  searchApiFlights.flightOffersSearch = async () => [{
+    id: 'searchapi-integration-offer', source: 'searchapi', fare_type: 'current_metasearch_fare',
+    origin: 'SVO', destination: 'SIN', origin_airport: 'SVO', destination_airport: 'SIN',
+    airline: 'TK', airline_name: 'Turkish Airlines', flight_number: 'TK416 / TK54',
+    departure_at: '2030-05-10T09:00:00', arrival_local_at: '2030-05-11T03:35:00',
+    duration_to: 755, transfers: 1, connection_airports: ['IST'], price: 800, total_price: 1600,
+    price_for_passengers: true, cabin_class: 'economy', taxes_included: true, baggage_included: true,
+    fare_observed_at: new Date().toISOString(), fare_received_at: new Date().toISOString(),
+    fare_cache_status: 'current_metasearch', availability_confirmed: false, seat_availability_confirmed: false,
+    booking_token_available: true, requires_provider_verification: true,
+    layovers: [{ airport_code: 'IST', duration_minutes: 110, overnight: false }],
+  }];
+  try {
+    const response = await request(app)
+      .get('/api/flights/top?origin=SVO&destination=SIN&depart_date=2030-05-10&currency=USD&passengers=2&cabin_class=economy')
+      .set('Authorization', `Bearer ${account.token}`);
+    assert.equal(response.status, 200, response.text);
+    assert.equal(response.body.count, 1);
+    assert.deepEqual(response.body.providers, ['SearchAPI']);
+    assert.equal(response.body.data[0].transfers, 1);
+    assert.equal(response.body.data[0].price_details.total_for_party, 1600);
+    assert.equal(response.body.data[0].price_details.availability_confirmed, false);
+    assert.ok(response.body.data[0].fare_confidence >= 55);
+  } finally {
+    searchApiFlights.flightOffersSearch = previous.search;
+    if (previous.key === undefined) delete process.env.SEARCHAPI_KEY; else process.env.SEARCHAPI_KEY = previous.key;
+    if (previous.token === undefined) delete process.env.TRAVELPAYOUTS_TOKEN; else process.env.TRAVELPAYOUTS_TOKEN = previous.token;
+  }
+});
+
+test('flight API scores the provider pool before applying the result limit', async () => {
+  const account = await register('searchapi-flight-pool-ranking');
+  const previous = {
+    key: process.env.SEARCHAPI_KEY,
+    token: process.env.TRAVELPAYOUTS_TOKEN,
+    search: searchApiFlights.flightOffersSearch,
+  };
+  process.env.SEARCHAPI_KEY = 'integration-searchapi-key';
+  delete process.env.TRAVELPAYOUTS_TOKEN;
+  const observedAt = new Date().toISOString();
+  const offer = (id, price, transfers, duration, departureAt) => ({
+    id, source: 'searchapi', fare_type: 'current_metasearch_fare', origin: 'SVO', destination: 'SIN',
+    origin_airport: 'SVO', destination_airport: 'SIN', airline: 'TK', airline_name: 'Turkish Airlines',
+    flight_number: id, departure_at: departureAt, duration_to: duration, transfers, price,
+    total_price: price, price_for_passengers: true, cabin_class: 'economy', taxes_included: true,
+    baggage_included: true, refundable: true, fare_observed_at: observedAt, fare_received_at: observedAt,
+    fare_cache_status: 'current_metasearch', availability_confirmed: false, seat_availability_confirmed: false,
+    booking_token_available: true, requires_provider_verification: true,
+  });
+  searchApiFlights.flightOffersSearch = async () => [
+    offer('CHEAP-TWO-STOPS', 700, 2, 1500, '2030-05-10T01:00:00'),
+    offer('BEST-DIRECT', 760, 0, 620, '2030-05-10T10:00:00'),
+  ];
+  try {
+    const response = await request(app)
+      .get('/api/flights/top?origin=SVO&destination=SIN&depart_date=2030-05-10&currency=USD&limit=1')
+      .set('Authorization', `Bearer ${account.token}`);
+    assert.equal(response.status, 200, response.text);
+    assert.equal(response.body.count, 1);
+    assert.equal(response.body.data[0].id, 'BEST-DIRECT');
+  } finally {
+    searchApiFlights.flightOffersSearch = previous.search;
+    if (previous.key === undefined) delete process.env.SEARCHAPI_KEY; else process.env.SEARCHAPI_KEY = previous.key;
+    if (previous.token === undefined) delete process.env.TRAVELPAYOUTS_TOKEN; else process.env.TRAVELPAYOUTS_TOKEN = previous.token;
   }
 });
 

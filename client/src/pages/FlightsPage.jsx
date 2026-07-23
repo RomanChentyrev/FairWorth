@@ -138,7 +138,7 @@ function normalizeTravelpayoutsTicket(ticket, context) {
   const originCode = ticket.origin_airport || ticket.origin || context.originCode;
   const destinationCode = ticket.destination_airport || ticket.destination || context.destinationCode;
   const airlineCode = ticket.airline || '';
-  const airlineName = AIRLINE_NAMES[airlineCode] || airlineCode || 'Airline';
+  const airlineName = ticket.airline_name || AIRLINE_NAMES[airlineCode] || airlineCode || 'Airline';
   const departureAt = ticket.departure_at;
   const duration = Number(ticket.duration_to || ticket.duration || 0);
   const arrivalAt = ticket.arrival_local_at || addMinutes(departureAt, duration);
@@ -147,10 +147,12 @@ function normalizeTravelpayoutsTicket(ticket, context) {
   const confirmedCabin = ticket.cabin_class || ticket.cabin || ticket.trip_class_name || null;
 
   return {
-    id: `tp-${originCode}-${destinationCode}-${airlineCode || 'air'}-${ticket.flight_number || 'flight'}-${departureAt || Math.random()}-${ticket.price || ''}`,
+    id: ticket.id || `${ticket.source || 'tp'}-${originCode}-${destinationCode}-${airlineCode || 'air'}-${ticket.flight_number || 'flight'}-${departureAt || Math.random()}-${ticket.price || ''}`,
     airline: airlineName,
     airline_code: airlineCode,
-    flight_number: ticket.flight_number ? `${airlineCode}${ticket.flight_number}`.trim() : 'Best fare',
+    flight_number: ticket.flight_number
+      ? (ticket.source === 'searchapi' ? ticket.flight_number : `${airlineCode}${ticket.flight_number}`.trim())
+      : 'Best fare',
     origin_city: context.fromLabel,
     origin_code: originCode,
     destination_city: context.toLabel,
@@ -167,7 +169,7 @@ function normalizeTravelpayoutsTicket(ticket, context) {
     cabin_class: confirmedCabin ? String(confirmedCabin).toLowerCase() : null,
     requested_cabin_class: context.cabinClass,
     price: Number(ticket.price || 0),
-    seats_left: null,
+    seats_left: ticket.seats_left || null,
     aircraft: ticket.aircraft || ticket.plane || null,
     baggage: ticket.baggage_included === true ? 'Baggage included' : ticket.baggage_included === false ? 'No checked baggage' : null,
     fairworth_score: Number(ticket.fairworth_score || 0),
@@ -180,9 +182,9 @@ function normalizeTravelpayoutsTicket(ticket, context) {
     fare_observed_at: ticket.price_details?.fare_observed_at || ticket.fare_observed_at || null,
     fare_received_at: ticket.price_details?.fare_received_at || ticket.fare_received_at || null,
     fare_cache_status: ticket.price_details?.fare_cache_status || ticket.fare_cache_status || 'provider_cached',
-    availability_confirmed: false,
-    seat_availability_confirmed: false,
-    requires_provider_verification: true,
+    availability_confirmed: ticket.price_details?.availability_confirmed ?? ticket.availability_confirmed === true,
+    seat_availability_confirmed: ticket.price_details?.seat_availability_confirmed ?? ticket.seat_availability_confirmed === true,
+    requires_provider_verification: ticket.price_details?.requires_provider_verification ?? ticket.requires_provider_verification !== false,
     score_version: ticket.score_version,
     score_breakdown: ticket.score_breakdown,
     score_weights: ticket.score_weights,
@@ -190,7 +192,11 @@ function normalizeTravelpayoutsTicket(ticket, context) {
     unknown_score_data: ticket.unknown_score_data || [],
     top_pick_eligible: Boolean(ticket.top_pick_eligible),
     price_details: ticket.price_details,
-    source: 'travelpayouts',
+    source: ticket.source || 'travelpayouts',
+    connection_airports: ticket.connection_airports || [],
+    self_transfer: ticket.self_transfer === true,
+    protected_itinerary: ticket.protected_itinerary,
+    segments: ticket.segments || [],
     raw: ticket,
   };
 }
@@ -231,7 +237,7 @@ function groupFlightFares(flights) {
         flight.price,
         flight.raw?.link,
       ].filter(Boolean).join('|'),
-      operator: flight.raw?.gate || flight.aircraft || 'Provider',
+      operator: flight.source === 'searchapi' ? 'SearchAPI / Google Flights' : flight.raw?.gate || flight.aircraft || 'Travelpayouts',
       price: Number(flight.price || 0),
       baggage: flight.baggage,
       link: flight.raw?.link,
@@ -248,8 +254,9 @@ function groupFlightFares(flights) {
       fare_received_at: flight.fare_received_at,
       fare_cache_status: flight.fare_cache_status,
       fare_confidence: flight.fare_confidence,
-      availability_confirmed: false,
-      seat_availability_confirmed: false,
+      availability_confirmed: flight.availability_confirmed,
+      seat_availability_confirmed: flight.seat_availability_confirmed,
+      fare_type: flight.fare_type,
     };
 
     if (!groups.has(key)) {
@@ -287,68 +294,19 @@ function groupFlightFares(flights) {
       fare_received_at: cheapestFare?.fare_received_at || group.fare_received_at,
       fare_cache_status: cheapestFare?.fare_cache_status || group.fare_cache_status,
       fare_confidence: cheapestFare?.fare_confidence ?? group.fare_confidence,
-      availability_confirmed: false,
-      seat_availability_confirmed: false,
-      requires_provider_verification: true,
+      availability_confirmed: cheapestFare?.availability_confirmed ?? group.availability_confirmed,
+      seat_availability_confirmed: cheapestFare?.seat_availability_confirmed ?? group.seat_availability_confirmed,
+      requires_provider_verification: group.requires_provider_verification,
       fare_options: fareOptions,
       price: priceMin,
       price_min: priceMin,
       price_max: priceMax,
       fare_count: fareOptions.length,
-      aircraft: fareOptions.length > 1 ? `${fareOptions.length} indicative fares` : group.aircraft,
+      aircraft: fareOptions.length > 1
+        ? `${fareOptions.length} ${group.fare_type === 'current_metasearch_fare' ? 'current fares' : 'indicative fares'}`
+        : group.aircraft,
     };
   });
-}
-
-function normalizeRouteOptions(items = []) {
-  return items.map((item, index) => {
-    const option = item.route_graph_option || item;
-    return {
-      id: item.id || `route-option-${index}`,
-      label: option.label || (option.airports || []).join(' → '),
-      airports: option.airports || [],
-      stops: Number(option.stops || 0),
-      connectionAirports: option.connection_airports || [],
-      suggestedAirlines: option.suggested_airlines || [],
-      routeConfidence: Number(option.route_confidence || item.score_reliability || 0),
-      caveat: item.missing_live_fare_reason || option.missing_live_fare_reason,
-    };
-  });
-}
-
-function RouteOptionsPanel({ options, lang }) {
-  if (!options.length) return null;
-  return (
-    <div className={styles.routeOptions}>
-      <div>
-        <div className={styles.routeOptionsTitle}>
-          {lang === 'ru' ? 'Маршрут возможен, но тариф не найден' : 'Route possible, but no fare found'}
-        </div>
-        <div className={styles.routeOptionsText}>
-          {lang === 'ru'
-            ? 'Мы нашли вероятные варианты перелёта через маршрутный граф, но провайдер не вернул цену на выбранную дату. Это не подтверждённое расписание и не билет.'
-            : 'Fairworth found likely routes through the route graph, but the provider did not return a fare for the selected date. This is not a confirmed schedule or ticket.'}
-        </div>
-      </div>
-      <div className={styles.routeOptionList}>
-        {options.map(option => (
-          <div key={option.id} className={styles.routeOption}>
-            <div className={styles.routeOptionPath}>{option.label}</div>
-            <div className={styles.routeOptionMeta}>
-              <span>{option.stops === 0 ? (lang === 'ru' ? 'без пересадок' : 'direct') : `${option.stops} ${lang === 'ru' ? 'пересадка' : 'stop'}`}</span>
-              <span>{lang === 'ru' ? 'уверенность маршрута' : 'route confidence'} {option.routeConfidence}/100</span>
-              {option.suggestedAirlines.length > 0 && <span>{option.suggestedAirlines.join(', ')}</span>}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className={styles.routeOptionsText}>
-        {lang === 'ru'
-          ? 'Следующий шаг для production-точности: подключить поисковый или расписательный API, который подтвердит рейс, цену и наличие мест.'
-          : 'Next step for production accuracy: connect a search or schedule API that confirms the flight, fare and seat availability.'}
-      </div>
-    </div>
-  );
 }
 
 function savedTravelDates() {
@@ -384,10 +342,8 @@ export default function FlightsPage() {
 
   const [flights, setFlights] = useState([]);
   const [alternativeFlights, setAlternativeFlights] = useState([]);
-  const [routeOptions, setRouteOptions] = useState([]);
   const [returnFlights, setReturnFlights] = useState([]);
   const [alternativeReturnFlights, setAlternativeReturnFlights] = useState([]);
-  const [returnRouteOptions, setReturnRouteOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [aiMessage, setAiMessage] = useState('');
@@ -450,7 +406,7 @@ export default function FlightsPage() {
       };
 
       const loadLeg = async ({ legOriginCode, legDestinationCode, legFromLabel, legToLabel, legDate }) => {
-        if (!legDate) return { results: [], alternatives: [], routeOptions: [] };
+        if (!legDate) return { results: [], alternatives: [] };
 
         const params = {
           origin: legOriginCode,
@@ -471,7 +427,6 @@ export default function FlightsPage() {
         });
 
         const rawTickets = res.data?.data || [];
-        const rawRouteOptions = res.data?.route_options || [];
         const normalizedTickets = rawTickets.map(ticket => {
           const normalized = normalizeTravelpayoutsTicket(ticket, {
             originCode: legOriginCode,
@@ -500,7 +455,7 @@ export default function FlightsPage() {
           )
           : [];
 
-        return { results, alternatives, routeOptions: normalizeRouteOptions(rawRouteOptions) };
+        return { results, alternatives };
       };
 
       const outbound = await loadLeg({
@@ -519,17 +474,15 @@ export default function FlightsPage() {
           legToLabel: normalizePlaceInput(from) || originCode,
           legDate: returnDate,
         })
-        : { results: [], alternatives: [], routeOptions: [] };
+        : { results: [], alternatives: [] };
 
       let results = outbound.results;
       const alternatives = outbound.alternatives;
 
       setFlights(results);
       setAlternativeFlights(alternatives);
-      setRouteOptions(outbound.routeOptions);
       setReturnFlights(inbound.results);
       setAlternativeReturnFlights(inbound.alternatives);
-      setReturnRouteOptions(inbound.routeOptions);
       if (results.length) {
         const best = results[0];
         setAiMessage(lang === 'ru'
@@ -543,10 +496,8 @@ export default function FlightsPage() {
       setError(err.message || t('results_error'));
       setFlights([]);
       setAlternativeFlights([]);
-      setRouteOptions([]);
       setReturnFlights([]);
       setAlternativeReturnFlights([]);
-      setReturnRouteOptions([]);
     } finally {
       setLoading(false);
     }
@@ -726,13 +677,10 @@ export default function FlightsPage() {
                   {flights.map((flight, i) => (
                     <FlightCard key={flight.id} flight={flight} isRecommended={i === 0 && sort === 'score' && flight.top_pick_eligible} compact leg="outbound" passengers={passengers} />
                   ))}
-                  {flights.length === 0 && alternativeFlights.length === 0 && routeOptions.length === 0 && (
+                  {flights.length === 0 && alternativeFlights.length === 0 && (
                     <div className={styles.noResults}>
-                      {lang === 'ru' ? 'Рейсы туда на выбранную дату не найдены.' : 'No outbound flights found for the selected date.'}
+                      {lang === 'ru' ? 'Доступных тарифов на выбранную дату не найдено. Попробуйте соседнюю дату или ближайший крупный аэропорт.' : 'No available fares were found for this date. Try a nearby date or major airport.'}
                     </div>
-                  )}
-                  {flights.length === 0 && routeOptions.length > 0 && (
-                    <RouteOptionsPanel options={routeOptions} lang={lang} />
                   )}
                 </div>
                 {alternativeFlights.length > 0 && (
@@ -766,13 +714,10 @@ export default function FlightsPage() {
                     {returnFlights.map((flight, i) => (
                       <FlightCard key={`return-${flight.id}`} flight={flight} isRecommended={i === 0 && sort === 'score' && flight.top_pick_eligible} compact leg="return" passengers={passengers} />
                     ))}
-                    {returnFlights.length === 0 && alternativeReturnFlights.length === 0 && returnRouteOptions.length === 0 && (
+                    {returnFlights.length === 0 && alternativeReturnFlights.length === 0 && (
                       <div className={styles.noResults}>
-                        {lang === 'ru' ? 'Обратные рейсы на выбранную дату не найдены.' : 'No return flights found for the selected date.'}
+                        {lang === 'ru' ? 'Доступных обратных тарифов на выбранную дату не найдено. Попробуйте соседнюю дату или ближайший крупный аэропорт.' : 'No available return fares were found for this date. Try a nearby date or major airport.'}
                       </div>
-                    )}
-                    {returnFlights.length === 0 && returnRouteOptions.length > 0 && (
-                      <RouteOptionsPanel options={returnRouteOptions} lang={lang} />
                     )}
                   </div>
                   {alternativeReturnFlights.length > 0 && (

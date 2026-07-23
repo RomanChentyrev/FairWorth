@@ -1,6 +1,7 @@
 require('dotenv').config();
 const liteapi = require('../services/liteapi');
 const travelpayouts = require('../services/travelpayouts');
+const searchApiFlights = require('../services/searchApiFlights');
 const { capabilities } = require('../config/capabilities');
 
 function futureDate(days) { const date = new Date(); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
@@ -18,8 +19,16 @@ async function checkHotels() {
 async function checkFlights() {
   const origin = process.env.PROVIDER_SMOKE_ORIGIN || 'MOW';
   const destination = process.env.PROVIDER_SMOKE_DESTINATION || 'DXB';
+  if (process.env.SEARCHAPI_KEY) {
+    const offers = await searchApiFlights.flightOffersSearch({
+      origin, destination, depart_date: futureDate(30), passengers: 1, currency: 'USD', max: 3,
+      apiKey: process.env.SEARCHAPI_KEY,
+      market: process.env.SEARCHAPI_MARKET || 'us',
+    });
+    return `provider=searchapi, route=${origin}-${destination}, offers=${offers.length}`;
+  }
   const tickets = await travelpayouts.cheapestTickets({ origin, destination, depart_date: futureDate(30).slice(0, 7), currency: 'USD', token: process.env.TRAVELPAYOUTS_TOKEN });
-  return `route=${origin}-${destination}, offers=${tickets.length}`;
+  return `provider=travelpayouts, route=${origin}-${destination}, offers=${tickets.length}`;
 }
 
 async function checkAi() {

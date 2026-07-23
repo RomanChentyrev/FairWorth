@@ -144,7 +144,7 @@ function buildRouteGraph({ origin, destination, maxStops = 2, limit = 5 } = {}) 
     destination: normalizedDestination,
     options,
     caveat: 'These are route possibilities, not confirmed schedules or bookable fares. Final price and seat availability require provider verification.',
-    future_providers: ['Amadeus', 'AeroDataBox', 'OAG'],
+    future_providers: ['AeroDataBox', 'OAG'],
   };
 }
 

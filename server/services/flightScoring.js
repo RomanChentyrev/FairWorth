@@ -1,4 +1,4 @@
-const FLIGHT_SCORE_VERSION = '1.0.0';
+const FLIGHT_SCORE_VERSION = '1.2.0';
 
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 const round = value => Math.round(clamp(value));
@@ -91,17 +91,44 @@ function seatingScore(ticket, passengers) {
   return clamp(82 - (rowsNeeded - 1) * 18, 40, 82);
 }
 
+function connectionScore(ticket) {
+  const stops = knownStops(ticket);
+  if (stops === 0) return 100;
+  if (stops === null || !Array.isArray(ticket.layovers) || !ticket.layovers.length) return null;
+  let score = 100;
+  if (ticket.self_transfer === true || ticket.protected_itinerary === false) score -= 30;
+  for (const layover of ticket.layovers) {
+    const duration = Number(layover.duration_minutes || layover.duration || 0);
+    if (layover.overnight === true) score -= 25;
+    if (layover.airport_change === true) score -= 30;
+    if (duration > 360) score -= 20;
+    else if (duration > 180) score -= 10;
+    else if (duration > 0 && duration < 45) score -= 15;
+  }
+  return clamp(score, 20, 100);
+}
+
 function fareConfidence(ticket, context) {
-  let score = 62; // Travelpayouts Data API fares are indicative cached observations, not booking quotes.
-  const unknown = ['confirmed_availability', 'seat_inventory'];
+  const liveOffer = ticket.fare_type === 'live_offer';
+  const currentMetasearch = ticket.fare_type === 'current_metasearch_fare' || ticket.source === 'searchapi';
+  let score = liveOffer ? 90 : currentMetasearch ? 84 : 62;
+  const unknown = [];
+  if (ticket.availability_confirmed !== true) {
+    score -= liveOffer ? 18 : currentMetasearch ? 4 : 0;
+    unknown.push('confirmed_availability');
+  }
+  if (ticket.seat_availability_confirmed !== true) {
+    score -= liveOffer ? 8 : currentMetasearch ? 3 : 0;
+    unknown.push('seat_inventory');
+  }
   if (ticket.source === 'price_calendar') score -= 15;
   if (ticket.fare_cache_status === 'local_cache') score -= 5;
   if (ticket.is_alternative_date) score -= 8;
-  if (!ticket.link) { score -= 10; unknown.push('booking_link'); }
-  if (!ticket.expires_at) { score -= 8; unknown.push('fare_expiry'); }
+  if (!ticket.link && !ticket.booking_token_available && !liveOffer) { score -= 10; unknown.push('booking_link'); }
+  if (!ticket.expires_at) { score -= currentMetasearch || liveOffer ? 4 : 8; unknown.push('fare_expiry'); }
   if (ticket.taxes_included !== true) { score -= ticket.taxes_included === false ? 18 : 12; unknown.push('taxes_and_fees'); }
-  if (ticket.baggage_included === undefined) { score -= 8; unknown.push('baggage'); }
-  if (ticket.refundable === undefined) { score -= 6; unknown.push('refundability'); }
+  if (ticket.baggage_included === undefined) { score -= currentMetasearch ? 5 : 8; unknown.push('baggage'); }
+  if (ticket.refundable === undefined) { score -= currentMetasearch ? 5 : 6; unknown.push('refundability'); }
   if (!ticketCabin(ticket)) { score -= 8; unknown.push('confirmed_cabin'); }
   if (!ticket.price_for_passengers && context.passengers > 1) { score -= 8; unknown.push('party_price_confirmation'); }
   const observedAt = ticket.fare_observed_at ? new Date(ticket.fare_observed_at) : null;
@@ -127,7 +154,11 @@ function buildBenchmarks(tickets, requestedCabin = null) {
   const cabinSource = requestedCabin
     ? datedSource.filter(ticket => ticketCabin(ticket) === requestedCabin)
     : [];
-  const source = cabinSource.length >= 2 ? cabinSource : datedSource;
+  const comparableCabin = cabinSource.length >= 2 ? cabinSource : datedSource;
+  const currentSource = comparableCabin.filter(ticket => ticket.fare_type === 'live_offer'
+    || ticket.fare_type === 'current_metasearch_fare'
+    || ticket.source === 'searchapi');
+  const source = currentSource.length >= 2 ? currentSource : comparableCabin;
   const byStops = new Map();
   source.forEach(ticket => {
     const stops = knownStops(ticket);
@@ -166,6 +197,7 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
     const airlineCode = String(ticket.airline || '').toLowerCase();
     const airline = String(ticket.airline_name || airlineAliases[airlineCode] || airlineCode).toLowerCase();
     const seatFit = seatingScore(ticket, passengers);
+    const connectionFit = connectionScore(ticket);
     const fare = fareConfidence(ticket, { passengers });
     const benchmark = benchmarks.medianByStops[stops === null ? 'unknown' : String(stops)] || benchmarks.marketMedian;
 
@@ -177,8 +209,9 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
 
     const value = priceValueScore(price, benchmark);
     const itinerary = componentAverage([
-      { key: 'duration', score: durationScore(duration, benchmarks.routeDurationBaseline), weight: 55 },
-      { key: 'stops', score: stopsScore(stops, travelStyle), weight: 45 },
+      { key: 'duration', score: durationScore(duration, benchmarks.routeDurationBaseline), weight: 45 },
+      { key: 'stops', score: stopsScore(stops, travelStyle), weight: 35 },
+      { key: 'connections', score: connectionFit, weight: 20 },
     ]);
     const personal = preferenceParts.length ? componentAverage(preferenceParts) : 80;
     const schedule = scheduleScore(ticket, travelStyle);
@@ -196,6 +229,7 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
     if (price === null) unknown.push('price');
     if (stops === null) unknown.push('stops');
     if (duration === null) unknown.push('duration');
+    if (stops > 0 && connectionFit === null) unknown.push('connection_quality');
     if (!ticket.departure_at) unknown.push('schedule');
     if (wantedCabin && !cabin) unknown.push('confirmed_cabin');
     if (passengers > 1 && seatFit === null) unknown.push('aircraft_seat_layout');
@@ -205,6 +239,7 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
     const strictFailures = [];
     if (maxStops !== null && stops !== null && stops > maxStops) strictFailures.push('max_stops');
     if (wantedCabin && cabin && cabin !== wantedCabin) strictFailures.push('cabin_class');
+    if (finitePositive(ticket.seats_left) && Number(ticket.seats_left) < passengers) strictFailures.push('party_availability');
 
     return {
       ...ticket,
@@ -227,10 +262,11 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
         requested_cabin: wantedCabin,
         max_stops: maxStops,
         group_seating_score: seatFit === null ? null : round(seatFit),
+        connection_score: connectionFit === null ? null : round(connectionFit),
       },
       price_details: {
         unit_price: price,
-        total_for_party: price === null ? null : price * passengers,
+        total_for_party: finitePositive(ticket.total_price) ? Number(ticket.total_price) : price === null ? null : price * passengers,
         passengers,
         benchmark_median: benchmark,
         benchmark_sample_size: benchmarks.sampleSize,
@@ -239,12 +275,20 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
         fare_observed_at: ticket.fare_observed_at || null,
         fare_received_at: ticket.fare_received_at || null,
         fare_cache_status: ticket.fare_cache_status || 'provider_cached',
-        availability_confirmed: false,
-        seat_availability_confirmed: false,
-        requires_provider_verification: true,
+        availability_confirmed: ticket.availability_confirmed === true,
+        seat_availability_confirmed: ticket.seat_availability_confirmed === true,
+        requires_provider_verification: ticket.requires_provider_verification !== false,
       },
     };
   });
 }
 
-module.exports = { FLIGHT_SCORE_VERSION, scoreFlights, buildBenchmarks, priceValueScore, durationScore, seatingScore };
+module.exports = {
+  FLIGHT_SCORE_VERSION,
+  scoreFlights,
+  buildBenchmarks,
+  priceValueScore,
+  durationScore,
+  seatingScore,
+  connectionScore,
+};

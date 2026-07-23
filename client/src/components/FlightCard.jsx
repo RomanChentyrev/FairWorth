@@ -22,9 +22,13 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
     : flight.stops === 0
     ? t('flight_direct')
     : `${flight.stops} ${t('flight_stops')}`;
-  const meta = flight.source === 'travelpayouts'
-    ? (lang === 'ru' ? 'Ориентировочная цена Travelpayouts' : 'Travelpayouts indicative fare')
-    : (lang === 'ru' ? 'Наличие мест не подтверждено' : 'Seat availability not confirmed');
+  const liveOffer = flight.fare_type === 'live_offer';
+  const currentMetasearch = flight.fare_type === 'current_metasearch_fare' || flight.source === 'searchapi';
+  const meta = liveOffer
+    ? (lang === 'ru' ? 'Подтверждаемое предложение' : 'Revalidatable offer')
+    : currentMetasearch
+      ? (lang === 'ru' ? 'Актуальная цена Google Flights' : 'Current Google Flights fare')
+      : (lang === 'ru' ? 'Ориентировочная цена Travelpayouts' : 'Travelpayouts indicative fare');
   const hasFareRange = fareOptions.length > 1 && flight.price_min !== flight.price_max;
   const priceLabel = hasFareRange
     ? `$${formatAmount(flight.price_min, lang)}-$${formatAmount(flight.price_max, lang)}`
@@ -69,10 +73,10 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
       adjustedScore: flight.adjusted_score,
       scoreReliability: flight.score_reliability,
       fareConfidence: flight.fare_confidence,
-      fareType: 'indicative',
+      fareType: flight.fare_type || 'indicative',
       fareObservedAt,
       fareReceivedAt,
-      availabilityConfirmed: false,
+      availabilityConfirmed: flight.availability_confirmed === true,
       scoreVersion: flight.score_version,
     });
   };
@@ -127,6 +131,8 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
             ? t(`flight_class_${flight.cabin_class}`)
             : (lang === 'ru' ? 'Класс не подтверждён' : 'Cabin not confirmed')}</span>
           <span className={styles.tag}><Briefcase size={12} /> {flight.baggage || (lang === 'ru' ? 'Багаж неизвестен' : 'Baggage unknown')}</span>
+          {flight.connection_airports?.length > 0 && <span className={styles.tag}><Route size={12} /> {lang === 'ru' ? 'через' : 'via'} {flight.connection_airports.join(', ')}</span>}
+          {flight.self_transfer && <span className={styles.tag}>{lang === 'ru' ? 'Самостоятельная пересадка' : 'Self-transfer'}</span>}
           {flight.aircraft && <span className={styles.tag}>{flight.aircraft}</span>}
         </div>
         {flight.score_breakdown && (
@@ -140,6 +146,9 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
               <span>{lang === 'ru' ? 'Надёжность тарифа' : 'Fare confidence'} <strong>{flight.fare_confidence ?? '—'}%</strong></span>
               {flight.score_context?.group_seating_score !== null && flight.score_context?.group_seating_score !== undefined && (
                 <span>{lang === 'ru' ? 'Размещение группы' : 'Group seating'} <strong>{flight.score_context.group_seating_score}</strong></span>
+              )}
+              {flight.score_context?.connection_score !== null && flight.score_context?.connection_score !== undefined && (
+                <span>{lang === 'ru' ? 'Качество пересадки' : 'Connection quality'} <strong>{flight.score_context.connection_score}</strong></span>
               )}
             </div>
             {flight.unknown_score_data?.length > 0 && (
@@ -160,15 +169,25 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
             <span>{lang === 'ru' ? 'Уверенность в цене' : 'Fare confidence'}: {fareConfidence ?? '—'}%</span>
           </div>
           <div className={styles.priceBlock}>
-            <span className={styles.priceLabel}>{hasFareRange ? (lang === 'ru' ? 'выбранный ориентир' : 'selected estimate') : (lang === 'ru' ? 'ориентир от' : 'estimate from')}</span>
+            <span className={styles.priceLabel}>{liveOffer || currentMetasearch
+              ? (hasFareRange ? (lang === 'ru' ? 'выбранный тариф' : 'selected fare') : (lang === 'ru' ? 'цена за пассажира' : 'price per passenger'))
+              : (hasFareRange ? (lang === 'ru' ? 'выбранный ориентир' : 'selected estimate') : (lang === 'ru' ? 'ориентир от' : 'estimate from'))}</span>
             <span className={styles.price}>{selectedPrice}</span>
             <span className={styles.priceNote}>{hasFareRange ? `${priceLabel} ${lang === 'ru' ? 'диапазон' : 'range'}` : t('flight_per_person')}</span>
           </div>
         </div>
         <div className={styles.fareWarning}>
-          {lang === 'ru'
-            ? 'Финальная цена и наличие места не подтверждены. Проверьте их у поставщика перед оформлением.'
-            : 'Final price and seat availability are not confirmed. Verify both with the provider before booking.'}
+          {liveOffer
+            ? (lang === 'ru'
+              ? 'Цена и наличие актуальны на момент поиска. Перед оформлением предложение будет проверено повторно.'
+              : 'Price and availability are current at search time. The offer must be revalidated before checkout.')
+            : currentMetasearch
+              ? (lang === 'ru'
+                ? 'Цена получена из Google Flights на момент поиска. Наличие места и финальная сумма требуют проверки у продавца.'
+                : 'This fare was found in Google Flights at search time. Seat availability and the final total require seller verification.')
+            : (lang === 'ru'
+              ? 'Финальная цена и наличие места не подтверждены. Проверьте их у поставщика перед оформлением.'
+              : 'Final price and seat availability are not confirmed. Verify both with the provider before booking.')}
         </div>
         {fareOptions.length > 0 && (
           <div className={styles.fares}>
@@ -177,7 +196,9 @@ export default function FlightCard({ flight, isRecommended, compact = false, leg
               className={styles.faresToggle}
               onClick={() => setFaresOpen(open => !open)}
             >
-              <span>{fareOptions.length} {lang === 'ru' ? 'ориентировочных тарифов' : fareOptions.length === 1 ? 'indicative fare' : 'indicative fares'}</span>
+              <span>{fareOptions.length} {liveOffer || currentMetasearch
+                ? (lang === 'ru' ? 'актуальных тарифов' : fareOptions.length === 1 ? 'current fare' : 'current fares')
+                : (lang === 'ru' ? 'ориентировочных тарифов' : fareOptions.length === 1 ? 'indicative fare' : 'indicative fares')}</span>
               <ChevronDown size={14} className={faresOpen ? styles.chevronOpen : ''} />
             </button>
             {faresOpen && (

@@ -55,6 +55,8 @@ CORS_ORIGINS=http://localhost:5173
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openrouter/auto
 TRAVELPAYOUTS_TOKEN=
+SEARCHAPI_KEY=
+SEARCHAPI_MARKET=us
 TRAVELPAYOUTS_TIMEOUT_MS=25000
 LITEAPI_KEY=
 LITEAPI_BASE_URL=https://api.liteapi.travel/v3.0
@@ -102,7 +104,7 @@ Open http://localhost:8025 to inspect responsive RU/EN HTML messages. The check 
 
 ## MVP provider readiness
 
-`GET /api/capabilities` is the source of truth for product availability. Hotels require a non-placeholder `LITEAPI_KEY`, flights require `TRAVELPAYOUTS_TOKEN`, and optional hotel AI analysis requires `OPENROUTER_API_KEY`. Without a key the related API returns `503 PROVIDER_NOT_CONFIGURED` and the web UI shows an explicit Beta/unavailable state; it never substitutes synthetic offers.
+`GET /api/capabilities` is the source of truth for product availability. Hotels require a non-placeholder `LITEAPI_KEY`. Flight search uses current Google Flights metasearch fares through SearchAPI when `SEARCHAPI_KEY` is configured, and can supplement them with indicative Travelpayouts data when `TRAVELPAYOUTS_TOKEN` is present. SearchAPI fares must still be verified with the seller and are never presented as confirmed seat inventory. Optional hotel AI analysis requires `OPENROUTER_API_KEY`. Without any key for a capability the related API returns `503 PROVIDER_NOT_CONFIGURED`; it never substitutes synthetic bookable offers.
 
 After adding credentials, verify the real upstream APIs locally:
 

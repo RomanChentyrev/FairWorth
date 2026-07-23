@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const travelpayouts = require('../services/travelpayouts');
+const searchApiFlights = require('../services/searchApiFlights');
 const { configured } = require('../config/capabilities');
 const { db } = require('../db/database');
 const { scoreFlights, FLIGHT_SCORE_VERSION } = require('../services/flightScoring');
@@ -8,6 +9,27 @@ const { buildRouteGraph, routeFallbackTickets } = require('../services/flightRou
 
 function getTravelpayoutsToken() {
   return process.env.TRAVELPAYOUTS_TOKEN;
+}
+
+function getSearchApiCredentials() {
+  const apiKey = process.env.SEARCHAPI_KEY;
+  return configured(apiKey)
+    ? { apiKey, market: process.env.SEARCHAPI_MARKET || 'us' }
+    : null;
+}
+
+function requireTopSearchProvider(res) {
+  const token = configured(getTravelpayoutsToken()) ? getTravelpayoutsToken() : null;
+  const searchApi = getSearchApiCredentials();
+  if (!token && !searchApi) {
+    res.status(503).json({
+      success: false,
+      error: 'No flight search provider is configured on the server',
+      code: 'PROVIDER_NOT_CONFIGURED', capability: 'flights', provider: null, retryable: false,
+    });
+    return null;
+  }
+  return { token, searchApi };
 }
 
 function requireTravelpayoutsToken(res) {
@@ -63,13 +85,17 @@ function rankedFlights(tickets, preferences, context) {
 
 function indicativeFarePositioning(items = []) {
   const observed = items.map(item => item.fare_observed_at).filter(Boolean).sort();
+  const currentOffers = items.filter(item => item.fare_type === 'current_metasearch_fare' || item.source === 'searchapi');
+  const indicativeOffers = items.length - currentOffers.length;
   return {
-    fare_type: 'indicative',
+    fare_type: currentOffers.length && indicativeOffers
+      ? 'mixed'
+      : currentOffers.length ? 'current_metasearch_fare' : 'indicative',
     latest_observed_at: observed.at(-1) || null,
-    availability_confirmed: false,
-    seat_availability_confirmed: false,
+    availability_confirmed: items.some(item => item.availability_confirmed === true),
+    seat_availability_confirmed: items.some(item => item.seat_availability_confirmed === true),
     requires_provider_verification: true,
-    disclaimer: 'Final price and seat availability must be verified with the provider before booking.',
+    disclaimer: 'Search offers can change. Revalidate final price and availability before checkout.',
   };
 }
 
@@ -126,6 +152,19 @@ function sendTravelpayoutsError(res, err) {
     error: timeout ? 'Travelpayouts did not respond in time' : 'Travelpayouts request failed',
     code: timeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_ERROR',
     provider: 'Travelpayouts',
+    retryable: true,
+  });
+}
+
+function sendFlightProviderError(res, err) {
+  if (!err?.provider || err.provider === 'Travelpayouts') return sendTravelpayoutsError(res, err);
+  console.error(`[${err.provider}]`, err);
+  const timeout = isProviderTimeout(err);
+  res.status(timeout ? 504 : 502).json({
+    success: false,
+    error: timeout ? `${err.provider} did not respond in time` : `${err.provider} request failed`,
+    code: timeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_ERROR',
+    provider: err.provider,
     retryable: true,
   });
 }
@@ -191,6 +230,7 @@ async function enrichArrivalTimes(tickets) {
     const airportByCode = new Map(airportList.map(airport => [airport.code, airport]));
 
     return tickets.map(ticket => {
+      if (ticket.arrival_local_at) return ticket;
       const destinationCode = ticket.destination_airport || ticket.destination;
       const destinationAirport = airportByCode.get(destinationCode);
       const duration = Number(ticket.duration_to || ticket.duration || 0);
@@ -239,11 +279,13 @@ router.get('/cheapest', cheapestTicketsHandler);
 router.get('/cheapest-tickets', cheapestTicketsHandler);
 
 router.get('/top', async (req, res) => {
-  const token = requireTravelpayoutsToken(res);
-  if (!token) return;
+  const providers = requireTopSearchProvider(res);
+  if (!providers) return;
+  const { token, searchApi } = providers;
 
   const params = parseRouteQuery(req.query);
   const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 40);
+  const providerLimit = Math.min(Math.max(limit * 4, 40), 100);
   const includeAlternatives = String(req.query.include_alternatives || '').toLowerCase() === 'true';
   if (!validateOriginDestination(res, params, { destinationRequired: true })) return;
   if (!params.depart_date) {
@@ -258,22 +300,57 @@ router.get('/top', async (req, res) => {
     let tickets = [];
     let successfulProviderCalls = 0;
     const providerErrors = [];
-    try {
-      tickets = await travelpayouts.pricesForDates({ ...params, limit, token });
+    const providerNames = new Set();
+    const primaryCalls = [];
+
+    if (searchApi && isExactDateSearch) {
+      primaryCalls.push(searchApiFlights.flightOffersSearch({
+        origin: params.origin,
+        destination: params.destination,
+        depart_date: requestedDate,
+        passengers: scoringContext(req.query).passengers,
+        cabin_class: req.query.cabin_class,
+        currency: params.currency,
+        max: providerLimit,
+        max_stops: req.query.max_stops,
+        ...searchApi,
+      }).then(data => ({ provider: 'SearchAPI', data })));
+    }
+
+    if (token) {
+      primaryCalls.push(travelpayouts.pricesForDates({ ...params, limit: providerLimit, token })
+        .then(data => ({ provider: 'Travelpayouts', data })));
+    }
+
+    let travelpayoutsTickets = [];
+    const primaryResults = await Promise.allSettled(primaryCalls);
+    for (const result of primaryResults) {
+      if (result.status === 'rejected') {
+        providerErrors.push(result.reason);
+        continue;
+      }
+      const { provider, data } = result.value;
+      if (provider === 'SearchAPI') tickets.push(...data);
+      else travelpayoutsTickets = data;
       successfulProviderCalls += 1;
-    } catch (error) { providerErrors.push(error); }
+      providerNames.add(provider);
+    }
 
-    tickets = filterTicketsByRequestedDate(tickets, requestedDate);
+    if (token) {
+      travelpayoutsTickets = filterTicketsByRequestedDate(travelpayoutsTickets, requestedDate);
+    }
 
-    if (!tickets.length) {
+    if (token && !travelpayoutsTickets.length) {
       const fallbackResults = await Promise.allSettled([
         travelpayouts.cheapestTickets({ ...params, token }),
         travelpayouts.priceCalendar({ ...params, token }),
       ]);
       const [cheapResult, calendarResult] = fallbackResults;
       for (const result of fallbackResults) {
-        if (result.status === 'fulfilled') successfulProviderCalls += 1;
-        else providerErrors.push(result.reason);
+        if (result.status === 'fulfilled') {
+          successfulProviderCalls += 1;
+          providerNames.add('Travelpayouts');
+        } else providerErrors.push(result.reason);
       }
       const cheapTickets = cheapResult.status === 'fulfilled' ? cheapResult.value : [];
       const calendarDays = calendarResult.status === 'fulfilled' ? calendarResult.value : [];
@@ -289,15 +366,17 @@ router.get('/top', async (req, res) => {
           destination: day.destination || params.destination,
           source: 'price_calendar',
         }));
-      tickets = [
+      travelpayoutsTickets = [
         ...filterTicketsByRequestedDate(cheapTickets, requestedDate),
         ...calendarTickets,
       ];
     }
 
+    tickets.push(...travelpayoutsTickets);
+
     if (!tickets.length && successfulProviderCalls === 0) throw preferredProviderError(providerErrors);
 
-    if (includeAlternatives && tickets.length < limit && isExactDateSearch) {
+    if (token && includeAlternatives && tickets.length < limit && isExactDateSearch) {
       let monthTickets = [];
       try {
         monthTickets = await travelpayouts.pricesForDates({
@@ -327,12 +406,11 @@ router.get('/top', async (req, res) => {
         const bDistance = b.date_distance_days ?? 0;
         if (aDistance !== bDistance) return aDistance - bDistance;
         return Number(a.price || Infinity) - Number(b.price || Infinity);
-      })
-      .slice(0, limit);
+      });
     tickets = await enrichArrivalTimes(tickets);
     const preferences = await flightPreferences(req.user.id);
     const context = scoringContext(req.query);
-    tickets = rankedFlights(tickets, preferences, context);
+    tickets = rankedFlights(tickets, preferences, context).slice(0, limit);
     const routeGraph = routeGraphForQuery(params, req.query);
     const routeOptions = tickets.length
       ? []
@@ -354,10 +432,11 @@ router.get('/top', async (req, res) => {
         ...indicativeFarePositioning(tickets),
         route_options_available: routeOptions.length > 0,
       },
+      providers: [...providerNames],
       data: tickets,
     });
   } catch (err) {
-    sendTravelpayoutsError(res, err);
+    sendFlightProviderError(res, err);
   }
 });
 

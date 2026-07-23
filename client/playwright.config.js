@@ -37,6 +37,7 @@ export default defineConfig({
         NODE_ENV: 'test',
         PORT: String(apiPort),
         AUTH_RATE_LIMIT: '500',
+        API_RATE_LIMIT: '5000',
         ADMIN_EMAILS: 'e2e-admin@example.com',
         PARTNER_POSTBACK_SECRET: 'e2e-partner-postback-secret',
         PROVIDER_FIXTURES_ENABLED: 'true',

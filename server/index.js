@@ -66,7 +66,8 @@ app.get('/api/health', async (req, res) => {
     database: { status: 'unknown' },
     xotelo: { status: 'unknown' },
     openrouter: { status: providerCapabilities.ai.status === 'ready' ? 'configured' : 'not_configured' },
-    travelpayouts: { status: providerCapabilities.flights.status === 'ready' ? 'configured' : 'not_configured' },
+    travelpayouts: { status: process.env.TRAVELPAYOUTS_TOKEN ? 'configured' : 'not_configured' },
+    searchapi: { status: process.env.SEARCHAPI_KEY ? 'configured' : 'not_configured' },
     liteapi: { status: providerCapabilities.hotels.status === 'ready' ? 'configured' : 'not_configured' },
     capabilities: providerCapabilities,
   };
@@ -85,7 +86,7 @@ app.get('/api/health', async (req, res) => {
   await Promise.all([
     probe('xotelo', 'https://data.xotelo.com/api/rates'),
     providerCapabilities.ai.status === 'ready' ? probe('openrouter', 'https://openrouter.ai/api/v1/models', { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` }) : null,
-    providerCapabilities.flights.status === 'ready' ? probe('travelpayouts', 'https://api.travelpayouts.com/data/en/airlines.json') : null,
+    process.env.TRAVELPAYOUTS_TOKEN ? probe('travelpayouts', 'https://api.travelpayouts.com/data/en/airlines.json') : null,
     providerCapabilities.hotels.status === 'ready' ? probe('liteapi', `${(process.env.LITEAPI_BASE_URL || 'https://api.liteapi.travel/v3.0').replace(/\/$/, '')}/data/facilities`, { 'X-API-Key': process.env.LITEAPI_KEY }) : null,
   ].filter(Boolean));
   const ready = checks.database.status === 'ok';
