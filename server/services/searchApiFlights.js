@@ -1,6 +1,7 @@
 const https = require('https');
 const crypto = require('crypto');
 const { withRetry } = require('../utils/retry');
+const { possibleAirports } = require('./flightRouteGraph');
 
 const HOSTNAME = 'www.searchapi.io';
 const SEARCH_PATH = '/api/v1/search';
@@ -160,6 +161,10 @@ function travelClass(value) {
   return ['economy', 'premium_economy', 'business', 'first_class'].includes(normalized) ? normalized : 'economy';
 }
 
+function searchAirportIds(value) {
+  return possibleAirports(value).filter(Boolean).join(',');
+}
+
 async function flightOffersSearch({
   origin, destination, depart_date, passengers = 1, cabin_class, currency = 'USD',
   max = 40, max_stops, apiKey, market = process.env.SEARCHAPI_MARKET || 'us',
@@ -172,8 +177,8 @@ async function flightOffersSearch({
   const params = new URLSearchParams({
     engine: 'google_flights',
     flight_type: 'one_way',
-    departure_id: origin,
-    arrival_id: destination,
+    departure_id: searchAirportIds(origin),
+    arrival_id: searchAirportIds(destination),
     outbound_date: depart_date,
     travel_class: travelClass(cabin_class),
     stops: stopsFilter(max_stops),
@@ -208,5 +213,6 @@ module.exports = {
   checkedBaggage,
   stopsFilter,
   travelClass,
+  searchAirportIds,
   dateTime,
 };

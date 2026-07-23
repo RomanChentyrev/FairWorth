@@ -286,13 +286,13 @@ test('flight search renders an indicative provider fare', async ({ page, request
   const departure = new Date(Date.now() + 35 * 86400000).toISOString().slice(0, 10);
   await page.route('**/api/flights/top**', async route => {
     const query = new URL(route.request().url()).searchParams;
-    await route.fulfill({ json: { success: true, data: [{ origin: 'MOW', destination: 'DXB', airline: 'EK', flight_number: '134', departure_at: `${query.get('depart_date')}T08:30:00Z`, duration_to: 330, transfers: 0, price: 420, link: '/search/EK134', fare_type: 'indicative', fare_observed_at: new Date().toISOString(), fare_cache_status: 'provider_cached', availability_confirmed: false, seat_availability_confirmed: false, fare_confidence: 52 }] } });
+    await route.fulfill({ json: { success: true, data: [{ origin: 'MOW', destination: 'DXB', airline: 'EK', flight_number: '134', departure_at: `${query.get('depart_date')}T08:30:00Z`, duration_to: 330, transfers: 0, price: 3740, link: '/search/EK134', fare_type: 'indicative', fare_observed_at: new Date().toISOString(), fare_cache_status: 'provider_cached', availability_confirmed: false, seat_availability_confirmed: false, fare_confidence: 52 }] } });
   });
   await page.context().addCookies([{ name: 'fw_access', value: account.token, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
   await page.addInitScript(user => localStorage.setItem('fw_user', JSON.stringify({ ...user, onboarding_completed: true, email_verified: true })), account.user);
   await page.goto(`/flights?from=MOW&to=DXB&departure_date=${departure}&passengers=1&cabin_class=economy`);
   await expect(page.getByText('Emirates').first()).toBeVisible();
-  await expect(page.getByText('$420').first()).toBeVisible();
+  await expect(page.getByText('$3,740').first()).toBeVisible();
   await expect(page.getByText(/Travelpayouts indicative fare/i).first()).toBeVisible();
   await expect(page.getByText(/Final price and seat availability are not confirmed/i).first()).toBeVisible();
   await expect(page.getByText(/Fare confidence: 52%/i).first()).toBeVisible();

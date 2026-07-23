@@ -50,6 +50,7 @@ const SORTS = [
 ];
 
 const AIRLINES = ['Singapore Airlines', 'Emirates', 'Qatar Airways', 'Turkish Airlines', 'flydubai'];
+const FLIGHT_PRICE_FILTER_MAX = 20000;
 
 const AIRLINE_NAMES = {
   EK: 'Emirates',
@@ -349,7 +350,7 @@ export default function FlightsPage() {
   const [aiMessage, setAiMessage] = useState('');
 
   const [sort, setSort] = useState('score');
-  const [priceRange, setPriceRange] = useState([0, 2500]);
+  const [priceRange, setPriceRange] = useState([0, FLIGHT_PRICE_FILTER_MAX]);
   const [maxStops, setMaxStops] = useState('');
   const [airline, setAirline] = useState('');
 
@@ -399,7 +400,7 @@ export default function FlightsPage() {
       const buildFlightList = (items, maxItems = 5) => {
         let list = groupFlightFares(items);
         if (priceRange[0] > 0) list = list.filter(f => Number(f.price) >= priceRange[0]);
-        if (priceRange[1] < 2500) list = list.filter(f => Number(f.price) <= priceRange[1]);
+        if (priceRange[1] < FLIGHT_PRICE_FILTER_MAX) list = list.filter(f => Number(f.price) <= priceRange[1]);
         if (airline) list = list.filter(f => String(f.airline).toLowerCase().includes(airline.toLowerCase()));
         list = sortFlights(list, sort);
         return maxStops !== '0' ? list.slice(0, maxItems) : list;
@@ -505,12 +506,12 @@ export default function FlightsPage() {
 
   useEffect(() => { fetchFlights(); }, [fetchFlights]);
 
-  const activeFiltersCount = (priceRange[0] > 0 || priceRange[1] < 2500 ? 1 : 0)
+  const activeFiltersCount = (priceRange[0] > 0 || priceRange[1] < FLIGHT_PRICE_FILTER_MAX ? 1 : 0)
     + (maxStops !== '' ? 1 : 0)
     + (airline ? 1 : 0);
 
   const resetFilters = () => {
-    setPriceRange([0, 2500]);
+    setPriceRange([0, FLIGHT_PRICE_FILTER_MAX]);
     setMaxStops('');
     setAirline('');
   };
@@ -611,7 +612,7 @@ export default function FlightsPage() {
             </FilterSection>
 
             <FilterSection title={t('flight_price_person')}>
-              <RangeSlider min={0} max={2500} step={50} value={priceRange} onChange={setPriceRange} />
+              <RangeSlider min={0} max={FLIGHT_PRICE_FILTER_MAX} step={100} value={priceRange} onChange={setPriceRange} />
             </FilterSection>
 
             <FilterSection title={t('flight_stops_filter')}>

@@ -459,12 +459,14 @@ test('flight API distinguishes provider timeout, provider error and a successful
   const url = '/api/flights/top?origin=MOW&destination=DXB&depart_date=2030-05-10&currency=USD';
   const methods = ['pricesForDates', 'cheapestTickets', 'priceCalendar', 'getAirports'];
   const originals = Object.fromEntries(methods.map(method => [method, travelpayouts[method]]));
+  const originalSearchApiKey = process.env.SEARCHAPI_KEY;
   const setSearchProviders = implementation => {
     travelpayouts.pricesForDates = implementation;
     travelpayouts.cheapestTickets = implementation;
     travelpayouts.priceCalendar = implementation;
   };
   try {
+    delete process.env.SEARCHAPI_KEY;
     const timeout = new Error('upstream socket timed out with private diagnostics');
     timeout.name = 'TimeoutError'; timeout.code = 'ETIMEDOUT';
     setSearchProviders(async () => { throw timeout; });
@@ -490,6 +492,8 @@ test('flight API distinguishes provider timeout, provider error and a successful
     assert.equal(empty.body.fare_positioning.requires_provider_verification, true);
   } finally {
     for (const method of methods) travelpayouts[method] = originals[method];
+    if (originalSearchApiKey === undefined) delete process.env.SEARCHAPI_KEY;
+    else process.env.SEARCHAPI_KEY = originalSearchApiKey;
   }
 });
 
@@ -562,6 +566,50 @@ test('flight API scores the provider pool before applying the result limit', asy
     assert.equal(response.status, 200, response.text);
     assert.equal(response.body.count, 1);
     assert.equal(response.body.data[0].id, 'BEST-DIRECT');
+  } finally {
+    searchApiFlights.flightOffersSearch = previous.search;
+    if (previous.key === undefined) delete process.env.SEARCHAPI_KEY; else process.env.SEARCHAPI_KEY = previous.key;
+    if (previous.token === undefined) delete process.env.TRAVELPAYOUTS_TOKEN; else process.env.TRAVELPAYOUTS_TOKEN = previous.token;
+  }
+});
+
+test('flight API returns SearchAPI fares from the nearest date when the requested date is empty', async () => {
+  const account = await register('searchapi-nearby-date');
+  const previous = {
+    key: process.env.SEARCHAPI_KEY,
+    token: process.env.TRAVELPAYOUTS_TOKEN,
+    search: searchApiFlights.flightOffersSearch,
+  };
+  process.env.SEARCHAPI_KEY = 'integration-searchapi-key';
+  delete process.env.TRAVELPAYOUTS_TOKEN;
+  const observedAt = new Date().toISOString();
+  searchApiFlights.flightOffersSearch = async ({ depart_date: departDate }) => {
+    if (departDate === '2030-05-10') return [];
+    if (departDate !== '2030-05-09') return [];
+    return [{
+      id: 'nearby-date-offer', source: 'searchapi', fare_type: 'current_metasearch_fare',
+      origin: 'SVO', destination: 'JFK', origin_airport: 'SVO', destination_airport: 'JFK',
+      airline: 'TK', airline_name: 'Turkish Airlines', flight_number: 'TK416 / TK11',
+      departure_at: `${departDate}T09:00:00`, arrival_local_at: '2030-05-10T02:00:00',
+      duration_to: 1020, transfers: 1, connection_airports: ['IST'], price: 1200, total_price: 2400,
+      price_for_passengers: true, cabin_class: 'business', taxes_included: true,
+      fare_observed_at: observedAt, fare_received_at: observedAt, fare_cache_status: 'current_metasearch',
+      availability_confirmed: false, seat_availability_confirmed: false,
+      booking_token_available: true, requires_provider_verification: true,
+      layovers: [{ airport_code: 'IST', duration_minutes: 120, overnight: false }],
+    }];
+  };
+  try {
+    const response = await request(app)
+      .get('/api/flights/top?origin=MOW&destination=NYC&depart_date=2030-05-10&currency=USD&passengers=2&cabin_class=business&include_alternatives=true')
+      .set('Authorization', `Bearer ${account.token}`);
+    assert.equal(response.status, 200, response.text);
+    assert.equal(response.body.count, 1);
+    assert.equal(response.body.data[0].is_alternative_date, true);
+    assert.equal(response.body.data[0].requested_depart_date, '2030-05-10');
+    assert.equal(response.body.data[0].alternative_depart_date, '2030-05-09');
+    assert.equal(response.body.data[0].date_distance_days, 1);
+    assert.equal(response.body.data[0].transfers, 1);
   } finally {
     searchApiFlights.flightOffersSearch = previous.search;
     if (previous.key === undefined) delete process.env.SEARCHAPI_KEY; else process.env.SEARCHAPI_KEY = previous.key;

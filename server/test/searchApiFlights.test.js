@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeOffer, stopsFilter, travelClass } = require('../services/searchApiFlights');
+const { normalizeOffer, stopsFilter, travelClass, searchAirportIds } = require('../services/searchApiFlights');
 
 test('SearchAPI filters map to Google Flights values', () => {
   assert.equal(stopsFilter(0), 'nonstop');
@@ -8,6 +8,9 @@ test('SearchAPI filters map to Google Flights values', () => {
   assert.equal(stopsFilter(undefined), 'any');
   assert.equal(travelClass('premium-economy'), 'premium_economy');
   assert.equal(travelClass('first'), 'first_class');
+  assert.equal(searchAirportIds('MOW'), 'SVO,DME,VKO');
+  assert.equal(searchAirportIds('NYC'), 'JFK,EWR,LGA');
+  assert.equal(searchAirportIds('SIN'), 'SIN');
 });
 
 test('SearchAPI connecting fare is normalized for the complete party', () => {

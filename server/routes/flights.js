@@ -197,6 +197,13 @@ function dayDistance(dateA, dateB) {
   return Math.round((a - b) / (1000 * 60 * 60 * 24));
 }
 
+function addDays(dateValue, days) {
+  const date = new Date(`${dateValue}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function ticketDepartureDate(ticket) {
   return (ticket.departure_at || ticket.date || '').slice(0, 10);
 }
@@ -375,6 +382,44 @@ router.get('/top', async (req, res) => {
     tickets.push(...travelpayoutsTickets);
 
     if (!tickets.length && successfulProviderCalls === 0) throw preferredProviderError(providerErrors);
+
+    if (includeAlternatives && isExactDateSearch && !tickets.length && searchApi) {
+      const nearbyOffsets = [[-1, 1], [-2, 2]];
+      for (const offsets of nearbyOffsets) {
+        const nearbyResults = await Promise.allSettled(offsets.map(offset => {
+          const alternativeDate = addDays(requestedDate, offset);
+          return searchApiFlights.flightOffersSearch({
+            origin: params.origin,
+            destination: params.destination,
+            depart_date: alternativeDate,
+            passengers: scoringContext(req.query).passengers,
+            cabin_class: req.query.cabin_class,
+            currency: params.currency,
+            max: providerLimit,
+            max_stops: req.query.max_stops,
+            ...searchApi,
+          }).then(data => ({ alternativeDate, offset, data }));
+        }));
+
+        for (const result of nearbyResults) {
+          if (result.status === 'rejected') {
+            providerErrors.push(result.reason);
+            continue;
+          }
+          successfulProviderCalls += 1;
+          providerNames.add('SearchAPI');
+          const { alternativeDate, offset, data } = result.value;
+          tickets.push(...data.map(ticket => ({
+            ...ticket,
+            requested_depart_date: requestedDate,
+            is_alternative_date: true,
+            date_distance_days: Math.abs(offset),
+            alternative_depart_date: alternativeDate,
+          })));
+        }
+        if (tickets.length) break;
+      }
+    }
 
     if (token && includeAlternatives && tickets.length < limit && isExactDateSearch) {
       let monthTickets = [];
