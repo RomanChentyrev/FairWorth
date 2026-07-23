@@ -286,7 +286,8 @@ test('flight search renders an indicative provider fare', async ({ page, request
   const departure = new Date(Date.now() + 35 * 86400000).toISOString().slice(0, 10);
   await page.route('**/api/flights/top**', async route => {
     const query = new URL(route.request().url()).searchParams;
-    await route.fulfill({ json: { success: true, data: [{ origin: 'MOW', destination: 'DXB', airline: 'EK', flight_number: '134', departure_at: `${query.get('depart_date')}T08:30:00Z`, duration_to: 330, transfers: 0, price: 3740, link: '/search/EK134', fare_type: 'indicative', fare_observed_at: new Date().toISOString(), fare_cache_status: 'provider_cached', availability_confirmed: false, seat_availability_confirmed: false, fare_confidence: 52 }] } });
+    expect(query.get('max_stops')).toBe('any');
+    await route.fulfill({ json: { success: true, data: [{ origin: 'MOW', destination: 'DXB', airline: 'EK', flight_number: '134', departure_at: `${query.get('depart_date')}T08:30:00Z`, duration_to: 510, transfers: 1, price: 3740, link: '/search/EK134', fare_type: 'indicative', fare_observed_at: new Date().toISOString(), fare_cache_status: 'provider_cached', availability_confirmed: false, seat_availability_confirmed: false, fare_confidence: 52 }] } });
   });
   await page.context().addCookies([{ name: 'fw_access', value: account.token, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
   await page.addInitScript(user => localStorage.setItem('fw_user', JSON.stringify({ ...user, onboarding_completed: true, email_verified: true })), account.user);

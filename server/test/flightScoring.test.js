@@ -39,6 +39,24 @@ test('strict stop and confirmed cabin preferences reject mismatches', () => {
   assert.deepEqual(result.strict_filter_failures.sort(), ['cabin_class', 'max_stops']);
 });
 
+test('an explicit any-stops search overrides a saved direct-flight preference', () => {
+  const [result] = scoreFlights([ticket({
+    transfers: 1,
+    cabin_class: 'business',
+  })], {
+    flight_type: 'direct',
+    max_stops: 0,
+    seat_class: 'business',
+  }, {
+    passengers: 2,
+    cabinClass: 'business',
+    maxStops: 'any',
+  });
+
+  assert.deepEqual(result.strict_filter_failures, []);
+  assert.equal(result.score_context.max_stops, null);
+});
+
 test('pair seating prefers a two-seat block and does not invent missing layouts', () => {
   assert.equal(seatingScore({ seat_layout: '2-4-2' }, 2), 100);
   assert.equal(seatingScore({ seat_layout: '3-3' }, 2), 72);

@@ -180,11 +180,15 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
   const preferredAirlines = parseList(preferences.preferred_airlines).map(value => String(value).toLowerCase());
   const travelStyle = parseList(preferences.travel_style).map(value => String(value).toLowerCase());
   const wantedCabin = String(context.cabinClass || preferences.seat_class || '').toLowerCase() || null;
-  let maxStops = context.maxStops === '' || context.maxStops === undefined || context.maxStops === null
-    ? (preferences.max_stops !== null && preferences.max_stops !== '' && Number.isFinite(Number(preferences.max_stops)) ? Number(preferences.max_stops) : null)
-    : Number(context.maxStops);
-  if (maxStops === null && preferences.flight_type === 'direct') maxStops = 0;
-  if (maxStops === null && preferences.flight_type === '1stop') maxStops = 1;
+  const explicitAnyStops = String(context.maxStops || '').toLowerCase() === 'any';
+  const hasSearchStopsOverride = context.maxStops !== undefined && context.maxStops !== null && context.maxStops !== '';
+  let maxStops = explicitAnyStops
+    ? null
+    : hasSearchStopsOverride && Number.isFinite(Number(context.maxStops))
+      ? Number(context.maxStops)
+      : (preferences.max_stops !== null && preferences.max_stops !== '' && Number.isFinite(Number(preferences.max_stops)) ? Number(preferences.max_stops) : null);
+  if (!hasSearchStopsOverride && maxStops === null && preferences.flight_type === 'direct') maxStops = 0;
+  if (!hasSearchStopsOverride && maxStops === null && preferences.flight_type === '1stop') maxStops = 1;
   const weights = contextWeights(travelStyle, context.tripDays ?? null, preferences.budget_level);
   const benchmarks = buildBenchmarks(tickets, wantedCabin);
 

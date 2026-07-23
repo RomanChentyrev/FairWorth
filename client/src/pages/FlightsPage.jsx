@@ -422,7 +422,7 @@ export default function FlightsPage() {
             : undefined,
           passengers,
           cabin_class: cabinClass,
-          max_stops: maxStops === '' ? undefined : maxStops,
+          max_stops: maxStops === '' ? 'any' : maxStops,
           limit: 30,
           include_alternatives: true,
         });
