@@ -95,7 +95,7 @@ test('registration → email verification → onboarding', async ({ page }) => {
   expect(user.onboarding_completed).toBe(true);
 });
 
-test('achievements map saves a city and marks its country', async ({ page, request }) => {
+test('achievements map saves a city and places its pin', async ({ page, request }) => {
   const account = await registerAccount(request, { label: 'achievements', verify: true, onboard: true });
   await page.context().addCookies([
     { name: 'fw_access', value: account.token, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' },
@@ -115,7 +115,7 @@ test('achievements map saves a city and marks its country', async ({ page, reque
   await page.getByLabel('Map of visited places').hover();
   await page.mouse.wheel(0, -500);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-  await page.getByLabel('Add a place').fill('Paris');
+  await page.getByLabel('Add a city').fill('Paris');
   await page.getByRole('option').filter({ hasText: /^🇫🇷Paris/ }).first().click();
   await page.getByRole('button', { name: /mark as visited/i }).click();
 
@@ -123,7 +123,7 @@ test('achievements map saves a city and marks its country', async ({ page, reque
   const saved = await request.get(`${API_URL}/api/achievements`, { headers: await authHeaders(account.token) });
   expect(saved.ok(), await saved.text()).toBeTruthy();
   expect((await saved.json()).stats).toEqual({ countries: 1, cities: 1 });
-  await expect(page.locator('[data-visited="true"]')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Paris, France' })).toHaveCount(1);
 
   await page.setViewportSize({ width: 375, height: 812 });
   await expect(page.getByLabel('Map of visited places')).toBeVisible();
@@ -373,6 +373,6 @@ test('login uses the light Fairworth layout on desktop and mobile', async ({ pag
 test('English is default and RU toggle translates the interface', async ({ page }) => {
   await page.goto('/register');
   await expect(page.getByRole('heading', { name: /^create account$/i })).toBeVisible();
-  await page.getByRole('button', { name: 'RU' }).click();
+  await page.getByRole('combobox', { name: 'Select language' }).selectOption('ru');
   await expect(page.getByRole('heading', { name: /создать аккаунт/i })).toBeVisible();
 });
