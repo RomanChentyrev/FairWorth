@@ -69,7 +69,7 @@ function parsePrefs(raw) {
 }
  
 export default function PreferencesPage({ user: propUser, onUserUpdate }) {
-  const { t, lang } = useLang();
+  const { t, lang , l} = useLang();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const onboarding = searchParams.get('onboarding') === '1';
@@ -222,7 +222,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
       await usersApi.deleteAccount(deletePassword);
       localStorage.removeItem('fw_user');
       window.location.assign('/register');
-    } catch (e) { setDeleteError(e.response?.data?.error || (lang === 'ru' ? 'Не удалось удалить аккаунт.' : 'Could not delete the account.')); }
+    } catch (e) { setDeleteError(e.response?.data?.error || (l('Could not delete the account.', 'Не удалось удалить аккаунт.'))); }
     finally { setDeleting(false); }
   };
  
@@ -237,62 +237,62 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
  
   // Localised options
   const HOTEL_STARS = [
-    { value: '3', label: lang === 'ru' ? '3 звезды' : '3 stars' },
-    { value: '4', label: lang === 'ru' ? '4 звезды' : '4 stars' },
-    { value: '5', label: lang === 'ru' ? '5 звёзд' : '5 stars' },
+    { value: '3', label: l('3 stars', '3 звезды') },
+    { value: '4', label: l('4 stars', '4 звезды') },
+    { value: '5', label: l('5 stars', '5 звёзд') },
   ];
   const ROOM_TYPES = [
-    { value: 'standard', label: lang === 'ru' ? 'Стандарт' : 'Standard' },
+    { value: 'standard', label: l('Standard', 'Стандарт') },
     { value: 'deluxe', label: 'Deluxe' },
     { value: 'suite', label: 'Suite' },
     { value: 'villa', label: 'Villa' },
   ];
   const VIEWS = [
-    { value: 'sea', label: lang === 'ru' ? 'Море' : 'Sea' },
-    { value: 'city', label: lang === 'ru' ? 'Город' : 'City' },
-    { value: 'garden', label: lang === 'ru' ? 'Сад' : 'Garden' },
-    { value: 'pool', label: lang === 'ru' ? 'Бассейн' : 'Pool' },
-    { value: 'mountain', label: lang === 'ru' ? 'Горы' : 'Mountain' },
+    { value: 'sea', label: l('Sea', 'Море') },
+    { value: 'city', label: l('City', 'Город') },
+    { value: 'garden', label: l('Garden', 'Сад') },
+    { value: 'pool', label: l('Pool', 'Бассейн') },
+    { value: 'mountain', label: l('Mountain', 'Горы') },
   ];
   const ESSENTIAL_AMENITIES = [
     { value: 'wifi', label: 'Wi-Fi' },
-    { value: 'pool', label: lang === 'ru' ? 'Бассейн' : 'Pool' },
-    { value: 'parking', label: lang === 'ru' ? 'Парковка' : 'Parking' },
-    { value: 'air_conditioning', label: lang === 'ru' ? 'Кондиционер' : 'Air conditioning' },
+    { value: 'pool', label: l('Pool', 'Бассейн') },
+    { value: 'parking', label: l('Parking', 'Парковка') },
+    { value: 'air_conditioning', label: l('Air conditioning', 'Кондиционер') },
   ];
   const LEISURE_AMENITIES = [
     { value: 'spa', label: 'SPA' },
-    { value: 'gym', label: lang === 'ru' ? 'Фитнес' : 'Fitness' },
-    { value: 'restaurant', label: lang === 'ru' ? 'Ресторан' : 'Restaurant' },
-    { value: 'beach', label: lang === 'ru' ? 'Пляж' : 'Beach' },
-    { value: 'tennis', label: lang === 'ru' ? 'Теннис' : 'Tennis' },
-    { value: 'airport_shuttle', label: lang === 'ru' ? 'Трансфер' : 'Airport shuttle' },
+    { value: 'gym', label: l('Fitness', 'Фитнес') },
+    { value: 'restaurant', label: l('Restaurant', 'Ресторан') },
+    { value: 'beach', label: l('Beach', 'Пляж') },
+    { value: 'tennis', label: l('Tennis', 'Теннис') },
+    { value: 'airport_shuttle', label: l('Airport shuttle', 'Трансфер') },
   ];
   const ROOM_AMENITIES = [
-    { value: 'bathtub', label: lang === 'ru' ? 'Ванна' : 'Bathtub' },
-    { value: 'balcony', label: lang === 'ru' ? 'Балкон' : 'Balcony' },
-    { value: 'kitchen', label: lang === 'ru' ? 'Кухня' : 'Kitchen' },
-    { value: 'soundproofing', label: lang === 'ru' ? 'Звукоизоляция' : 'Soundproofing' },
-    { value: 'family_rooms', label: lang === 'ru' ? 'Для семей' : 'Family friendly' },
-    { value: 'pets_allowed', label: lang === 'ru' ? 'С животными' : 'Pet friendly' },
-    { value: 'accessible', label: lang === 'ru' ? 'Доступная среда' : 'Accessible' },
+    { value: 'bathtub', label: l('Bathtub', 'Ванна') },
+    { value: 'balcony', label: l('Balcony', 'Балкон') },
+    { value: 'kitchen', label: l('Kitchen', 'Кухня') },
+    { value: 'soundproofing', label: l('Soundproofing', 'Звукоизоляция') },
+    { value: 'family_rooms', label: l('Family friendly', 'Для семей') },
+    { value: 'pets_allowed', label: l('Pet friendly', 'С животными') },
+    { value: 'accessible', label: l('Accessible', 'Доступная среда') },
   ];
   const ALL_HOTEL_AMENITIES = [...ESSENTIAL_AMENITIES, ...LEISURE_AMENITIES, ...ROOM_AMENITIES];
   const FLIGHT_TYPES = [
-    { value: 'direct', label: lang === 'ru' ? 'Только прямые' : 'Direct only' },
-    { value: '1stop', label: lang === 'ru' ? 'До 1 пересадки' : 'Up to 1 stop' },
-    { value: 'any', label: lang === 'ru' ? 'Любые' : 'Any' },
+    { value: 'direct', label: l('Direct only', 'Только прямые') },
+    { value: '1stop', label: l('Up to 1 stop', 'До 1 пересадки') },
+    { value: 'any', label: l('Any', 'Любые') },
   ];
   const SEAT_CLASSES = [
-    { value: 'economy', label: lang === 'ru' ? 'Эконом' : 'Economy' },
-    { value: 'premium_economy', label: lang === 'ru' ? 'Премиум эконом' : 'Premium economy' },
-    { value: 'business', label: lang === 'ru' ? 'Бизнес' : 'Business' },
-    { value: 'first', label: lang === 'ru' ? 'Первый' : 'First' },
+    { value: 'economy', label: l('Economy', 'Эконом') },
+    { value: 'premium_economy', label: l('Premium economy', 'Премиум эконом') },
+    { value: 'business', label: l('Business', 'Бизнес') },
+    { value: 'first', label: l('First', 'Первый') },
   ];
   const SEATS = [
-    { value: 'window', label: lang === 'ru' ? 'У окна' : 'Window' },
-    { value: 'aisle', label: lang === 'ru' ? 'У прохода' : 'Aisle' },
-    { value: 'middle', label: lang === 'ru' ? 'Средний' : 'Middle' },
+    { value: 'window', label: l('Window', 'У окна') },
+    { value: 'aisle', label: l('Aisle', 'У прохода') },
+    { value: 'middle', label: l('Middle', 'Средний') },
   ];
   const AIRLINES = [
     { value: 'Singapore Airlines', label: 'Singapore Airlines' },
@@ -303,23 +303,23 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
     { value: 'Aeroflot', label: 'Aeroflot' },
   ];
   const TRAVEL_STYLES = [
-    { value: 'family', label: lang === 'ru' ? 'Семейная поездка' : 'Family trip' },
-    { value: 'business', label: lang === 'ru' ? 'Деловая поездка' : 'Business trip' },
-    { value: 'resort', label: lang === 'ru' ? 'Курортный отдых' : 'Resort' },
-    { value: 'beach', label: lang === 'ru' ? 'Пляж' : 'Beach' },
-    { value: 'gastronomy', label: lang === 'ru' ? 'Гастрономия' : 'Gastronomy' },
-    { value: 'culture', label: lang === 'ru' ? 'Культура' : 'Culture' },
-    { value: 'active', label: lang === 'ru' ? 'Активный' : 'Active' },
+    { value: 'family', label: l('Family trip', 'Семейная поездка') },
+    { value: 'business', label: l('Business trip', 'Деловая поездка') },
+    { value: 'resort', label: l('Resort', 'Курортный отдых') },
+    { value: 'beach', label: l('Beach', 'Пляж') },
+    { value: 'gastronomy', label: l('Gastronomy', 'Гастрономия') },
+    { value: 'culture', label: l('Culture', 'Культура') },
+    { value: 'active', label: l('Active', 'Активный') },
     { value: 'spa', label: 'Spa' },
-    { value: 'shopping', label: lang === 'ru' ? 'Шопинг' : 'Shopping' },
-    { value: 'nature', label: lang === 'ru' ? 'Природа' : 'Nature' },
-    { value: 'nightlife', label: lang === 'ru' ? 'Ночная жизнь' : 'Nightlife' },
+    { value: 'shopping', label: l('Shopping', 'Шопинг') },
+    { value: 'nature', label: l('Nature', 'Природа') },
+    { value: 'nightlife', label: l('Nightlife', 'Ночная жизнь') },
   ];
   const BUDGETS = [
-    { value: 'budget', label: lang === 'ru' ? 'Бюджетный' : 'Budget' },
-    { value: 'mid', label: lang === 'ru' ? 'Средний' : 'Mid-range' },
-    { value: 'upscale', label: lang === 'ru' ? 'Выше среднего' : 'Upscale' },
-    { value: 'luxury', label: lang === 'ru' ? 'Люкс' : 'Luxury' },
+    { value: 'budget', label: l('Budget', 'Бюджетный') },
+    { value: 'mid', label: l('Mid-range', 'Средний') },
+    { value: 'upscale', label: l('Upscale', 'Выше среднего') },
+    { value: 'luxury', label: l('Luxury', 'Люкс') },
   ];
   const DESTINATIONS = [
     { value: 'Asia', label: 'Asia' },
@@ -335,8 +335,8 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
     { icon: '🔎', value: stats.searches, label: t('prefs_searches') },
     { icon: '🔖', value: stats.saved, label: t('prefs_saved_count') },
     { icon: '⚖️', value: stats.comparisons, label: t('prefs_comparisons') },
-    { icon: '↗', value: stats.booking_intents, label: lang === 'ru' ? 'Переходов к бронированию' : 'Booking visits' },
-    { icon: '📅', value: stats.member_since ? new Date(stats.member_since).toLocaleDateString(lang) : '—', label: lang === 'ru' ? 'Участник с' : 'Member since' },
+    { icon: '↗', value: stats.booking_intents, label: l('Booking visits', 'Переходов к бронированию') },
+    { icon: '📅', value: stats.member_since ? new Date(stats.member_since).toLocaleDateString(lang) : '—', label: l('Member since', 'Участник с') },
   ];
  
   const NOTIFS = [
@@ -364,7 +364,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
             <div className={styles.avatarWrap}>
               <div className={styles.avatar}>{initials}</div>
             </div>
-            <div className={styles.userName}>{user?.name || (lang === 'ru' ? 'Пользователь' : 'User')}</div>
+            <div className={styles.userName}>{user?.name || (l('User', 'Пользователь'))}</div>
             <div className={styles.userEmail}>{user?.email}</div>
             <div className={styles.userBadge}>{t('prefs_member')}</div>
           </div>
@@ -374,7 +374,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
               { label: t('prefs_searches'), value: stats.searches },
               { label: t('prefs_saved_count'), value: stats.saved },
               { label: t('prefs_comparisons'), value: stats.comparisons },
-              { label: lang === 'ru' ? 'Бронирования' : 'Booking visits', value: stats.booking_intents },
+              { label: l('Booking visits', 'Бронирования'), value: stats.booking_intents },
             ].map(s => (
               <div key={s.label} className={styles.statItem}>
                 <div className={styles.statValue}>{s.value}</div>
@@ -423,11 +423,11 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
  
               <div className={styles.personalGrid}>
                 {[
-                  { key: 'name', label: t('prefs_name'), placeholder: lang === 'ru' ? 'Ваше имя' : 'Your name' },
+                  { key: 'name', label: t('prefs_name'), placeholder: l('Your name', 'Ваше имя') },
                   { key: 'email', label: t('prefs_email'), readOnly: true, value: user?.email, badge: t('prefs_verified') },
                   { key: 'phone', label: t('prefs_phone'), placeholder: '+7 (999) 000-00-00' },
-                  { key: 'city', label: t('prefs_city'), placeholder: lang === 'ru' ? 'Москва' : 'Moscow' },
-                  { key: 'country', label: t('prefs_country'), placeholder: lang === 'ru' ? 'Россия' : 'Russia' },
+                  { key: 'city', label: t('prefs_city'), placeholder: l('Moscow', 'Москва') },
+                  { key: 'country', label: t('prefs_country'), placeholder: l('Russia', 'Россия') },
                 ].map(field => (
                   <div key={field.key} className={styles.personalField}>
                     <label className={styles.fieldLabel}>{field.label}</label>
@@ -446,7 +446,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                 <div className={`${styles.personalField} ${styles.personalFieldFull}`}>
                   <label className={styles.fieldLabel}>{t('prefs_bio')}</label>
                   {editingPersonal
-                    ? <textarea className={styles.fieldTextarea} value={personalForm.bio} onChange={e => setP('bio', e.target.value)} placeholder={lang === 'ru' ? 'Расскажите о себе...' : 'Tell us about yourself...'} rows={3} />
+                    ? <textarea className={styles.fieldTextarea} value={personalForm.bio} onChange={e => setP('bio', e.target.value)} placeholder={l('Tell us about yourself...', 'Расскажите о себе...')} rows={3} />
                     : <div className={styles.fieldValue}>{personalForm.bio || '—'}</div>
                   }
                 </div>
@@ -485,7 +485,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                   <p className={styles.tabSub}>{t('prefs_pref_sub')}</p>
                 </div>
                 <button className={styles.saveSmBtn} onClick={handleSavePrefs} disabled={saving}>
-                  {saved ? <><Check size={14} />{t('prefs_saved')}</> : saving ? t('prefs_saving') : <><Save size={14} />{onboarding ? (lang === 'ru' ? 'Сохранить и начать' : 'Save and start') : t('prefs_save')}</>}
+                  {saved ? <><Check size={14} />{t('prefs_saved')}</> : saving ? t('prefs_saving') : <><Save size={14} />{onboarding ? (l('Save and start', 'Сохранить и начать')) : t('prefs_save')}</>}
                 </button>
               </div>
  
@@ -496,19 +496,19 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_room_type')}</div><MultiSelect options={ROOM_TYPES} value={prefs.room_type} onChange={v => set('room_type', v)} /></div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_view')}</div><MultiSelect options={VIEWS} value={prefs.room_view} onChange={v => set('room_view', v)} /></div>
                   <div className={styles.prefSection}>
-                    <div className={styles.prefLabel}>{lang === 'ru' ? 'Обязательные удобства' : 'Required amenities'}</div>
+                    <div className={styles.prefLabel}>{l('Required amenities', 'Обязательные удобства')}</div>
                     <MultiSelect options={ALL_HOTEL_AMENITIES} value={prefs.required_hotel_amenities} onChange={v => setAmenities('required_hotel_amenities', v)} />
                   </div>
                   <div className={styles.prefSection}>
-                    <div className={styles.prefLabel}>{lang === 'ru' ? 'Желательные: основной комфорт' : 'Preferred: essential comfort'}</div>
+                    <div className={styles.prefLabel}>{l('Preferred: essential comfort', 'Желательные: основной комфорт')}</div>
                     <MultiSelect options={ESSENTIAL_AMENITIES} value={prefs.hotel_amenities} onChange={v => setAmenities('hotel_amenities', v)} />
                   </div>
                   <div className={styles.prefSection}>
-                    <div className={styles.prefLabel}>{lang === 'ru' ? 'Желательные: отдых и инфраструктура' : 'Preferred: leisure and facilities'}</div>
+                    <div className={styles.prefLabel}>{l('Preferred: leisure and facilities', 'Желательные: отдых и инфраструктура')}</div>
                     <MultiSelect options={LEISURE_AMENITIES} value={prefs.hotel_amenities} onChange={v => setAmenities('hotel_amenities', v)} />
                   </div>
                   <div className={styles.prefSection}>
-                    <div className={styles.prefLabel}>{lang === 'ru' ? 'Желательные: номер и особые условия' : 'Preferred: room and special needs'}</div>
+                    <div className={styles.prefLabel}>{l('Preferred: room and special needs', 'Желательные: номер и особые условия')}</div>
                     <MultiSelect options={ROOM_AMENITIES} value={prefs.hotel_amenities} onChange={v => setAmenities('hotel_amenities', v)} />
                   </div>
                 </div>
@@ -533,7 +533,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                   <div className={styles.prefSection}>
                     <div className={styles.prefLabel}>{t('prefs_noise')}: <strong>{prefs.noise_sensitivity}%</strong></div>
                     <input type="range" className={styles.slider} min={0} max={100} step={10} value={prefs.noise_sensitivity} onChange={e => set('noise_sensitivity', Number(e.target.value))} />
-                    <div className={styles.sliderLabels}><span>{lang === 'ru' ? 'Не важно' : 'Not important'}</span><span>{lang === 'ru' ? 'Критично' : 'Critical'}</span></div>
+                    <div className={styles.sliderLabels}><span>{l('Not important', 'Не важно')}</span><span>{l('Critical', 'Критично')}</span></div>
                   </div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_destinations')}</div><MultiSelect options={DESTINATIONS} value={prefs.favorite_destinations} onChange={v => set('favorite_destinations', v)} /></div>
                 </div>
@@ -582,30 +582,30 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                   ))}
                 </div>
                 <div className={styles.notifGroup}>
-                  <div className={styles.notifGroupTitle}>{lang === 'ru' ? 'Расписание weekly insights' : 'Weekly insights schedule'}</div>
+                  <div className={styles.notifGroupTitle}>{l('Weekly insights schedule', 'Расписание weekly insights')}</div>
                   <div className={styles.notifRow}>
                     <div className={styles.notifText}>
-                      <div className={styles.notifLabel}>{lang === 'ru' ? 'Часовой пояс' : 'Time zone'}</div>
+                      <div className={styles.notifLabel}>{l('Time zone', 'Часовой пояс')}</div>
                       <input className={styles.fieldInput} value={notificationSettings.timezone} onChange={e => setNotificationSettings(value => ({ ...value, timezone: e.target.value }))} placeholder="Europe/Moscow" />
                     </div>
-                    <label className={styles.notifText}><span className={styles.notifLabel}>{lang === 'ru' ? 'День недели' : 'Weekday'}</span><select className={styles.fieldInput} value={notificationSettings.digest_weekday} onChange={e => setNotificationSettings(value => ({ ...value, digest_weekday: Number(e.target.value) }))}>
-                      {(lang === 'ru' ? ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'] : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']).map((day, index) => <option value={index} key={day}>{day}</option>)}
+                    <label className={styles.notifText}><span className={styles.notifLabel}>{l('Weekday', 'День недели')}</span><select className={styles.fieldInput} value={notificationSettings.digest_weekday} onChange={e => setNotificationSettings(value => ({ ...value, digest_weekday: Number(e.target.value) }))}>
+                      {(l(['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'])).map((day, index) => <option value={index} key={day}>{day}</option>)}
                     </select></label>
-                    <label className={styles.notifText}><span className={styles.notifLabel}>{lang === 'ru' ? 'Час отправки' : 'Delivery hour'}</span><input className={styles.fieldInput} type="number" min="0" max="23" value={notificationSettings.digest_hour} onChange={e => setNotificationSettings(value => ({ ...value, digest_hour: Number(e.target.value) }))} /></label>
+                    <label className={styles.notifText}><span className={styles.notifLabel}>{l('Delivery hour', 'Час отправки')}</span><input className={styles.fieldInput} type="number" min="0" max="23" value={notificationSettings.digest_hour} onChange={e => setNotificationSettings(value => ({ ...value, digest_hour: Number(e.target.value) }))} /></label>
                   </div>
                 </div>
                 <div className={styles.notifGroup}>
-                  <div className={styles.notifGroupTitle}>{lang === 'ru' ? 'Отслеживание цен' : 'Price watches'}</div>
-                  {!watches.length && <div className={styles.notifDesc}>{lang === 'ru' ? 'Откройте карточку отеля и нажмите значок колокольчика.' : 'Open a hotel and select the bell icon to track its price.'}</div>}
+                  <div className={styles.notifGroupTitle}>{l('Price watches', 'Отслеживание цен')}</div>
+                  {!watches.length && <div className={styles.notifDesc}>{l('Open a hotel and select the bell icon to track its price.', 'Откройте карточку отеля и нажмите значок колокольчика.')}</div>}
                   {watches.map(watch => <div className={styles.notifRow} key={watch.id}>
-                    <div className={styles.notifIcon}>🏨</div><div className={styles.notifText}><div className={styles.notifLabel}>{watch.hotel_name}</div><div className={styles.notifDesc}>{watch.check_in} → {watch.check_out} · {watch.currency} {watch.last_price || '—'} · {watch.last_checked_at ? new Date(watch.last_checked_at).toLocaleString(lang) : (lang === 'ru' ? 'ожидает проверки' : 'waiting for first check')}</div></div>
-                    <label className={styles.notifText}><span className={styles.notifDesc}>{lang === 'ru' ? 'Целевая цена' : 'Target price'}</span><input className={styles.fieldInput} type="number" min="1" defaultValue={watch.target_price || ''} placeholder={watch.currency} onBlur={e => updateWatchTarget(watch, e.target.value)} /></label>
-                    <ToggleSwitch on={watch.active} onChange={() => toggleWatch(watch)} /><button className={styles.revokeBtn} onClick={() => removeWatch(watch.id)}>{lang === 'ru' ? 'Удалить' : 'Delete'}</button>
+                    <div className={styles.notifIcon}>🏨</div><div className={styles.notifText}><div className={styles.notifLabel}>{watch.hotel_name}</div><div className={styles.notifDesc}>{watch.check_in} → {watch.check_out} · {watch.currency} {watch.last_price || '—'} · {watch.last_checked_at ? new Date(watch.last_checked_at).toLocaleString(lang) : (l('waiting for first check', 'ожидает проверки'))}</div></div>
+                    <label className={styles.notifText}><span className={styles.notifDesc}>{l('Target price', 'Целевая цена')}</span><input className={styles.fieldInput} type="number" min="1" defaultValue={watch.target_price || ''} placeholder={watch.currency} onBlur={e => updateWatchTarget(watch, e.target.value)} /></label>
+                    <ToggleSwitch on={watch.active} onChange={() => toggleWatch(watch)} /><button className={styles.revokeBtn} onClick={() => removeWatch(watch.id)}>{l('Delete', 'Удалить')}</button>
                   </div>)}
                 </div>
                 <div className={styles.notifGroup}>
-                  <div className={styles.notifGroupTitle}>{lang === 'ru' ? 'Напоминания о поездках' : 'Trip reminders'}</div>
-                  {!trips.length && <div className={styles.notifDesc}>{lang === 'ru' ? 'Сохраните поездку из корзины, чтобы получать напоминания.' : 'Save your trip basket to receive reminders.'}</div>}
+                  <div className={styles.notifGroupTitle}>{l('Trip reminders', 'Напоминания о поездках')}</div>
+                  {!trips.length && <div className={styles.notifDesc}>{l('Save your trip basket to receive reminders.', 'Сохраните поездку из корзины, чтобы получать напоминания.')}</div>}
                   {trips.map(trip => <div className={styles.notifRow} key={trip.id}><div className={styles.notifIcon}>🧳</div><div className={styles.notifText}><div className={styles.notifLabel}>{trip.title}</div><div className={styles.notifDesc}>{trip.start_date} · {trip.status}</div></div><ToggleSwitch on={Boolean(trip.reminder_enabled)} onChange={() => toggleTripReminder(trip)} /></div>)}
                 </div>
               </div>
@@ -649,12 +649,12 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                 <div className={styles.securityDivider} />
 
                 <div className={styles.securitySection}>
-                  <div className={styles.securitySectionTitle}>{lang === 'ru' ? 'Данные и конфиденциальность' : 'Data and privacy'}</div>
+                  <div className={styles.securitySectionTitle}>{l('Data and privacy', 'Данные и конфиденциальность')}</div>
                   <div className={styles.sessionRow}>
-                    <div><div className={styles.sessionDevice}>{lang === 'ru' ? 'Поведенческая персонализация' : 'Behavioural personalisation'}</div><div className={styles.sessionMeta}>{lang === 'ru' ? 'Разрешает использовать клики и просмотры для настройки Score.' : 'Allows clicks and views to improve your Score.'}</div></div>
-                    <ToggleSwitch label={lang === 'ru' ? 'Поведенческая персонализация' : 'Behavioural personalisation'} on={trackingConsent} onChange={updateTrackingConsent} />
+                    <div><div className={styles.sessionDevice}>{l('Behavioural personalisation', 'Поведенческая персонализация')}</div><div className={styles.sessionMeta}>{l('Allows clicks and views to improve your Score.', 'Разрешает использовать клики и просмотры для настройки Score.')}</div></div>
+                    <ToggleSwitch label={l('Behavioural personalisation', 'Поведенческая персонализация')} on={trackingConsent} onChange={updateTrackingConsent} />
                   </div>
-                  <button className={styles.saveSmBtn} onClick={exportData}>{lang === 'ru' ? 'Экспортировать мои данные' : 'Export my data'}</button>
+                  <button className={styles.saveSmBtn} onClick={exportData}>{l('Export my data', 'Экспортировать мои данные')}</button>
                 </div>
 
                 <div className={styles.securityDivider} />
@@ -665,10 +665,10 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                     <div key={s.id} className={styles.sessionRow}>
                       <div>
                         <div className={styles.sessionDevice}>
-                          {s.user_agent || (lang === 'ru' ? 'Неизвестное устройство' : 'Unknown device')}
+                          {s.user_agent || (l('Unknown device', 'Неизвестное устройство'))}
                           {s.current && <span className={styles.currentBadge}>{t('prefs_current_session')}</span>}
                         </div>
-                        <div className={styles.sessionMeta}>{s.ip_address || '—'} · {s.current ? (lang === 'ru' ? 'Сейчас' : 'Now') : new Date(s.last_seen_at).toLocaleString()}</div>
+                        <div className={styles.sessionMeta}>{s.ip_address || '—'} · {s.current ? (l('Now', 'Сейчас')) : new Date(s.last_seen_at).toLocaleString()}</div>
                       </div>
                       {!s.current && <button className={styles.revokeBtn} onClick={() => revokeSession(s.id)}>{t('prefs_revoke')}</button>}
                     </div>
@@ -689,12 +689,12 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
       </div>
       {deleteDialogOpen && <div className={styles.modalBackdrop} onMouseDown={event => { if (event.target === event.currentTarget && !deleting) setDeleteDialogOpen(false); }}>
         <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
-          <h2 id="delete-account-title">{lang === 'ru' ? 'Удалить аккаунт?' : 'Delete account?'}</h2>
-          <p>{lang === 'ru' ? 'Данные будут удалены без возможности восстановления. Для подтверждения введите пароль.' : 'Your data will be permanently deleted. Enter your password to confirm.'}</p>
-          <label className={styles.fieldLabel} htmlFor="delete-account-password">{lang === 'ru' ? 'Текущий пароль' : 'Current password'}</label>
+          <h2 id="delete-account-title">{l('Delete account?', 'Удалить аккаунт?')}</h2>
+          <p>{l('Your data will be permanently deleted. Enter your password to confirm.', 'Данные будут удалены без возможности восстановления. Для подтверждения введите пароль.')}</p>
+          <label className={styles.fieldLabel} htmlFor="delete-account-password">{l('Current password', 'Текущий пароль')}</label>
           <input id="delete-account-password" className={styles.fieldInput} type="password" autoComplete="current-password" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} autoFocus onKeyDown={event => { if (event.key === 'Escape' && !deleting) setDeleteDialogOpen(false); }} />
           {deleteError && <div className={styles.pwError} role="alert">{deleteError}</div>}
-          <div className={styles.modalActions}><button type="button" className={styles.cancelBtn} disabled={deleting} onClick={() => setDeleteDialogOpen(false)}>{lang === 'ru' ? 'Отмена' : 'Cancel'}</button><button type="button" className={styles.dangerBtn} disabled={!deletePassword || deleting} onClick={deleteAccount}>{deleting ? (lang === 'ru' ? 'Удаляем…' : 'Deleting…') : t('prefs_delete')}</button></div>
+          <div className={styles.modalActions}><button type="button" className={styles.cancelBtn} disabled={deleting} onClick={() => setDeleteDialogOpen(false)}>{l('Cancel', 'Отмена')}</button><button type="button" className={styles.dangerBtn} disabled={!deletePassword || deleting} onClick={deleteAccount}>{deleting ? (l('Deleting…', 'Удаляем…')) : t('prefs_delete')}</button></div>
         </div>
       </div>}
     </div>

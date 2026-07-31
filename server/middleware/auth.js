@@ -10,7 +10,7 @@ async function requireAuth(req, res, next) {
   const bearer = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
   const cookieMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)fw_access=([^;]+)/);
   const token = bearer || (cookieMatch ? decodeURIComponent(cookieMatch[1]) : '');
-  if (!token) return res.status(401).json({ error: 'Требуется авторизация' });
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
@@ -21,15 +21,15 @@ async function requireAuth(req, res, next) {
     req.user = { id: payload.userId, email: payload.email, sessionId: payload.sessionId, authMethod: bearer ? 'bearer' : 'cookie' };
     return next();
   } catch {
-    return res.status(401).json({ error: 'Недействительный или истёкший токен' });
+    return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 
 async function requireOnboarding(req, res, next) {
   const user = await db.prepare('SELECT onboarding_completed FROM users WHERE id = ?').get(req.user.id);
-  if (!user) return res.status(401).json({ error: 'Пользователь не найден' });
+  if (!user) return res.status(401).json({ error: 'User not found' });
   if (!user.onboarding_completed) {
-    return res.status(403).json({ error: 'Сначала завершите настройку предпочтений', onboarding_required: true });
+    return res.status(403).json({ error: 'Complete your preferences first', onboarding_required: true });
   }
   return next();
 }

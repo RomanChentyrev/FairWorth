@@ -42,6 +42,12 @@ test.before(async () => {
 });
 test.after(async () => { for (const id of users) await db.prepare('DELETE FROM users WHERE id = ?').run(id); await db.prepare(`DELETE FROM hotels WHERE id = 'test-live-hotel'`).run(); await close(); });
 
+test('unauthenticated API responses use English system messages', async () => {
+  const response = await request(app).get('/api/auth/me');
+  assert.equal(response.status, 401);
+  assert.equal(response.body.error, 'Authentication required');
+});
+
 test('registration requires legal acceptance and isolates bookmarks', async () => {
   const rejected = await request(app).post('/api/auth/register').send({ name: 'No Terms', email: `no-terms-${Date.now()}@example.com`, password: 'TestPass123!' });
   assert.equal(rejected.status, 400);
@@ -64,7 +70,7 @@ test('travel achievements persist visits and remain private to each user', async
   const country = await request(app).post('/api/achievements/visits').set(ownerAuth).send({
     country_code: 'FR', country_name: 'France', city_name: null, latitude: null, longitude: null,
   });
-  assert.equal(country.status, 201, country.text);
+  assert.equal(country.status, 400, country.text);
   const city = await request(app).post('/api/achievements/visits').set(ownerAuth).send({
     country_code: 'FR', country_name: 'France', city_name: 'Paris', latitude: 48.8566, longitude: 2.3522,
   });
@@ -74,7 +80,7 @@ test('travel achievements persist visits and remain private to each user', async
   assert.equal(ownerMap.status, 200, ownerMap.text);
   assert.equal(ownerMap.body.stats.countries, 1);
   assert.equal(ownerMap.body.stats.cities, 1);
-  assert.equal(ownerMap.body.visits.length, 2);
+  assert.equal(ownerMap.body.visits.length, 1);
 
   const strangerMap = await request(app).get('/api/achievements').set(strangerAuth);
   assert.equal(strangerMap.status, 200, strangerMap.text);

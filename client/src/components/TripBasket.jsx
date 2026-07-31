@@ -14,6 +14,7 @@ function money(value) {
 }
 
 function BasketItem({ icon, title, subtitle, price, onRemove, emptyText }) {
+  const { l } = useLang();
   return (
     <div className={styles.item}>
       <div className={styles.itemIcon}>{icon}</div>
@@ -24,7 +25,7 @@ function BasketItem({ icon, title, subtitle, price, onRemove, emptyText }) {
       <div className={styles.itemSide}>
         {price && <span className={styles.itemPrice}>{price}</span>}
         {onRemove && title && (
-          <button type="button" className={styles.removeBtn} onClick={onRemove} aria-label="Remove">
+          <button type="button" className={styles.removeBtn} onClick={onRemove} aria-label={l('Remove', 'Удалить')}>
             <Trash2 size={14} />
           </button>
         )}
@@ -35,11 +36,10 @@ function BasketItem({ icon, title, subtitle, price, onRemove, emptyText }) {
 
 export default function TripBasket() {
   const navigate = useNavigate();
-  const { lang } = useLang();
+  const { lang , l} = useLang();
   const { basket, selectedCount, total, removeItem, clearBasket } = useTripBasket();
   const [open, setOpen] = useState(false);
   const [saveState, setSaveState] = useState('idle');
-  const isRu = lang === 'ru';
   const totalLabel = money(total);
   const selectedLegs = [basket.outboundFlight, basket.returnFlight].filter(Boolean);
   const tripFlightScore = selectedLegs.length > 1 && selectedLegs.every(flight => Number.isFinite(Number(flight.adjustedScore)))
@@ -50,7 +50,7 @@ export default function TripBasket() {
     : null;
 
   const hotelSubtitle = basket.hotel
-    ? `${basket.hotel.city || basket.hotel.location || ''}${basket.hotel.nights ? ` · ${basket.hotel.nights} ${isRu ? 'ноч.' : 'nights'}` : ''}`
+    ? `${basket.hotel.city || basket.hotel.location || ''}${basket.hotel.nights ? ` · ${basket.hotel.nights} ${l('nights', 'ноч.')}` : ''}`
     : '';
 
   const flightSubtitle = (flight) => flight
@@ -81,7 +81,7 @@ export default function TripBasket() {
     setSaveState('saving');
     try {
       await notificationsApi.createTrip({
-        title: basket.hotel?.city ? `${isRu ? 'Поездка' : 'Trip'}: ${basket.hotel.city}` : (isRu ? 'Моя поездка' : 'My trip'),
+        title: basket.hotel?.city ? `${l('Trip', 'Поездка')}: ${basket.hotel.city}` : (l('My trip', 'Моя поездка')),
         destination: basket.hotel?.city || basket.outboundFlight?.destinationCode,
         start_date: startDate,
         end_date: basket.hotel?.checkOut || basket.returnFlight?.date || null,
@@ -100,7 +100,7 @@ export default function TripBasket() {
     <>
       <button type="button" className={styles.tab} onClick={() => setOpen(true)}>
         <ShoppingBag size={18} />
-        <span>{isRu ? 'Поездка' : 'Trip'}</span>
+        <span>{l('Trip', 'Поездка')}</span>
         <strong>{selectedCount}</strong>
       </button>
       {open && (
@@ -109,15 +109,15 @@ export default function TripBasket() {
             type="button"
             className={styles.backdrop}
             onClick={() => setOpen(false)}
-            aria-label={isRu ? 'Закрыть корзину' : 'Close trip basket'}
+            aria-label={l('Close trip basket', 'Закрыть корзину')}
           />
           <div className={styles.drawer} role="dialog" aria-modal="true" data-testid="trip-basket-drawer">
           <div className={styles.header}>
             <div>
-              <div className={styles.kicker}>{isRu ? 'Корзина поездки' : 'Trip basket'}</div>
-              <h2>{isRu ? 'Ваш выбор' : 'Your selection'}</h2>
+              <div className={styles.kicker}>{l('Trip basket', 'Корзина поездки')}</div>
+              <h2>{l('Your selection', 'Ваш выбор')}</h2>
             </div>
-            <button type="button" className={styles.closeBtn} onClick={() => setOpen(false)} aria-label="Close">
+            <button type="button" className={styles.closeBtn} onClick={() => setOpen(false)} aria-label={l('Close', 'Закрыть')}>
               <X size={18} />
             </button>
           </div>
@@ -128,7 +128,7 @@ export default function TripBasket() {
               title={basket.hotel?.name}
               subtitle={hotelSubtitle}
               price={money(basket.hotel?.totalPrice)}
-              emptyText={isRu ? 'Отель не выбран' : 'No hotel selected'}
+              emptyText={l('No hotel selected', 'Отель не выбран')}
               onRemove={() => removeBasketItem('hotel')}
             />
             <BasketItem
@@ -136,7 +136,7 @@ export default function TripBasket() {
               title={basket.outboundFlight?.title}
               subtitle={flightSubtitle(basket.outboundFlight)}
               price={money(basket.outboundFlight?.totalPrice)}
-              emptyText={isRu ? 'Рейс туда не выбран' : 'No outbound flight'}
+              emptyText={l('No outbound flight', 'Рейс туда не выбран')}
               onRemove={() => removeBasketItem('outboundFlight')}
             />
             <BasketItem
@@ -144,30 +144,30 @@ export default function TripBasket() {
               title={basket.returnFlight?.title}
               subtitle={flightSubtitle(basket.returnFlight)}
               price={money(basket.returnFlight?.totalPrice)}
-              emptyText={isRu ? 'Рейс обратно не выбран' : 'No return flight'}
+              emptyText={l('No return flight', 'Рейс обратно не выбран')}
               onRemove={() => removeBasketItem('returnFlight')}
             />
           </div>
 
           {tripFlightScore !== null && (
             <div className={styles.tripScore}>
-              <span>{isRu ? 'Индекс перелёта туда-обратно' : 'Round-trip flight score'}</span>
+              <span>{l('Round-trip flight score', 'Индекс перелёта туда-обратно')}</span>
               <strong>{tripFlightScore}/100</strong>
-              <small>{isRu ? 'Учитывает оба сегмента и более слабый рейс' : 'Combines both legs and the weaker itinerary'}</small>
+              <small>{l('Combines both legs and the weaker itinerary', 'Учитывает оба сегмента и более слабый рейс')}</small>
             </div>
           )}
 
           <div className={styles.footer}>
             <div>
-              <span>{isRu ? 'Итого' : 'Total'}</span>
-              <strong>{totalLabel || (isRu ? 'после выбора' : 'after selection')}</strong>
+              <span>{l('Total', 'Итого')}</span>
+              <strong>{totalLabel || (l('after selection', 'после выбора'))}</strong>
             </div>
             <button type="button" className={styles.clearBtn} onClick={clearTripBasket}>
-              {isRu ? 'Очистить' : 'Clear'}
+              {l('Clear', 'Очистить')}
             </button>
           </div>
           <button type="button" className={styles.clearBtn} onClick={saveTrip} disabled={!selectedCount || saveState === 'saving'}>
-            {saveState === 'saving' ? (isRu ? 'Сохраняем…' : 'Saving…') : saveState === 'saved' ? (isRu ? 'Поездка сохранена' : 'Trip saved') : saveState === 'dates' ? (isRu ? 'Сначала выберите даты' : 'Choose dates first') : saveState === 'error' ? (isRu ? 'Не удалось сохранить' : 'Could not save') : (isRu ? 'Сохранить поездку и напоминания' : 'Save trip and reminders')}
+            {saveState === 'saving' ? (l('Saving…', 'Сохраняем…')) : saveState === 'saved' ? (l('Trip saved', 'Поездка сохранена')) : saveState === 'dates' ? (l('Choose dates first', 'Сначала выберите даты')) : saveState === 'error' ? (l('Could not save', 'Не удалось сохранить')) : (l('Save trip and reminders', 'Сохранить поездку и напоминания'))}
           </button>
           <button
             type="button"
@@ -175,9 +175,9 @@ export default function TripBasket() {
             disabled={!basket.hotel || !basket.outboundFlight}
             onClick={startCheckout}
           >
-            {isRu ? 'Перейти к демо-бронированию' : 'Continue to demo booking'} <ArrowRight size={16} />
+            {l('Continue to demo booking', 'Перейти к демо-бронированию')} <ArrowRight size={16} />
           </button>
-          {(!basket.hotel || !basket.outboundFlight) && <p className={styles.checkoutHint}>{isRu ? 'Добавьте отель и авиабилет туда' : 'Add a hotel and an outbound flight first'}</p>}
+          {(!basket.hotel || !basket.outboundFlight) && <p className={styles.checkoutHint}>{l('Add a hotel and an outbound flight first', 'Добавьте отель и авиабилет туда')}</p>}
           </div>
         </>
       )}

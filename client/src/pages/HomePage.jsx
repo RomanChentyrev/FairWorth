@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, MapPin, Search, Sparkles } from 'lucide-react';
+import { ArrowRight, LocateFixed, LoaderCircle, MapPin, Search, Sparkles } from 'lucide-react';
 import { useLang } from '../i18n/LanguageContext';
 import { hotelsApi } from '../api';
 import PriceCalendar from '../components/PriceCalendar';
@@ -26,23 +26,79 @@ const CITIES = [
 
 const SUPPORTED_CITY_NAMES = new Set(CITIES.flatMap(city => [city.name, city.nameEn]).map(name => name.toLowerCase()));
 
-function CityDropdown({ value, onChange, placeholder, label, error }) {
-  const { lang } = useLang();
+let worldCitiesPromise;
+
+function loadWorldCities() {
+  if (!worldCitiesPromise) {
+    worldCitiesPromise = fetch('/data/world-cities.json')
+      .then(response => {
+        if (!response.ok) throw new Error(`Could not load city index (${response.status})`);
+        return response.json();
+      });
+  }
+  return worldCitiesPromise;
+}
+
+function countryFlag(countryCode) {
+  if (!/^[A-Z]{2}$/.test(countryCode || '')) return '';
+  return String.fromCodePoint(...countryCode.split('').map(letter => 127397 + letter.charCodeAt(0)));
+}
+
+function distanceSquared(city, latitude, longitude) {
+  const latitudeScale = 111.32;
+  const longitudeScale = latitudeScale * Math.cos(latitude * Math.PI / 180);
+  return ((city.y - latitude) * latitudeScale) ** 2
+    + ((city.x - longitude) * longitudeScale) ** 2;
+}
+
+function CityDropdown({
+  value,
+  onChange,
+  placeholder,
+  label,
+  error,
+  worldwide = false,
+  geolocation = false,
+}) {
+  const { lang, l, t } = useLang();
   const [query, setQuery] = useState(value || '');
   const [open, setOpen] = useState(false);
+  const [worldCities, setWorldCities] = useState([]);
+  const [cityIndexLoading, setCityIndexLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState('');
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
 
-  const suggestions = query.length >= 1
-    ? CITIES.filter(c => {
-        const q = query.toLowerCase();
-        return c.name.toLowerCase().includes(q)
-          || c.nameEn.toLowerCase().includes(q)
-          || c.code.toLowerCase().includes(q)
-          || c.country.toLowerCase().includes(q)
-          || c.countryEn.toLowerCase().includes(q);
+  const availableCities = worldwide && worldCities.length > 0 ? worldCities : CITIES;
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const suggestions = normalizedQuery.length >= 1
+    ? availableCities.filter(city => {
+        if (city.n) {
+          return city.n.toLocaleLowerCase().includes(normalizedQuery)
+            || city.c.toLocaleLowerCase().includes(normalizedQuery)
+            || city.a?.toLocaleLowerCase().includes(normalizedQuery)
+            || city.cc.toLocaleLowerCase() === normalizedQuery;
+        }
+        return city.name.toLocaleLowerCase().includes(normalizedQuery)
+          || city.nameEn.toLocaleLowerCase().includes(normalizedQuery)
+          || city.code.toLocaleLowerCase().includes(normalizedQuery)
+          || city.country.toLocaleLowerCase().includes(normalizedQuery)
+          || city.countryEn.toLocaleLowerCase().includes(normalizedQuery);
       }).slice(0, 7)
-    : CITIES.slice(0, 6);
+    : availableCities.slice(0, 6);
+
+  const ensureWorldCities = async () => {
+    if (!worldwide || worldCities.length > 0) return worldCities;
+    setCityIndexLoading(true);
+    try {
+      const cities = await loadWorldCities();
+      setWorldCities(cities);
+      return cities;
+    } finally {
+      setCityIndexLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handler = (e) => {
@@ -52,12 +108,60 @@ function CityDropdown({ value, onChange, placeholder, label, error }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  useEffect(() => {
+    setQuery(value || '');
+  }, [value]);
+
   const handleSelect = (city) => {
-    const displayName = lang === 'en' ? city.nameEn : city.name;
-    const val = `${displayName} (${city.code})`;
+    const isWorldCity = Boolean(city.n);
+    const displayName = isWorldCity ? city.n : (lang === 'en' ? city.nameEn : city.name);
+    const val = isWorldCity ? displayName : `${displayName} (${city.code})`;
     setQuery(val);
     onChange(val);
+    setLocationError('');
     setOpen(false);
+  };
+
+  const handleFocus = () => {
+    setOpen(true);
+    ensureWorldCities().catch(() => {});
+  };
+
+  const handleLocate = async () => {
+    setLocationError('');
+    if (!navigator.geolocation) {
+      setLocationError(t('home_location_unsupported'));
+      return;
+    }
+
+    setLocating(true);
+    try {
+      const cities = await ensureWorldCities();
+      if (!cities.length) throw new Error('city_index_unavailable');
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 300000,
+        });
+      });
+      const { latitude, longitude } = position.coords;
+      const nearestCity = cities.reduce((nearest, city) => (
+        !nearest || distanceSquared(city, latitude, longitude) < distanceSquared(nearest, latitude, longitude)
+          ? city
+          : nearest
+      ), null);
+      if (!nearestCity) throw new Error('city_not_found');
+      handleSelect(nearestCity);
+    } catch (locationFailure) {
+      setLocationError(
+        locationFailure?.code === 1
+          ? t('home_location_denied')
+          : t('home_location_failed'),
+      );
+    } finally {
+      setLocating(false);
+    }
   };
 
   return (
@@ -69,32 +173,55 @@ function CityDropdown({ value, onChange, placeholder, label, error }) {
           className={`${styles.input} ${error ? styles.inputError : ''}`}
           value={query}
           onChange={e => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
+          onFocus={handleFocus}
           placeholder={placeholder}
           autoComplete="off"
         />
-        {open && suggestions.length > 0 && (
+        {geolocation && (
+          <button
+            type="button"
+            className={styles.locationButton}
+            onClick={handleLocate}
+            title={t('home_use_location')}
+            aria-label={t('home_use_location')}
+            disabled={locating}
+          >
+            {locating
+              ? <LoaderCircle size={16} className={styles.locationSpinner} />
+              : <LocateFixed size={16} />}
+          </button>
+        )}
+        {open && (suggestions.length > 0 || cityIndexLoading) && (
           <div className={styles.dropdown}>
-            {query.length < 1 && <div className={styles.dropdownHint}>{lang === 'ru' ? 'Популярные направления' : 'Popular destinations'}</div>}
-            {suggestions.map(city => (
-              <button key={city.code} className={styles.dropdownItem} onMouseDown={() => handleSelect(city)} type="button">
-                <span className={styles.cityFlag}>{city.flag}</span>
+            {query.length < 1 && (
+              <div className={styles.dropdownHint}>
+                {worldwide ? t('home_world_cities') : l('Popular destinations', 'Популярные направления')}
+              </div>
+            )}
+            {cityIndexLoading && <div className={styles.dropdownLoading}>{t('home_loading_cities')}</div>}
+            {!cityIndexLoading && suggestions.map(city => (
+              <button key={city.i || city.code} className={styles.dropdownItem} onMouseDown={() => handleSelect(city)} type="button">
+                <span className={styles.cityFlag}>{city.n ? countryFlag(city.cc) : city.flag}</span>
                 <div className={styles.cityInfo}>
-                  <span className={styles.cityName}>{lang === 'en' ? city.nameEn : city.name}</span>
-                  <span className={styles.cityMeta}>{lang === 'en' ? city.countryEn : city.country} · {city.code}</span>
+                  <span className={styles.cityName}>{city.n || (lang === 'en' ? city.nameEn : city.name)}</span>
+                  <span className={styles.cityMeta}>
+                    {city.n ? city.c : (lang === 'en' ? city.countryEn : city.country)}
+                    {!city.n && ` · ${city.code}`}
+                  </span>
                 </div>
               </button>
             ))}
           </div>
         )}
       </div>
+      {locationError && <span className={styles.locationError} role="status">{locationError}</span>}
     </div>
   );
 }
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { t, lang } = useLang();
+  const { t, lang, l } = useLang();
   const [tab, setTab] = useState(0);
   const [popularDestinations, setPopularDestinations] = useState([]);
   const [destinationsLoading, setDestinationsLoading] = useState(true);
@@ -105,7 +232,7 @@ export default function HomePage() {
   const activeReady = tab === 0 ? hotelReady : tab === 1 ? flightReady : false;
   const initialDates = defaultTravelDates();
   const [form, setForm] = useState({
-    from: lang === 'ru' ? 'Москва (SVO)' : 'Moscow (SVO)',
+    from: '',
     city: '',
     check_in: initialDates.check_in,
     check_out: initialDates.check_out,
@@ -128,7 +255,6 @@ export default function HomePage() {
 
     if (!origin) nextErrors.from = true;
     if (!destination) nextErrors.city = true;
-    if (origin && !isSupportedCity(form.from)) nextErrors.from = true;
     if (destination && !isSupportedCity(form.city)) nextErrors.city = true;
     if (!form.check_in) nextErrors.check_in = true;
     if (!form.check_out) nextErrors.check_out = true;
@@ -197,7 +323,7 @@ export default function HomePage() {
 
   const guestOptions = [1,2,3,4,5,6].map(n => ({
     value: String(n),
-    label: `${n} ${lang === 'ru' ? (n === 1 ? 'взрослый' : 'взрослых') : (n === 1 ? 'adult' : 'adults')}`
+    label: `${n} ${l(n === 1 ? 'adult' : 'adults', n === 1 ? 'взрослый' : 'взрослых')}`
   }));
 
   const destinationForCalendar = cleanPlace(form.city);
@@ -218,8 +344,8 @@ export default function HomePage() {
           <p className={styles.sub}>{t('home_sub')}</p>
           <div className={styles.trustRow}>
             <div className={styles.trustItem}><strong>0%</strong><span>{t('home_trust_commission')}</span></div>
-            <div className={styles.trustItem}><strong>Live</strong><span>{lang === 'ru' ? 'данные провайдеров' : 'provider data'}</span></div>
-            <div className={styles.trustItem}><strong>No</strong><span>{t('home_trust_ads')}</span></div>
+            <div className={styles.trustItem}><strong>{l('Live', 'Актуальные')}</strong><span>{l('provider data', 'данные провайдеров')}</span></div>
+            <div className={styles.trustItem}><strong>{l('No', 'Нет')}</strong><span>{t('home_trust_ads')}</span></div>
           </div>
 
           <section className={styles.destinations}>
@@ -279,109 +405,115 @@ export default function HomePage() {
           </div>
 
           <form onSubmit={handleSearch} className={styles.form}>
-            {!capabilitiesLoading && !activeReady && <ProviderUnavailable capability={tab === 0 ? 'hotels' : tab === 1 ? 'flights' : 'packages'} compact />}
-            {Object.values(errors).some(Boolean) && (
-              <div className={styles.formError}>
-                {errors.dates ? t('home_validation_dates') : t('home_validation_required')}
-              </div>
-            )}
-            <div className={styles.row2}>
-              <CityDropdown
-                label={t('home_from')}
-                placeholder={t('home_city_placeholder')}
-                value={form.from}
-                error={errors.from}
-                onChange={v => {
-                  setForm(p => ({ ...p, from: v }));
-                  setErrors(prev => ({ ...prev, from: false }));
-                }}
-              />
-              <CityDropdown
-                label={t('home_to')}
-                placeholder={t('home_dest_placeholder')}
-                value={form.city}
-                error={errors.city}
-                onChange={v => {
-                  setForm(p => ({ ...p, city: v }));
-                  setErrors(prev => ({ ...prev, city: false }));
-                }}
-              />
-            </div>
-            <div className={styles.row2}>
-              <div className={styles.field}>
-                <label className={styles.label}>{t('home_checkin')}</label>
-                <input
-                  type="date"
-                  min={formatLocalDate(new Date())}
-                  className={`${styles.input} ${errors.check_in ? styles.inputError : ''}`}
-                  value={form.check_in}
-                  onChange={e => {
-                    setForm(p => ({ ...p, check_in: e.target.value }));
-                    setErrors(prev => ({ ...prev, check_in: false, dates: false }));
+            <div className={styles.formBody}>
+              {!capabilitiesLoading && !activeReady && <ProviderUnavailable capability={tab === 0 ? 'hotels' : tab === 1 ? 'flights' : 'packages'} compact />}
+              {Object.values(errors).some(Boolean) && (
+                <div className={styles.formError}>
+                  {errors.dates ? t('home_validation_dates') : t('home_validation_required')}
+                </div>
+              )}
+              <div className={styles.row2}>
+                <CityDropdown
+                  label={t('home_from')}
+                  placeholder={t('home_city_placeholder')}
+                  value={form.from}
+                  error={errors.from}
+                  worldwide
+                  geolocation
+                  onChange={v => {
+                    setForm(p => ({ ...p, from: v }));
+                    setErrors(prev => ({ ...prev, from: false }));
+                  }}
+                />
+                <CityDropdown
+                  label={t('home_to')}
+                  placeholder={t('home_dest_placeholder')}
+                  value={form.city}
+                  error={errors.city}
+                  onChange={v => {
+                    setForm(p => ({ ...p, city: v }));
+                    setErrors(prev => ({ ...prev, city: false }));
                   }}
                 />
               </div>
-              <div className={styles.field}>
-                <label className={styles.label}>{t('home_checkout')}</label>
-                <input
-                  type="date"
-                  min={form.check_in}
-                  className={`${styles.input} ${errors.check_out ? styles.inputError : ''}`}
-                  value={form.check_out}
-                  onChange={e => {
-                    setForm(p => ({ ...p, check_out: e.target.value }));
-                    setErrors(prev => ({ ...prev, check_out: false, dates: false }));
-                  }}
+              <div className={styles.row2}>
+                <div className={styles.field}>
+                  <label className={styles.label}>{t('home_checkin')}</label>
+                  <input
+                    type="date"
+                    min={formatLocalDate(new Date())}
+                    className={`${styles.input} ${errors.check_in ? styles.inputError : ''}`}
+                    value={form.check_in}
+                    onChange={e => {
+                      setForm(p => ({ ...p, check_in: e.target.value }));
+                      setErrors(prev => ({ ...prev, check_in: false, dates: false }));
+                    }}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label className={styles.label}>{t('home_checkout')}</label>
+                  <input
+                    type="date"
+                    min={form.check_in}
+                    className={`${styles.input} ${errors.check_out ? styles.inputError : ''}`}
+                    value={form.check_out}
+                    onChange={e => {
+                      setForm(p => ({ ...p, check_out: e.target.value }));
+                      setErrors(prev => ({ ...prev, check_out: false, dates: false }));
+                    }}
+                  />
+                </div>
+              </div>
+              {showPriceCalendar && (
+                <PriceCalendar
+                  city={destinationForCalendar}
+                  checkIn={form.check_in}
+                  checkOut={form.check_out}
+                  onSelectDate={(checkIn, checkOut) => setForm(p => ({ ...p, check_in: checkIn, check_out: checkOut }))}
                 />
-              </div>
-            </div>
-            {showPriceCalendar && (
-              <PriceCalendar
-                city={destinationForCalendar}
-                checkIn={form.check_in}
-                checkOut={form.check_out}
-                onSelectDate={(checkIn, checkOut) => setForm(p => ({ ...p, check_in: checkIn, check_out: checkOut }))}
-              />
-            )}
-            <div className={styles.field}>
-              <label className={styles.label}>{t('home_guests')}</label>
-              <select
-                className={`${styles.input} ${errors.guests ? styles.inputError : ''}`}
-                value={form.guests}
-                onChange={e => {
-                  setForm(p => ({ ...p, guests: e.target.value }));
-                  setErrors(prev => ({ ...prev, guests: false }));
-                }}
-              >
-                {guestOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            {tab === 0 && (
+              )}
               <div className={styles.field}>
-                <label className={styles.label}>{lang === 'ru' ? 'Тип поездки' : 'Trip type'}</label>
-                <select className={styles.input} value={form.trip_purpose} onChange={e => setForm(p => ({ ...p, trip_purpose: e.target.value }))}>
-                  <option value="leisure">{lang === 'ru' ? 'Отдых' : 'Leisure'}</option>
-                  <option value="business">{lang === 'ru' ? 'Командировка' : 'Business'}</option>
-                  <option value="family">{lang === 'ru' ? 'Семейная поездка' : 'Family'}</option>
-                  <option value="couple">{lang === 'ru' ? 'Поездка вдвоём' : 'Couple'}</option>
+                <label className={styles.label}>{t('home_guests')}</label>
+                <select
+                  className={`${styles.input} ${errors.guests ? styles.inputError : ''}`}
+                  value={form.guests}
+                  onChange={e => {
+                    setForm(p => ({ ...p, guests: e.target.value }));
+                    setErrors(prev => ({ ...prev, guests: false }));
+                  }}
+                >
+                  {guestOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
-            )}
-            {tab === 1 && (
-              <div className={styles.field}>
-                <label className={styles.label}>{t('flight_class')}</label>
-                <select className={`${styles.input} ${errors.cabin_class ? styles.inputError : ''}`} value={form.cabin_class} onChange={e => setForm(p => ({ ...p, cabin_class: e.target.value }))}>
-                  <option value="economy">{t('flight_class_economy')}</option>
-                  <option value="business">{t('flight_class_business')}</option>
-                </select>
+              {tab === 0 && (
+                <div className={styles.field}>
+                  <label className={styles.label}>{l('Trip type', 'Тип поездки')}</label>
+                  <select className={styles.input} value={form.trip_purpose} onChange={e => setForm(p => ({ ...p, trip_purpose: e.target.value }))}>
+                    <option value="leisure">{l('Leisure', 'Отдых')}</option>
+                    <option value="business">{l('Business', 'Командировка')}</option>
+                    <option value="family">{l('Family', 'Семейная поездка')}</option>
+                    <option value="couple">{l('Couple', 'Поездка вдвоём')}</option>
+                  </select>
+                </div>
+              )}
+              {tab === 1 && (
+                <div className={styles.field}>
+                  <label className={styles.label}>{t('flight_class')}</label>
+                  <select className={`${styles.input} ${errors.cabin_class ? styles.inputError : ''}`} value={form.cabin_class} onChange={e => setForm(p => ({ ...p, cabin_class: e.target.value }))}>
+                    <option value="economy">{t('flight_class_economy')}</option>
+                    <option value="business">{t('flight_class_business')}</option>
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className={styles.formActions}>
+              <button type="submit" className={styles.searchBtn} disabled={capabilitiesLoading || !activeReady}>
+                <Search size={16} /> {t('home_search_btn')}
+              </button>
+              <div className={styles.aiHint}>
+                <Sparkles size={13} style={{ color: 'var(--gold)', flexShrink: 0 }} />
+                <span>{t('home_ai_hint')}</span>
               </div>
-            )}
-            <button type="submit" className={styles.searchBtn} disabled={capabilitiesLoading || !activeReady}>
-              <Search size={16} /> {t('home_search_btn')}
-            </button>
-            <div className={styles.aiHint}>
-              <Sparkles size={13} style={{ color: 'var(--gold)', flexShrink: 0 }} />
-              <span>{t('home_ai_hint')}</span>
             </div>
           </form>
         </div>

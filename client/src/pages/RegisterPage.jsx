@@ -5,12 +5,12 @@ import { Eye, EyeOff } from 'lucide-react';
 import styles from './RegisterPage.module.css';
 import { useLang } from '../i18n/LanguageContext';
 import { legalApi } from '../api';
+import LanguageSelect from '../components/LanguageSelect';
 
 export default function RegisterPage({ onLogin }) {
   const navigate = useNavigate();
-  const { lang, toggleLang, t } = useLang();
-  const isRu = lang === 'ru';
-  const [form, setForm] = useState({ name: '', email: '', password: '', accept_terms: false, behavioural_tracking_consent: false });
+  const { lang, t , l} = useLang();
+  const [form, setForm] = useState({ name: '', email: '', password: '', accept_terms: false, behavioural_tracking_consent: true });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -18,15 +18,15 @@ export default function RegisterPage({ onLogin }) {
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   useEffect(() => {
-    legalApi.current().then(response => setLegal(response.data)).catch(() => setError(isRu ? 'Не удалось загрузить актуальные юридические документы.' : 'Could not load the current legal documents.'));
-  }, [isRu]);
+    legalApi.current().then(response => setLegal(response.data)).catch(() => setError(l('Could not load the current legal documents.', 'Не удалось загрузить актуальные юридические документы.')));
+  }, [lang]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      if (!legal) throw new Error(isRu ? 'Дождитесь загрузки юридических документов.' : 'Wait for the legal documents to load.');
+      if (!legal) throw new Error(l('Wait for the legal documents to load.', 'Дождитесь загрузки юридических документов.'));
       const res = await axios.post('/api/auth/register', { ...form, language: lang, terms_version: legal.terms_version, privacy_version: legal.privacy_version }, { withCredentials: true });
       const { user } = res.data;
       localStorage.setItem('fw_user', JSON.stringify(user));
@@ -34,7 +34,7 @@ export default function RegisterPage({ onLogin }) {
       if (onLogin) onLogin(user);
       navigate(res.data.verification_required ? '/verify-email' : '/preferences?onboarding=1');
     } catch (err) {
-      setError(err.response?.data?.error || (isRu ? 'Ошибка регистрации' : 'Registration failed'));
+      setError(err.response?.data?.error || (l('Registration failed', 'Ошибка регистрации')));
     } finally {
       setLoading(false);
     }
@@ -44,7 +44,7 @@ export default function RegisterPage({ onLogin }) {
     <div className={`${styles.page} ${styles.registerPage}`}>
       <header className={styles.registerHeader}>
         <Link to="/" className={styles.registerLogo}>Tripalora</Link>
-        <button type="button" className={styles.langBtn} onClick={toggleLang}>{isRu ? 'EN' : 'RU'}</button>
+        <LanguageSelect />
       </header>
       <main className={styles.registerMain}>
         <div className={styles.formWrap}>
@@ -61,13 +61,13 @@ export default function RegisterPage({ onLogin }) {
               <label className={styles.label}>Email</label>
               <input className={styles.input} type="email" placeholder="alex@example.com" value={form.email} onChange={e => set('email', e.target.value)} required />
             </div>
-            <label className={styles.consent}><input type="checkbox" checked={form.accept_terms} onChange={e => set('accept_terms', e.target.checked)} required disabled={!legal} /><span>{isRu ? 'Я принимаю' : 'I accept the'} <Link to="/legal/terms">{isRu ? 'Условия использования' : 'Terms'}{legal ? ` v${legal.terms_version}` : ''}</Link> {isRu ? 'и' : 'and'} <Link to="/legal/privacy">{isRu ? 'Политику конфиденциальности' : 'Privacy Policy'}{legal ? ` v${legal.privacy_version}` : ''}</Link>.</span></label>
-            <label className={styles.consent}><input type="checkbox" checked={form.behavioural_tracking_consent} onChange={e => set('behavioural_tracking_consent', e.target.checked)} /><span>{isRu ? 'Разрешить анализ действий для персонализации Score (необязательно)' : 'Allow behavioural tracking to personalise my Score (optional)'}</span></label>
+            <label className={styles.consent}><input type="checkbox" checked={form.accept_terms} onChange={e => set('accept_terms', e.target.checked)} required disabled={!legal} /><span>{t('reg_accept_prefix')} <Link to="/legal/terms">{l('Terms', 'Условия использования')}{legal ? ` v${legal.terms_version}` : ''}</Link> {t('reg_accept_connector')} <Link to="/legal/privacy">{l('Privacy Policy', 'Политику конфиденциальности')}{legal ? ` v${legal.privacy_version}` : ''}</Link>.</span></label>
+            <label className={styles.consent}><input type="checkbox" checked={form.behavioural_tracking_consent} onChange={e => set('behavioural_tracking_consent', e.target.checked)} /><span>{l('Allow behavioural tracking to personalise my Score (optional)', 'Разрешить анализ действий для персонализации Score (необязательно)')}</span></label>
             <div className={styles.field}>
               <label className={styles.label}>{t('reg_password')}</label>
               <div className={styles.passwordWrap}>
-                <input className={styles.input} type={showPassword ? 'text' : 'password'} placeholder={isRu ? '12+ символов: A-z, 0-9, !' : '12+ characters: A-z, 0-9, !'} value={form.password} onChange={e => set('password', e.target.value)} required minLength={12} />
-                <button type="button" className={styles.eyeBtn} onClick={() => setShowPassword(p => !p)} aria-label={showPassword ? (isRu ? 'Скрыть пароль' : 'Hide password') : (isRu ? 'Показать пароль' : 'Show password')}>
+                <input className={styles.input} type={showPassword ? 'text' : 'password'} placeholder={l('12+ characters: A-z, 0-9, !', '12+ символов: A-z, 0-9, !')} value={form.password} onChange={e => set('password', e.target.value)} required minLength={12} />
+                <button type="button" className={styles.eyeBtn} onClick={() => setShowPassword(p => !p)} aria-label={showPassword ? (l('Hide password', 'Скрыть пароль')) : (l('Show password', 'Показать пароль'))}>
                   {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>

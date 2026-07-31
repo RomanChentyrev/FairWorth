@@ -17,11 +17,11 @@ if (import.meta.env.VITE_SENTRY_DSN) Sentry.init({ dsn: import.meta.env.VITE_SEN
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ErrorBoundary><LanguageProvider>
+      <LanguageProvider><ErrorBoundary>
         <TripBasketProvider>
           <App />
         </TripBasketProvider>
-      </LanguageProvider></ErrorBoundary>
+      </ErrorBoundary></LanguageProvider>
     </BrowserRouter>
   </React.StrictMode>
 )

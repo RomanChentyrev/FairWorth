@@ -7,7 +7,7 @@ import styles from './TransferCard.module.css';
 import { formatAmount } from '../utils/money';
 
 export default function TransferCard({ transfer, isRecommended }) {
-  const { t, lang } = useLang();
+  const { t, lang , l} = useLang();
   const { basket, selectTransfer } = useTripBasket();
   const isSelected = basket.transfer?.id === transfer.id;
 
@@ -74,8 +74,8 @@ export default function TransferCard({ transfer, isRecommended }) {
           onClick={handleSelect}
         >
           {isSelected
-            ? (lang === 'ru' ? 'Выбрано для поездки' : 'Selected for trip')
-            : (lang === 'ru' ? 'В поездку' : 'Add to trip')}
+            ? (l('Selected for trip', 'Выбрано для поездки'))
+            : (l('Add to trip', 'В поездку'))}
         </button>
       </div>
     </div>

@@ -81,6 +81,7 @@ export const usersApi = {
   deleteAccount: (password) => api.delete('/users/me', { data: { password } }),
   exportData: () => api.get('/users/export', { responseType: 'blob' }),
   updateConsent: (behavioural_tracking_consent) => api.put('/users/consent', { behavioural_tracking_consent }),
+  updateLocale: locale => api.put('/users/locale', { locale }),
 };
 
 export const notificationsApi = {

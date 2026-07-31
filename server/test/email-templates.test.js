@@ -2,13 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { authEmail, accountEmail } = require('../services/emailTemplates');
 
-test('auth email templates support RU and EN', () => {
+test('auth email templates support every product locale', () => {
   const en = authEmail({ name: 'Alex', purpose: 'verify', url: 'https://example.test/verify', locale: 'en' });
   const ru = authEmail({ name: 'Алексей', purpose: 'reset', url: 'https://example.test/reset', locale: 'ru' });
-  assert.equal(en.subject, 'Verify your Fairworth email');
-  assert.equal(ru.subject, 'Сброс пароля Fairworth');
+  assert.equal(en.subject, 'Verify your Tripalora email');
+  assert.equal(ru.subject, 'Сброс пароля Tripalora');
   assert.match(en.html, /<!doctype html>/);
   assert.match(ru.text, /30 минут/);
+  assert.match(authEmail({ name: 'Anna', purpose: 'verify', url: 'https://example.test', locale: 'de' }).subject, /Tripalora/);
+  assert.match(authEmail({ name: 'Jean', purpose: 'reset', url: 'https://example.test', locale: 'fr' }).text, /Jean/);
+  assert.match(authEmail({ name: 'Luca', purpose: 'verify', url: 'https://example.test', locale: 'it' }).text, /Luca/);
+  assert.match(authEmail({ name: 'Ana', purpose: 'reset', url: 'https://example.test', locale: 'es' }).text, /Ana/);
 });
 
 test('HTML email templates escape user names and URLs', () => {

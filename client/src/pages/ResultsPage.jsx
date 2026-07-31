@@ -18,7 +18,7 @@ import {
   readHotelResultsCache,
 } from '../utils/hotelResultsCache';
 
-function HotelMap({ hotels, hoveredId, checkIn, checkOut, lang }) {
+function HotelMap({ hotels, hoveredId, checkIn, checkOut, localize }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
@@ -91,10 +91,12 @@ function HotelMap({ hotels, hoveredId, checkIn, checkOut, lang }) {
       const popupLocation = document.createElement('div');
       popupLocation.textContent = hotel.location;
       const popupPrice = document.createElement('div');
-      popupPrice.textContent = numericPrice > 0 ? `${lang === 'ru' ? 'от' : 'from'} ${price}/${lang === 'ru' ? 'ночь' : 'night'}` : (lang === 'ru' ? 'Цена недоступна' : 'Price unavailable');
+      popupPrice.textContent = numericPrice > 0
+        ? `${localize('from', 'от')} ${price}/${localize('night', 'ночь')}`
+        : localize('Price unavailable', 'Цена недоступна');
       const popupLink = document.createElement('a');
       popupLink.href = `/hotel/${encodeURIComponent(hotel.id)}?check_in=${encodeURIComponent(checkIn)}&check_out=${encodeURIComponent(checkOut)}`;
-      popupLink.textContent = lang === 'ru' ? 'Подробнее' : 'View details';
+      popupLink.textContent = localize('View details', 'Подробнее');
       popup.append(popupName, popupLocation, popupPrice, popupLink);
       const marker = L.marker([hotel.latitude, hotel.longitude], { icon })
         .addTo(map)
@@ -103,7 +105,7 @@ function HotelMap({ hotels, hoveredId, checkIn, checkOut, lang }) {
       bounds.push([hotel.latitude, hotel.longitude]);
     });
     if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-  }, [hotels, hoveredId, checkIn, checkOut]);
+  }, [hotels, hoveredId, checkIn, checkOut, localize]);
 
   useEffect(() => { if (window.L && mapInstanceRef.current) updateMarkers(); }, [hotels, hoveredId]);
 
@@ -210,7 +212,7 @@ function FilterSection({ title, children, defaultOpen = true }) {
 }
 
 export default function ResultsPage({ compareList, toggleCompare, isInCompare }) {
-  const { t, lang } = useLang();
+  const { t, lang , l} = useLang();
   const [searchParams, setSearchParams] = useSearchParams();
   const savedDates = savedTravelDates();
   const savedTrip = savedTravelTrip();
@@ -381,12 +383,8 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
     if (loading || sort !== 'score') return;
     const best = hotels.find(hotel => hotel.top_pick_eligible);
     if (!best) { setAiMessage(''); return; }
-    const priceText = lang === 'ru'
-      ? `Цена $${formatAmount(best.min_price, lang)}/ночь на ${nights} ночей.`
-      : `$${formatAmount(best.min_price, lang)}/night for ${nights} nights.`;
-    setAiMessage(lang === 'ru'
-      ? `На основе ваших предпочтений лучший вариант с подтверждённой ценой — **${best.name}** (Score ${best.fairworth_score}/100). ${priceText}`
-      : `Best option with a verified price for your preferences — **${best.name}** (Score ${best.fairworth_score}/100). ${priceText}`);
+    const priceText = l(`$${formatAmount(best.min_price, lang)}/night for ${nights} nights.`, `Цена $${formatAmount(best.min_price, lang)}/ночь на ${nights} ночей.`);
+    setAiMessage(l(`Best option with a verified price for your preferences — **${best.name}** (Score ${best.fairworth_score}/100). ${priceText}`, `На основе ваших предпочтений лучший вариант с подтверждённой ценой — **${best.name}** (Score ${best.fairworth_score}/100). ${priceText}`));
   }, [hotels, loading, sort, lang, nights]);
 
   const loadMoreHotels = async () => {
@@ -452,10 +450,10 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   };
 
   const SORT_OPTIONS = [
-    { value: 'score', label: lang === 'ru' ? 'Fairworth Score' : 'Fairworth Score' },
-    { value: 'price_asc', label: lang === 'ru' ? 'Цена ↑' : 'Price ↑' },
-    { value: 'price_desc', label: lang === 'ru' ? 'Цена ↓' : 'Price ↓' },
-    { value: 'rating', label: lang === 'ru' ? 'Рейтинг' : 'Rating' },
+    { value: 'score', label: l('Fairworth Score', 'Fairworth Score') },
+    { value: 'price_asc', label: l('Price ↑', 'Цена ↑') },
+    { value: 'price_desc', label: l('Price ↓', 'Цена ↓') },
+    { value: 'rating', label: l('Rating', 'Рейтинг') },
   ];
 
   if (!capabilitiesLoading && capabilities?.hotels?.status !== 'ready') return <ProviderUnavailable capability="hotels" />;
@@ -495,9 +493,9 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
             <form onSubmit={handleSearch} className={styles.inlineSearchForm}>
               <div className={styles.inlineField}><span className={styles.inlineLabel}>{t('results_direction')}</span><input className={styles.inlineInput} value={city} onChange={e => setCity(e.target.value)} /></div>
               <div className={styles.inlineDivider} />
-              <div className={styles.inlineField}><span className={styles.inlineLabel}>{lang === 'ru' ? 'Тип поездки' : 'Trip type'}</span>
+              <div className={styles.inlineField}><span className={styles.inlineLabel}>{l('Trip type', 'Тип поездки')}</span>
                 <select className={styles.inlineInput} value={tripPurpose} onChange={e => setTripPurpose(e.target.value)}>
-                  <option value="leisure">{lang === 'ru' ? 'Отдых' : 'Leisure'}</option><option value="business">{lang === 'ru' ? 'Командировка' : 'Business'}</option><option value="family">{lang === 'ru' ? 'Семья' : 'Family'}</option><option value="couple">{lang === 'ru' ? 'Вдвоём' : 'Couple'}</option>
+                  <option value="leisure">{l('Leisure', 'Отдых')}</option><option value="business">{l('Business', 'Командировка')}</option><option value="family">{l('Family', 'Семья')}</option><option value="couple">{l('Couple', 'Вдвоём')}</option>
                 </select>
               </div>
               <div className={styles.inlineDivider} />
@@ -507,7 +505,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
               <div className={styles.inlineDivider} />
               <div className={styles.inlineField}><span className={styles.inlineLabel}>{t('results_guests')}</span>
                 <select className={styles.inlineInput} value={guests} onChange={e => setGuests(e.target.value)}>
-                  {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n} {lang === 'ru' ? (n===1?'взрослый':'взрослых') : (n===1?'adult':'adults')}</option>)}
+                  {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n} {l(n===1?'adult':'adults', n===1?'взрослый':'взрослых')}</option>)}
                 </select>
               </div>
               <button type="submit" className={styles.inlineSearchBtn}><Search size={15} /> {t('results_find')}</button>
@@ -576,12 +574,12 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
               </div>
             </FilterSection>}
 
-            <FilterSection title={lang === 'ru' ? 'Обязательные удобства' : 'Required amenities'} defaultOpen={false}>
+            <FilterSection title={l('Required amenities', 'Обязательные удобства')} defaultOpen={false}>
               <div className={styles.checkList}>
                 {AMENITY_OPTIONS.map(a => (
                   <label key={a.value} className={styles.checkItem}>
                     <input type="checkbox" checked={amenities.includes(a.value)} onChange={() => toggleAmenity(a.value)} className={styles.checkBox} />
-                    <span>{lang === 'ru' ? a.ru : a.en}</span>
+                    <span>{l(a.en, a.ru)}</span>
                   </label>
                 ))}
               </div>
@@ -662,7 +660,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
               {hotels.length === 0 && <div className={styles.noResults}>{t('results_nothing')}</div>}
               {hasMore && (
                 <button type="button" className={styles.loadMoreBtn} onClick={loadMoreHotels} disabled={loadingMore}>
-                  {loadingMore ? (lang === 'ru' ? 'Загружаем…' : 'Loading…') : (lang === 'ru' ? 'Загрузить ещё 30 отелей' : 'Load 30 more hotels')}
+                  {loadingMore ? (l('Loading…', 'Загружаем…')) : (l('Load 30 more hotels', 'Загрузить ещё 30 отелей'))}
                 </button>
               )}
             </div>
@@ -672,11 +670,11 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
         {/* Map */}
         <div className={styles.mapPanel}>
           <div className={styles.mapSticky}>
-            <HotelMap hotels={hotels} hoveredId={hoveredId} checkIn={checkIn} checkOut={checkOut} lang={lang} />
+            <HotelMap hotels={hotels} hoveredId={hoveredId} checkIn={checkIn} checkOut={checkOut} localize={l} />
             {!loading && !error && hotels.length > 0 && (
               <div className={styles.mapStepNav}>
                 <Link to={`/flights?${searchParams.toString()}`} className={styles.stepNavBtn}>
-                  {lang === 'ru' ? 'Перейти к авиабилетам' : 'Continue to flights'}
+                  {l('Continue to flights', 'Перейти к авиабилетам')}
                   <ArrowRight size={16} />
                 </Link>
               </div>

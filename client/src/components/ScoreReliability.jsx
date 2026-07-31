@@ -1,13 +1,17 @@
 import React from 'react';
 import { ShieldCheck, ShieldAlert } from 'lucide-react';
+import { useLang } from '../i18n/LanguageContext';
 
-export default function ScoreReliability({ value, level, adjustedScore, lang = 'en' }) {
+export default function ScoreReliability({ value, level, adjustedScore }) {
+  const { l } = useLang();
   if (!Number.isFinite(Number(value))) return null;
 
   const normalizedLevel = level || (value >= 80 ? 'high' : value >= 60 ? 'medium' : 'low');
-  const labels = lang === 'ru'
-    ? { high: 'Высокая', medium: 'Средняя', low: 'Низкая' }
-    : { high: 'High', medium: 'Medium', low: 'Low' };
+  const labels = {
+    high: l('High', 'Высокая'),
+    medium: l('Medium', 'Средняя'),
+    low: l('Low', 'Низкая'),
+  };
   const colors = {
     high: { color: '#276749', background: '#F0FFF4', border: '#9AE6B4' },
     medium: { color: '#8A6508', background: '#FFFBEB', border: '#F2CF72' },
@@ -15,9 +19,10 @@ export default function ScoreReliability({ value, level, adjustedScore, lang = '
   };
   const palette = colors[normalizedLevel];
   const Icon = normalizedLevel === 'low' ? ShieldAlert : ShieldCheck;
-  const title = lang === 'ru'
-    ? `Уверенность показывает полноту данных, подтверждающих индекс. Скорректированная оценка для сортировки: ${adjustedScore ?? '—'}/100.`
-    : `Reliability reflects how much data supports the score. Adjusted ranking score: ${adjustedScore ?? '—'}/100.`;
+  const title = l(
+    `Reliability reflects how much data supports the score. Adjusted ranking score: ${adjustedScore ?? '—'}/100.`,
+    `Уверенность показывает полноту данных, подтверждающих индекс. Скорректированная оценка для сортировки: ${adjustedScore ?? '—'}/100.`,
+  );
 
   return (
     <span

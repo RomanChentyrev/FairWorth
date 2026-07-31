@@ -1,4 +1,6 @@
 const express = require('express');
+const { normalizeLocale } = require('../config/locales');
+const { t } = require('../i18n');
 const router = express.Router();
 const { db } = require('../db/database');
 const { v4: uuidv4 } = require('uuid');
@@ -31,18 +33,18 @@ function publicUser(user) {
 
 router.post('/register', async (req, res) => {
   try {
-    const isRu = req.body.language === 'ru';
+    const locale = normalizeLocale(req.body.language);
     const { name, password, accept_terms: acceptTerms, behavioural_tracking_consent: trackingConsent } = req.body;
     const email = String(req.body.email || '').trim().toLowerCase();
     const cleanName = String(name || '').trim();
-    if (!cleanName || !email || !password) return res.status(400).json({ error: isRu ? 'Заполните все поля' : 'Complete all fields' });
-    if (!acceptTerms) return res.status(400).json({ error: isRu ? 'Необходимо принять Условия использования и Политику конфиденциальности' : 'You must accept the Terms and Privacy Policy' });
-    if (req.body.terms_version !== TERMS_VERSION || req.body.privacy_version !== PRIVACY_VERSION) return res.status(409).json({ error: isRu ? 'Юридические документы обновились. Перезагрузите страницу и подтвердите актуальные версии.' : 'The legal documents have changed. Reload the page and accept the current versions.', code: 'LEGAL_VERSION_MISMATCH' });
-    if (cleanName.length < 2) return res.status(400).json({ error: isRu ? 'Имя должно содержать минимум 2 символа' : 'Name must contain at least 2 characters' });
-    if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: isRu ? 'Некорректный email' : 'Enter a valid email address' });
-    if (!strongPassword(password)) return res.status(400).json({ error: isRu ? 'Пароль должен содержать минимум 12 символов, строчную и заглавную буквы, цифру и спецсимвол' : 'Password must be at least 12 characters and include upper/lowercase letters, a number and a symbol' });
+    if (!cleanName || !email || !password) return res.status(400).json({ error: t(locale, 'auth.complete_fields') });
+    if (!acceptTerms) return res.status(400).json({ error: t(locale, 'auth.accept_legal') });
+    if (req.body.terms_version !== TERMS_VERSION || req.body.privacy_version !== PRIVACY_VERSION) return res.status(409).json({ error: t(locale, 'auth.legal_changed'), code: 'LEGAL_VERSION_MISMATCH' });
+    if (cleanName.length < 2) return res.status(400).json({ error: t(locale, 'auth.name_min') });
+    if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: t(locale, 'auth.invalid_email') });
+    if (!strongPassword(password)) return res.status(400).json({ error: t(locale, 'auth.weak_password') });
     const existing = await db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(email);
-    if (existing) return res.status(400).json({ error: isRu ? 'Email уже зарегистрирован' : 'This email is already registered' });
+    if (existing) return res.status(400).json({ error: t(locale, 'auth.email_exists') });
     const passwordHash = await bcrypt.hash(password, 10);
     const userId = uuidv4();
     const verificationRequired = isEmailVerificationRequired();
@@ -50,7 +52,7 @@ router.post('/register', async (req, res) => {
     const refreshToken = createRefreshToken();
     try {
       await db.transaction(async () => {
-      await db.prepare('INSERT INTO users (id, email, name, password_hash, onboarding_completed, email_verified, behavioural_tracking_consent, terms_accepted_at, privacy_accepted_at, terms_version, privacy_version, role, locale) VALUES (?, ?, ?, ?, 0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?, ?)').run(userId, email, cleanName, passwordHash, verificationRequired ? 0 : 1, trackingConsent ? 1 : 0, TERMS_VERSION, PRIVACY_VERSION, 'user', isRu ? 'ru' : 'en');
+      await db.prepare('INSERT INTO users (id, email, name, password_hash, onboarding_completed, email_verified, behavioural_tracking_consent, terms_accepted_at, privacy_accepted_at, terms_version, privacy_version, role, locale) VALUES (?, ?, ?, ?, 0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?, ?)').run(userId, email, cleanName, passwordHash, verificationRequired ? 0 : 1, trackingConsent ? 1 : 0, TERMS_VERSION, PRIVACY_VERSION, 'user', locale);
       await db.prepare(`
         INSERT INTO user_preferences (
           id, user_id, hotel_stars, room_type, room_view, hotel_amenities,
@@ -71,7 +73,7 @@ router.post('/register', async (req, res) => {
     let verificationToken = null;
     if (verificationRequired) {
       verificationToken = await createToken(userId, 'email_verification', 24 * 60);
-      await linkEmail({ to: email, name: cleanName, purpose: 'verify', url: `${frontendUrl()}/verify-email?token=${encodeURIComponent(verificationToken)}`, locale: isRu ? 'ru' : 'en' }).catch(() => null);
+      await linkEmail({ to: email, name: cleanName, purpose: 'verify', url: `${frontendUrl()}/verify-email?token=${encodeURIComponent(verificationToken)}`, locale }).catch(() => null);
     }
     const token = signAccessToken(user, sessionId);
     setSessionCookies(res, token, refreshToken);
@@ -84,14 +86,18 @@ router.post('/register', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   try {
-    const isRu = req.body.language === 'ru';
+    const locale = normalizeLocale(req.body.language);
     const email = String(req.body.email || '').trim().toLowerCase();
     const { password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: isRu ? 'Введите email и пароль' : 'Enter your email and password' });
+    if (!email || !password) return res.status(400).json({ error: t(locale, 'auth.credentials_required') });
     const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-    if (!user) return res.status(400).json({ error: isRu ? 'Неверный email или пароль' : 'Incorrect email or password' });
+    if (!user) return res.status(400).json({ error: t(locale, 'auth.invalid_credentials') });
     const valid = await bcrypt.compare(password, user.password_hash || '');
-    if (!valid) return res.status(400).json({ error: isRu ? 'Неверный email или пароль' : 'Incorrect email or password' });
+    if (!valid) return res.status(400).json({ error: t(locale, 'auth.invalid_credentials') });
+    if (user.locale !== locale) {
+      await db.prepare('UPDATE users SET locale = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(locale, user.id);
+      user.locale = locale;
+    }
     if (!isEmailVerificationRequired() && !user.email_verified) {
       await db.prepare('UPDATE users SET email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
       user.email_verified = 1;
@@ -111,10 +117,10 @@ router.post('/login', async (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   try {
     const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-    if (!user) return res.status(404).json({ error: 'Не найден' });
+    if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ user: publicUser(user) });
   } catch {
-    res.status(401).json({ error: 'Недействительный токен' });
+    res.status(401).json({ error: 'Invalid token' });
   }
 });
 

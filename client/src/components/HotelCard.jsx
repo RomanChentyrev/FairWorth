@@ -9,6 +9,7 @@ import { useTripBasket } from '../context/TripBasketContext';
 import styles from './HotelCard.module.css';
 import { interactionsApi } from '../api';
 import { formatAmount } from '../utils/money';
+import { parseStringList } from '../utils/collections';
 
 const HOTEL_GRADIENTS = [
   'linear-gradient(135deg, #1a3a5c 0%, #2d6b8a 100%)',
@@ -25,12 +26,12 @@ function getGradient(id) {
 
 export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCompare, onHide, checkIn, checkOut, guests = 2, tripPurpose = 'leisure' }) {
   const navigate = useNavigate();
-  const { t, lang } = useLang();
+  const { t, lang , l} = useLang();
   const { basket, selectHotel } = useTripBasket();
   const [hideMenuOpen, setHideMenuOpen] = useState(false);
   const [hideBusy, setHideBusy] = useState(false);
 
-  const amenities = JSON.parse(hotel.amenities || '[]');
+  const amenities = parseStringList(hotel.amenities);
   const hasBreakfast = amenities.includes('breakfast');
   const hasPool = amenities.some(a => a.includes('pool'));
   const hasSpa = amenities.includes('spa');
@@ -43,18 +44,18 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
   const isProviderPrice = ['liteapi', 'xotelo'].includes(hotel.price_source);
   const isCachedPrice = hotel.rate_freshness === 'cached';
   const hasPrice = Number(hotel.min_price) > 0;
-  const taxLabels = lang === 'ru' ? { included: 'налоги включены', not_included: 'налоги не включены', unknown: 'налоги неизвестны' } : { included: 'taxes included', not_included: 'taxes not included', unknown: 'tax status unknown' };
+  const taxLabels = l({ included: 'taxes included', not_included: 'taxes not included', unknown: 'tax status unknown' }, { included: 'налоги включены', not_included: 'налоги не включены', unknown: 'налоги неизвестны' });
   const rateTerms = hotel.price_details ? [
     hotel.price_details.refundable === true
-      ? (lang === 'ru' ? 'бесплатная отмена' : 'free cancellation')
+      ? (l('free cancellation', 'бесплатная отмена'))
       : hotel.price_details.refundable === false
-        ? (lang === 'ru' ? 'невозвратный тариф' : 'non-refundable')
-        : (lang === 'ru' ? 'условия отмены уточняются' : 'cancellation terms unknown'),
+        ? (l('non-refundable', 'невозвратный тариф'))
+        : (l('cancellation terms unknown', 'условия отмены уточняются')),
     hotel.price_details.includes_breakfast === true
-      ? (lang === 'ru' ? 'завтрак включён' : 'breakfast included')
+      ? (l('breakfast included', 'завтрак включён'))
       : hotel.price_details.includes_breakfast === false
-        ? (lang === 'ru' ? 'без завтрака' : 'breakfast not included')
-        : (lang === 'ru' ? 'питание уточняется' : 'meal plan unknown'),
+        ? (l('breakfast not included', 'без завтрака'))
+        : (l('meal plan unknown', 'питание уточняется')),
   ] : [];
   const isSelectedHotel = basket.hotel?.id === hotel.id;
   const handleSelectHotel = () => {
@@ -76,12 +77,12 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
     }).catch(() => {});
   };
   const hideReasons = [
-    ['too_expensive', lang === 'ru' ? 'Слишком дорого' : 'Too expensive'],
-    ['bad_location', lang === 'ru' ? 'Не подходит район' : 'Bad location'],
-    ['photos', lang === 'ru' ? 'Не понравились фотографии' : 'Did not like the photos'],
-    ['missing_pool', lang === 'ru' ? 'Нет бассейна' : 'No pool'],
-    ['low_stars', lang === 'ru' ? 'Низкая звёздность' : 'Too few stars'],
-    ['other', lang === 'ru' ? 'Другая причина' : 'Other reason'],
+    ['too_expensive', l('Too expensive', 'Слишком дорого')],
+    ['bad_location', l('Bad location', 'Не подходит район')],
+    ['photos', l('Did not like the photos', 'Не понравились фотографии')],
+    ['missing_pool', l('No pool', 'Нет бассейна')],
+    ['low_stars', l('Too few stars', 'Низкая звёздность')],
+    ['other', l('Other reason', 'Другая причина')],
   ];
   const handleHide = async (feedbackReason) => {
     setHideBusy(true);
@@ -139,29 +140,29 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
           {hasBreakfast && <span className={`${styles.tag} ${styles.tagGreen}`}>{t('card_breakfast')}</span>}
           {hasPool && <span className={`${styles.tag} ${styles.tagBlue}`}>{t('card_pool')}</span>}
           {hasSpa && <span className={`${styles.tag} ${styles.tagBlue}`}>{t('card_spa')}</span>}
-          {hasBeach && <span className={`${styles.tag} ${styles.tagBlue}`}>{lang === 'ru' ? 'Пляж' : 'Beach'}</span>}
+          {hasBeach && <span className={`${styles.tag} ${styles.tagBlue}`}>{l('Beach', 'Пляж')}</span>}
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }} title={hotel.score_explanation}>
           {hotel.price_details?.provider || hotel.price_details?.source || '—'} · {hotel.price_details?.currency || '—'}
           {` · ${taxLabels[hotel.price_details?.tax_status || 'unknown']}`}
           {hotel.price_details?.updated_at ? ` · ${new Date(hotel.price_details.updated_at).toLocaleString(lang)}` : ''}
-          {` · Score v${hotel.score_version || '—'} · ${hotel.data_completeness?.score ?? 0}% ${lang === 'ru' ? 'данных' : 'data'}`}
+          {` · Score v${hotel.score_version || '—'} · ${hotel.data_completeness?.score ?? 0}% ${l('data', 'данных')}`}
         </div>
         {rateTerms.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>{rateTerms.join(' · ')}</div>}
         {hotel.price_details?.price_warnings?.length > 0 && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>⚠ {hotel.price_details.price_warnings.join(', ')}</div>}
         <div className={styles.bottomRow}>
           <div className={styles.priceBlock}>
-            {hasPrice ? <><span className={styles.priceLabel}>{t('card_from')}</span><span className={styles.price}>${formatAmount(hotel.min_price, lang)}</span><span className={styles.priceNote}>{t('card_per_night')} · {nights} {t('card_nights')} ${formatAmount(total, lang)}</span></> : <span className={styles.price}>{lang === 'ru' ? 'Цена недоступна' : 'Price unavailable'}</span>}
+            {hasPrice ? <><span className={styles.priceLabel}>{t('card_from')}</span><span className={styles.price}>${formatAmount(hotel.min_price, lang)}</span><span className={styles.priceNote}>{t('card_per_night')} · {nights} {t('card_nights')} ${formatAmount(total, lang)}</span></> : <span className={styles.price}>{l('Price unavailable', 'Цена недоступна')}</span>}
             {isProviderPrice && (
               <span className={styles.liveBadge}>
                 {isCachedPrice
-                  ? (lang === 'ru' ? 'Кешированная цена' : 'Cached price')
-                  : `${hotel.price_source === 'liteapi' ? 'LiteAPI' : 'Xotelo'} ${lang === 'ru' ? 'проверено' : 'checked'}`}
+                  ? (l('Cached price', 'Кешированная цена'))
+                  : `${hotel.price_source === 'liteapi' ? 'LiteAPI' : 'Xotelo'} ${l('checked', 'проверено')}`}
               </span>
             )}
           </div>
           <div className={styles.actions} onClick={e => e.stopPropagation()}>
-            <button className={styles.hideBtn} type="button" onClick={() => setHideMenuOpen(true)} title={lang === 'ru' ? 'Скрыть отель' : 'Hide hotel'} aria-label={lang === 'ru' ? 'Скрыть отель' : 'Hide hotel'} data-testid={`hotel-hide-${hotel.id}`}>
+            <button className={styles.hideBtn} type="button" onClick={() => setHideMenuOpen(true)} title={l('Hide hotel', 'Скрыть отель')} aria-label={l('Hide hotel', 'Скрыть отель')} data-testid={`hotel-hide-${hotel.id}`}>
               <EyeOff size={15} />
             </button>
             <button
@@ -184,15 +185,15 @@ export default function HotelCard({ hotel, isRecommended, inCompare, onToggleCom
               onClick={handleSelectHotel}
               disabled={!hasPrice}
             >
-              {isSelectedHotel ? (lang === 'ru' ? 'В поездке' : 'Selected') : (lang === 'ru' ? 'В поездку' : 'Add')}
+              {isSelectedHotel ? (l('Selected', 'В поездке')) : (l('Add', 'В поездку'))}
             </button>
           </div>
         </div>
       </div>
       {hideMenuOpen && (
         <div className={styles.hideOverlay} onClick={e => { e.stopPropagation(); setHideMenuOpen(false); }}>
-          <div className={styles.hideMenu} role="dialog" aria-modal="true" aria-label={lang === 'ru' ? 'Причина скрытия' : 'Reason for hiding'} onClick={e => e.stopPropagation()}>
-            <div className={styles.hideMenuHeader}><strong>{lang === 'ru' ? 'Почему скрыть этот отель?' : 'Why hide this hotel?'}</strong><button type="button" onClick={() => setHideMenuOpen(false)} aria-label="Close"><X size={17} /></button></div>
+          <div className={styles.hideMenu} role="dialog" aria-modal="true" aria-label={l('Reason for hiding', 'Причина скрытия')} onClick={e => e.stopPropagation()}>
+            <div className={styles.hideMenuHeader}><strong>{l('Why hide this hotel?', 'Почему скрыть этот отель?')}</strong><button type="button" onClick={() => setHideMenuOpen(false)} aria-label={l('Close', 'Закрыть')}><X size={17} /></button></div>
             <div className={styles.hideReasons}>{hideReasons.map(([value, label]) => <button type="button" key={value} disabled={hideBusy} onClick={() => handleHide(value)}>{label}</button>)}</div>
           </div>
         </div>

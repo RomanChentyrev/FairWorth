@@ -28,7 +28,7 @@ async function sendEmail({ to, subject, text, html, headers }) {
     logger.info('email_skipped_no_smtp', { to, subject, preview: text });
     return { delivered: false, development_preview: text };
   }
-  const defaultFrom = (process.env.NODE_ENV || 'development') === 'development' ? 'Fairworth <fairworth@gmail.com>' : 'Fairworth <no-reply@fairworth.app>';
+  const defaultFrom = (process.env.NODE_ENV || 'development') === 'development' ? 'Tripalora <tripalora@gmail.com>' : 'Tripalora <no-reply@tripalora.com>';
   const info = await transport.sendMail({ from: process.env.EMAIL_FROM || defaultFrom, to, subject: String(subject).slice(0, 200), text: String(text || '').slice(0, 100000), html: html ? String(html).slice(0, 100000) : undefined, headers });
   return { delivered: true, message_id: info.messageId };
 }

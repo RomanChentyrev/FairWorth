@@ -6,6 +6,7 @@ import ScoreRing from '../components/ScoreRing';
 import styles from './ComparePage.module.css';
 import { formatAmount } from '../utils/money';
 import { useLang } from '../i18n/LanguageContext';
+import { parseStringList } from '../utils/collections';
 import { validFutureDates } from '../utils/dates';
 
 const CHECK = '✓';
@@ -18,8 +19,7 @@ function CellVal({ val, good, bad }) {
 
 export default function ComparePage({ compareList, setCompareList }) {
   const navigate = useNavigate();
-  const { lang } = useLang();
-  const isRu = lang === 'ru';
+  const { lang , l} = useLang();
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -36,7 +36,7 @@ export default function ComparePage({ compareList, setCompareList }) {
     if (compareList.length >= 2) {
       runCompare();
     }
-  }, []); // eslint-disable-line
+  }, []);
 
   const runCompare = async () => {
     setLoading(true);
@@ -46,7 +46,7 @@ export default function ComparePage({ compareList, setCompareList }) {
       const res = await compareApi.compare(ids, checkIn, checkOut, lang, storedTrip.guests || 2, storedTrip.trip_purpose || 'leisure');
       setResult(res.data);
     } catch (e) {
-      setError(isRu ? 'Ошибка сравнения. Проверьте что сервер запущен.' : 'Comparison failed. Make sure the server is running.');
+      setError(l('Comparison failed. Make sure the server is running.', 'Ошибка сравнения. Проверьте что сервер запущен.'));
     } finally {
       setLoading(false);
     }
@@ -57,9 +57,9 @@ export default function ComparePage({ compareList, setCompareList }) {
       <div className={styles.page}>
         <div className={styles.emptyState}>
           <div className={styles.emptyIcon}>⚖️</div>
-          <h2>{isRu ? 'Добавьте минимум 2 отеля для сравнения' : 'Add at least 2 hotels to compare'}</h2>
-          <p>{isRu ? 'На странице результатов нажмите «Сравнить» на понравившихся отелях' : 'Choose Compare on the results page for hotels you like'}</p>
-          <Link to="/results?city=Singapore" className={styles.backBtn}>{isRu ? '← К результатам поиска' : '← Back to search results'}</Link>
+          <h2>{l('Add at least 2 hotels to compare', 'Добавьте минимум 2 отеля для сравнения')}</h2>
+          <p>{l('Choose Compare on the results page for hotels you like', 'На странице результатов нажмите «Сравнить» на понравившихся отелях')}</p>
+          <Link to="/results?city=Singapore" className={styles.backBtn}>{l('← Back to search results', '← К результатам поиска')}</Link>
         </div>
       </div>
     );
@@ -72,15 +72,15 @@ export default function ComparePage({ compareList, setCompareList }) {
       <div className={styles.header}>
         <div className={styles.headerInner}>
           <div>
-            <h1 className={styles.title}>{isRu ? 'Сравнение вариантов' : 'Compare options'}</h1>
-            <p className={styles.sub}>{isRu ? 'Сингапур' : 'Singapore'} · {checkIn} – {checkOut} · {nights} {isRu ? 'ночей' : 'nights'}</p>
+            <h1 className={styles.title}>{l('Compare options', 'Сравнение вариантов')}</h1>
+            <p className={styles.sub}>{l('Singapore', 'Сингапур')} · {checkIn} – {checkOut} · {nights} {l('nights', 'ночей')}</p>
           </div>
           <div className={styles.headerActions}>
             <button className={styles.refreshBtn} onClick={runCompare} disabled={loading}>
-              {loading ? (isRu ? 'Обновляю...' : 'Refreshing...') : (isRu ? 'Обновить сравнение' : 'Refresh comparison')}
+              {loading ? (l('Refreshing...', 'Обновляю...')) : (l('Refresh comparison', 'Обновить сравнение'))}
             </button>
             <Link to="/results?city=Singapore" className={styles.addMoreBtn}>
-              <Plus size={14} /> {isRu ? 'Добавить отель' : 'Add hotel'}
+              <Plus size={14} /> {l('Add hotel', 'Добавить отель')}
             </Link>
           </div>
         </div>
@@ -93,9 +93,9 @@ export default function ComparePage({ compareList, setCompareList }) {
             <div className={styles.verdictHeader}>
               <div className={styles.verdictIcon}><Sparkles size={20} /></div>
               <div>
-                <div className={styles.verdictTitle}>{isRu ? 'Вердикт ИИ' : 'AI verdict'}</div>
+                <div className={styles.verdictTitle}>{l('AI verdict', 'Вердикт ИИ')}</div>
                 <div className={styles.verdictWinner}>
-                  {isRu ? 'Лучший выбор для вас:' : 'Best choice for you:'} <strong>{result.ai_verdict.winner_name}</strong>
+                  {l('Best choice for you:', 'Лучший выбор для вас:')} <strong>{result.ai_verdict.winner_name}</strong>
                 </div>
               </div>
             </div>
@@ -103,13 +103,13 @@ export default function ComparePage({ compareList, setCompareList }) {
             <div className={styles.verdictTips}>
               {result.ai_verdict.budget_pick && (
                 <div className={styles.verdictTip}>
-                  <span className={styles.tipLabel}>💰 {isRu ? 'Бюджетный' : 'Best value'}</span>
+                  <span className={styles.tipLabel}>💰 {l('Best value', 'Бюджетный')}</span>
                   {result.ai_verdict.budget_pick}
                 </div>
               )}
               {result.ai_verdict.luxury_pick && (
                 <div className={styles.verdictTip}>
-                  <span className={styles.tipLabel}>✨ {isRu ? 'Максимум' : 'Best luxury'}</span>
+                  <span className={styles.tipLabel}>✨ {l('Best luxury', 'Максимум')}</span>
                   {result.ai_verdict.luxury_pick}
                 </div>
               )}
@@ -120,7 +120,7 @@ export default function ComparePage({ compareList, setCompareList }) {
         {loading && (
           <div className={styles.loadingState}>
             <div className={styles.spinner} />
-            <span>{isRu ? 'ИИ сравнивает варианты...' : 'AI is comparing your options...'}</span>
+            <span>{l('AI is comparing your options...', 'ИИ сравнивает варианты...')}</span>
           </div>
         )}
 
@@ -138,7 +138,7 @@ export default function ComparePage({ compareList, setCompareList }) {
                     return (
                       <th key={c.hotel.id} className={`${styles.th} ${isWinner ? styles.thWinner : ''}`}>
                         <div className={styles.colHead}>
-                          {isWinner && <div className={styles.winnerBadge}>✦ {isRu ? 'Рекомендация ИИ' : 'AI recommendation'}</div>}
+                          {isWinner && <div className={styles.winnerBadge}>✦ {l('AI recommendation', 'Рекомендация ИИ')}</div>}
                           <div
                             className={styles.colName}
                             onClick={() => navigate(`/hotel/${c.hotel.id}?check_in=${checkIn}&check_out=${checkOut}`)}
@@ -147,7 +147,7 @@ export default function ComparePage({ compareList, setCompareList }) {
                           </div>
                           <div className={styles.colSub}>{c.hotel.location} · {c.hotel.stars}★</div>
                           <div className={styles.colPrice}>${formatAmount(c.bestPrice, lang)}</div>
-                          <div className={styles.colPriceSub}>{isRu ? '/ночь · итого' : '/night · total'} ${formatAmount(c.totalPrice, lang)}</div>
+                          <div className={styles.colPriceSub}>{l('/night · total', '/ночь · итого')} ${formatAmount(c.totalPrice, lang)}</div>
                           <ScoreRing score={c.score || 0} size={48} strokeWidth={4} />
                           <button
                             className={styles.removeBtn}
@@ -169,56 +169,56 @@ export default function ComparePage({ compareList, setCompareList }) {
                     }
                   },
                   {
-                    label: isRu ? 'Рейтинг гостей' : 'Guest rating',
+                    label: l('Guest rating', 'Рейтинг гостей'),
                     render: c => {
                       const best = Math.max(...result.comparison.map(x => x.reviews?.rating || 0));
                       return <CellVal val={c.reviews?.rating ? `${c.reviews.rating.toFixed(1)} ★` : '—'} good={c.reviews?.rating === best} />;
                     }
                   },
                   {
-                    label: isRu ? 'Завтрак' : 'Breakfast',
+                    label: l('Breakfast', 'Завтрак'),
                     render: c => c.hasBreakfast
-                      ? <span className={styles.checkMark}>{CHECK} {isRu ? 'Включён' : 'Included'}</span>
-                      : <span className={styles.crossMark}>{CROSS} {isRu ? 'Нет' : 'No'}</span>
+                      ? <span className={styles.checkMark}>{CHECK} {l('Included', 'Включён')}</span>
+                      : <span className={styles.crossMark}>{CROSS} {l('No', 'Нет')}</span>
                   },
                   {
-                    label: isRu ? 'Бесплатная отмена' : 'Free cancellation',
+                    label: l('Free cancellation', 'Бесплатная отмена'),
                     render: c => c.hasFreeCancellation
-                      ? <span className={styles.checkMark}>{CHECK} {isRu ? 'Есть' : 'Available'}</span>
-                      : <span className={styles.crossMark}>{CROSS} {isRu ? 'Нет' : 'No'}</span>
+                      ? <span className={styles.checkMark}>{CHECK} {l('Available', 'Есть')}</span>
+                      : <span className={styles.crossMark}>{CROSS} {l('No', 'Нет')}</span>
                   },
                   {
-                    label: isRu ? 'Бассейн' : 'Pool',
+                    label: l('Pool', 'Бассейн'),
                     render: c => {
-                      const amenities = JSON.parse(c.hotel.amenities || '[]');
+                      const amenities = parseStringList(c.hotel.amenities);
                       const has = amenities.some(a => a.includes('pool'));
                       return has ? <span className={styles.checkMark}>{CHECK}</span> : <span className={styles.crossMark}>{CROSS}</span>;
                     }
                   },
                   {
-                    label: isRu ? 'Спа' : 'Spa',
+                    label: l('Spa', 'Спа'),
                     render: c => {
-                      const amenities = JSON.parse(c.hotel.amenities || '[]');
+                      const amenities = parseStringList(c.hotel.amenities);
                       const has = amenities.includes('spa');
                       return has ? <span className={styles.checkMark}>{CHECK}</span> : <span className={styles.crossMark}>{CROSS}</span>;
                     }
                   },
                   {
-                    label: isRu ? 'Цена за ночь' : 'Price per night',
+                    label: l('Price per night', 'Цена за ночь'),
                     render: c => {
                       const best = Math.min(...result.comparison.map(x => x.bestPrice || 99999));
                       return <CellVal val={`$${formatAmount(c.bestPrice, lang)}`} good={c.bestPrice === best} />;
                     }
                   },
                   {
-                    label: isRu ? `Итого за ${nights} ночей` : `Total for ${nights} nights`,
+                    label: l(`Total for ${nights} nights`, `Итого за ${nights} ночей`),
                     render: c => {
                       const best = Math.min(...result.comparison.map(x => x.totalPrice || 99999));
                       return <CellVal val={`$${formatAmount(c.totalPrice, lang)}`} good={c.totalPrice === best} bad={c.totalPrice > best * 1.5} />;
                     }
                   },
                   {
-                    label: isRu ? 'Отзывов' : 'Reviews',
+                    label: l('Reviews', 'Отзывов'),
                     render: c => {
                       const best = Math.max(...result.comparison.map(x => x.reviews?.count || 0));
                       return <CellVal val={(c.reviews?.count || 0).toLocaleString()} good={c.reviews?.count === best} />;
@@ -232,7 +232,7 @@ export default function ComparePage({ compareList, setCompareList }) {
                         data-testid={`comparison-details-${c.hotel.id}`}
                         onClick={() => navigate(`/hotel/${c.hotel.id}?check_in=${checkIn}&check_out=${checkOut}`)}
                       >
-                        {isRu ? 'Подробнее →' : 'View details →'}
+                        {l('View details →', 'Подробнее →')}
                       </button>
                     )
                   },

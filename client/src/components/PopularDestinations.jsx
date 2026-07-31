@@ -31,7 +31,7 @@ const styles = {
 };
 
 export default function PopularDestinations({ origin = 'MOW', currency = 'USD', onSelect }) {
-  const { lang } = useLang();
+  const { lang , l} = useLang();
   const [destinations, setDestinations] = useState([]);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState(null);
@@ -50,7 +50,7 @@ export default function PopularDestinations({ origin = 'MOW', currency = 'USD', 
 
   return (
     <div style={styles.wrap}>
-      <h3 style={styles.title}>{lang === 'ru' ? 'Куда полететь из' : 'Where to fly from'} {origin}</h3>
+      <h3 style={styles.title}>{l('Where to fly from', 'Куда полететь из')} {origin}</h3>
 
       {error && <div style={styles.error}>⚠️ {error}</div>}
 
@@ -72,7 +72,7 @@ export default function PopularDestinations({ origin = 'MOW', currency = 'USD', 
                 >
                   <span style={styles.flag}>{flag}</span>
                   <div style={styles.cityName}>{cityName}</div>
-                  <div style={styles.price}>{lang === 'ru' ? 'от' : 'from'} {sym}{formatAmount(d.price, lang)}</div>
+                  <div style={styles.price}>{l('from', 'от')} {sym}{formatAmount(d.price, lang)}</div>
                   <div style={styles.airline}>{d.airline} · {d.destination}</div>
                 </button>
               );

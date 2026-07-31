@@ -1,5 +1,6 @@
 const { db } = require('../db/database');
 const { v4: uuidv4 } = require('uuid');
+const { t } = require('../i18n');
 const { amenityMatches, amenityWeight } = require('../config/hotelAmenities');
 const { benchmarkPriceScore } = require('./comparablePricing');
 const SCORE_VERSION = '4.5.0';
@@ -540,7 +541,7 @@ function reviewConfidenceAssessment(hotel, freshness) {
 
 function calculateHotelScore(hotel, preferences, weights, context) {
   const calculatedAt = new Date().toISOString();
-  const isRu = context.language === 'ru';
+  const locale = context.language;
   const pref = preferences || {};
   const rooms = context.roomsByHotel[hotel.id] || [];
   const hotelAmenities = [
@@ -691,26 +692,34 @@ function calculateHotelScore(hotel, preferences, weights, context) {
   if (wantedRoomTypes.length && !roomNames.length) unknownPreferenceData.push('room_type');
   if (wantedViews.length && !views.length) unknownPreferenceData.push('room_view');
   if (Number(pref.noise_sensitivity) > 0) unknownPreferenceData.push('noise_level');
-  const explanation = isRu
-    ? `Оценка ${fairworthScore}/100: сильнее всего повлиял компонент «${{ value: 'ценность', quality: 'качество', trust: 'доверие к отзывам', preferences: 'совпадение с предпочтениями' }[strongest[0]]}» (${Math.round(strongest[1])}/100).${personalFit === null ? ' Неподтверждённые предпочтения не снижали оценку.' : ` Персональное совпадение — ${Math.round(personalFit)}/100.`}`
-    : `Score ${fairworthScore}/100: the strongest component is ${{ value: 'value', quality: 'quality', trust: 'review trust', preferences: 'preference match' }[strongest[0]]} (${Math.round(strongest[1])}/100).${personalFit === null ? ' Unconfirmed preferences did not reduce the score.' : ` Personal fit is ${Math.round(personalFit)}/100.`}`;
+  const component = t(locale, `score.component_${strongest[0]}`);
+  const explanation = t(
+    locale,
+    personalFit === null ? 'score.explanation_unknown' : 'score.explanation_personal',
+    {
+      score: fairworthScore,
+      component,
+      componentScore: Math.round(strongest[1]),
+      personalFit: Math.round(personalFit || 0),
+    },
+  );
 
   const matches = [];
   const mismatches = [];
-  if (preferenceParts.hotel_stars === 100) matches.push(isRu ? 'Подходящая звёздность' : 'Preferred star rating');
-  else if (preferenceParts.hotel_stars === 0) mismatches.push(isRu ? 'Звёздность не совпадает' : 'Star rating does not match');
+  if (preferenceParts.hotel_stars === 100) matches.push(t(locale, 'score.star_match'));
+  else if (preferenceParts.hotel_stars === 0) mismatches.push(t(locale, 'score.star_mismatch'));
   if (wantedAmenities.length) {
-    if (matchedAmenities.length) matches.push(`${isRu ? 'Совпали удобства' : 'Matching amenities'}: ${matchedAmenities.join(', ')}`);
-    if (hotelAmenities.length && unmatchedAmenities.length) mismatches.push(`${isRu ? 'Не подтверждены желательные удобства' : 'Preferred amenities not confirmed'}: ${unmatchedAmenities.join(', ')}`);
+    if (matchedAmenities.length) matches.push(`${t(locale, 'score.amenities_match')}: ${matchedAmenities.join(', ')}`);
+    if (hotelAmenities.length && unmatchedAmenities.length) mismatches.push(`${t(locale, 'score.amenities_unknown')}: ${unmatchedAmenities.join(', ')}`);
   }
-  if (preferenceParts.budget === 100) matches.push(isRu ? 'Цена в пределах вашего бюджета' : 'Price is within your budget');
-  else if (preferenceParts.budget !== null) mismatches.push(isRu ? 'Цена выше вашего бюджета' : 'Price is above your budget');
-  if (preferenceParts.travel_tier >= 80) matches.push(isRu ? 'Класс отеля соответствует стилю отдыха' : 'Hotel class matches your travel tier');
-  else if (preferenceParts.travel_tier !== null && preferenceParts.travel_tier < 50) mismatches.push(isRu ? 'Класс отеля ниже выбранного уровня отдыха' : 'Hotel class is below your selected travel tier');
-  if (preferenceParts.room_type >= 70) matches.push(isRu ? 'Тип номера близок к предпочтению' : 'Room type closely matches your preference');
-  else if (preferenceParts.room_type !== null && preferenceParts.room_type < 50) mismatches.push(isRu ? 'Тип номера слабо соответствует предпочтению' : 'Room type is a weak match');
-  if (preferenceParts.room_view >= 70) matches.push(isRu ? 'Есть предпочитаемый или близкий вид из номера' : 'Preferred or similar room view is available');
-  else if (preferenceParts.room_view !== null && preferenceParts.room_view < 50) mismatches.push(isRu ? 'Вид из номера слабо соответствует предпочтению' : 'Room view is a weak match');
+  if (preferenceParts.budget === 100) matches.push(t(locale, 'score.budget_match'));
+  else if (preferenceParts.budget !== null) mismatches.push(t(locale, 'score.budget_mismatch'));
+  if (preferenceParts.travel_tier >= 80) matches.push(t(locale, 'score.tier_match'));
+  else if (preferenceParts.travel_tier !== null && preferenceParts.travel_tier < 50) mismatches.push(t(locale, 'score.tier_mismatch'));
+  if (preferenceParts.room_type >= 70) matches.push(t(locale, 'score.room_match'));
+  else if (preferenceParts.room_type !== null && preferenceParts.room_type < 50) mismatches.push(t(locale, 'score.room_mismatch'));
+  if (preferenceParts.room_view >= 70) matches.push(t(locale, 'score.view_match'));
+  else if (preferenceParts.room_view !== null && preferenceParts.room_view < 50) mismatches.push(t(locale, 'score.view_mismatch'));
 
   return {
     ...hotel,

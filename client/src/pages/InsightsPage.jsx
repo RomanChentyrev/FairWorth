@@ -27,7 +27,7 @@ function defaultDates() {
 
 function OfferCard({ offer, sectionKey }) {
   const navigate = useNavigate();
-  const { t, lang } = useLang();
+  const { t, lang , l} = useLang();
   const dates = useMemo(defaultDates, []);
   const hasHotelPrice = offer.has_hotel_price !== false && Number(offer.min_price) > 0;
   const departureDate = offer.departure_date || dates.checkIn;
@@ -74,15 +74,15 @@ function OfferCard({ offer, sectionKey }) {
         <div>
           <span className={styles.priceLabel}>
             {hasHotelPrice
-              ? `${t('insights_package_from')} · ${nights} ${lang === 'ru' ? 'ночей' : 'nights'}`
-              : (lang === 'ru' ? 'Перелеты от' : 'Flights from')}
+              ? `${t('insights_package_from')} · ${nights} ${l('nights', 'ночей')}`
+              : (l('Flights from', 'Перелеты от'))}
           </span>
           <strong>${formatAmount(offer.package_price, lang)}</strong>
         </div>
         <div className={styles.nightly}>
           {hasHotelPrice
             ? `${t('card_from')} $${formatAmount(offer.min_price, lang)}${t('card_per_night')}`
-            : (lang === 'ru' ? 'Отели скоро' : 'Hotels soon')}
+            : (l('Hotels soon', 'Отели скоро'))}
         </div>
       </div>
     </button>
@@ -90,7 +90,7 @@ function OfferCard({ offer, sectionKey }) {
 }
 
 export default function InsightsPage() {
-  const { t, lang } = useLang();
+  const { t, lang, l } = useLang();
   const { capabilities, loading: capabilitiesLoading } = useCapabilities();
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -125,7 +125,7 @@ export default function InsightsPage() {
         setLoading(false);
       } catch (requestError) {
         if (cancelled) return;
-        setError(requestError.response?.data?.error || (lang === 'ru' ? 'Не удалось загрузить Insights.' : 'Could not load Insights.'));
+        setError(requestError.response?.data?.error || (l('Could not load Insights.', 'Не удалось загрузить Insights.')));
         setLoading(false); setRefreshing(false);
       }
     };
@@ -150,7 +150,7 @@ export default function InsightsPage() {
         <p>{t('insights_sub')}</p>
       </section>
 
-      {!loading && refreshing && sections.length > 0 && <div className={styles.refreshNotice}>{lang === 'ru' ? 'Показываем последние данные · обновляем в фоне' : 'Showing the latest snapshot · refreshing in the background'}</div>}
+      {!loading && refreshing && sections.length > 0 && <div className={styles.refreshNotice}>{l('Showing the latest snapshot · refreshing in the background', 'Показываем последние данные · обновляем в фоне')}</div>}
 
       {loading && (
         <div className={styles.sections}>
@@ -165,9 +165,9 @@ export default function InsightsPage() {
         </div>
       )}
 
-      {error && <div className={styles.stateCard}><div className={styles.stateIcon}>⚠️</div><h2>{lang === 'ru' ? 'Insights временно недоступны' : 'Insights are temporarily unavailable'}</h2><p>{error}</p><button onClick={retry}>{lang === 'ru' ? 'Попробовать снова' : 'Try again'}</button></div>}
+      {error && <div className={styles.stateCard}><div className={styles.stateIcon}>⚠️</div><h2>{l('Insights are temporarily unavailable', 'Insights временно недоступны')}</h2><p>{error}</p><button onClick={retry}>{l('Try again', 'Попробовать снова')}</button></div>}
 
-      {!loading && !error && empty && <div className={styles.stateCard}><div className={styles.stateIcon}>✨</div><h2>{lang === 'ru' ? 'Пока нет доступных предложений' : 'No insights available yet'}</h2><p>{lang === 'ru' ? 'Мы не получили достаточно свежих данных от поставщиков. Попробуйте обновить расчёт немного позже.' : 'We did not receive enough fresh supplier data. Try refreshing the calculation again shortly.'}</p><button onClick={retry}>{lang === 'ru' ? 'Обновить Insights' : 'Refresh Insights'}</button></div>}
+      {!loading && !error && empty && <div className={styles.stateCard}><div className={styles.stateIcon}>✨</div><h2>{l('No insights available yet', 'Пока нет доступных предложений')}</h2><p>{l('We did not receive enough fresh supplier data. Try refreshing the calculation again shortly.', 'Мы не получили достаточно свежих данных от поставщиков. Попробуйте обновить расчёт немного позже.')}</p><button onClick={retry}>{l('Refresh Insights', 'Обновить Insights')}</button></div>}
 
       {!loading && !error && !empty && (
         <div className={styles.sections}>

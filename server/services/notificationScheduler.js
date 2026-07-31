@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db/database');
+const { t } = require('../i18n');
 const { refreshLiteApiRates } = require('./hotelRates');
 const { enqueue } = require('./notificationQueue');
 const { capabilities } = require('../config/capabilities');
@@ -77,8 +78,11 @@ async function scheduleWeeklyDigests() {
     const existing = await db.prepare(`SELECT id FROM weekly_digest_runs WHERE user_id = ? AND period_start = ?`).get(user.id, start);
     if (existing) continue;
     const changes = await db.prepare(`SELECT h.name, MIN(po.price) AS lowest, pw.currency FROM price_observations po JOIN price_watches pw ON pw.id = po.watch_id JOIN hotels h ON h.id = pw.hotel_id WHERE pw.user_id = ? AND po.observed_at >= NOW() - INTERVAL '7 days' AND po.available = 1 GROUP BY h.name, pw.currency ORDER BY MIN(po.price) LIMIT 3`).all(user.id);
-    const ru = user.locale === 'ru';
-    const items = changes.map(item => ru ? `${item.name}: лучшая цена за неделю ${item.currency} ${Number(item.lowest).toFixed(2)}` : `${item.name}: weekly low ${item.currency} ${Number(item.lowest).toFixed(2)}`);
+    const items = changes.map(item => t(user.locale, 'notification.weekly_low', {
+      hotel: item.name,
+      currency: item.currency,
+      price: Number(item.lowest).toFixed(2),
+    }));
     const notificationId = await enqueue({ userId: user.id, type: 'weekly_digest', deduplicationKey: `weekly-digest:${user.id}:${start}`, payload: { items, period_start: start, period_end: end } });
     if (notificationId) await db.prepare(`INSERT INTO weekly_digest_runs (id, user_id, period_start, period_end, notification_id) VALUES (?, ?, ?, ?, ?)`).run(uuidv4(), user.id, start, end, notificationId);
   }

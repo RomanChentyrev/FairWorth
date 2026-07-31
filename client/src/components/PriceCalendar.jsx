@@ -33,7 +33,7 @@ function startOfMonth(date) {
 }
 
 function monthLabel(date, lang) {
-  return new Intl.DateTimeFormat(lang === 'ru' ? 'ru-RU' : 'en-US', {
+  return new Intl.DateTimeFormat(lang || 'en', {
     month: 'long',
     year: 'numeric',
   }).format(date);
@@ -45,7 +45,7 @@ function getNights(checkIn, checkOut) {
 }
 
 export default function PriceCalendar({ city, checkIn, checkOut, onSelectDate }) {
-  const { t, lang } = useLang();
+  const { t, lang , l} = useLang();
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(parseDate(checkIn)));
   const [calendar, setCalendar] = useState([]);
   const [recommendation, setRecommendation] = useState(null);
@@ -134,7 +134,7 @@ export default function PriceCalendar({ city, checkIn, checkOut, onSelectDate })
       </div>
 
       <div className={styles.weekdays}>
-        {(lang === 'ru' ? ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'] : ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']).map(day => (
+        {(l(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'])).map(day => (
           <span key={day}>{day}</span>
         ))}
       </div>

@@ -1,4 +1,5 @@
 const express = require('express');
+const { normalizeLocale } = require('../config/locales');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db/database');
 const { requireCapability } = require('../config/capabilities');
@@ -52,7 +53,7 @@ router.put('/settings', async (req, res) => {
   const timezone = String(req.body.timezone || 'UTC');
   try { new Intl.DateTimeFormat('en', { timeZone: timezone }).format(); } catch { return res.status(400).json({ error: 'Unknown timezone' }); }
   const weekday = Math.max(0, Math.min(6, Number(req.body.digest_weekday ?? 1))); const hour = Math.max(0, Math.min(23, Number(req.body.digest_hour ?? 9)));
-  const locale = req.body.locale === 'ru' ? 'ru' : 'en';
+  const locale = normalizeLocale(req.body.locale);
   const settings = await db.prepare(`UPDATE users SET locale = ?, timezone = ?, digest_weekday = ?, digest_hour = ?, updated_at = NOW() WHERE id = ? RETURNING locale, timezone, digest_weekday, digest_hour`).get(locale, timezone, weekday, hour, req.user.id);
   res.json({ settings });
 });

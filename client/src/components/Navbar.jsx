@@ -4,6 +4,7 @@ import { SlidersHorizontal, GitCompare, LogOut, Map } from 'lucide-react';
 import { useLang } from '../i18n/LanguageContext';
 import styles from './Navbar.module.css';
 import { validFutureDates } from '../utils/dates';
+import LanguageSelect from './LanguageSelect';
 
 function readStoredTrip() {
   try {
@@ -23,7 +24,7 @@ function readStoredDates() {
 
 export default function Navbar({ compareCount, user, onLogout }) {
   const location = useLocation();
-  const { lang, toggleLang, t } = useLang();
+  const { lang, t, l } = useLang();
   const storedTrip = readStoredTrip();
   const storedDates = readStoredDates();
   const dates = validFutureDates({ check_in: storedTrip.check_in || storedDates.check_in, check_out: storedTrip.check_out || storedDates.check_out });
@@ -53,7 +54,7 @@ export default function Navbar({ compareCount, user, onLogout }) {
           </Link>
           {user && <Link to="/achievements" className={`${styles.link} ${location.pathname === '/achievements' ? styles.active : ''}`}>
             <Map size={14} />
-            {lang === 'ru' ? 'Достижения' : 'Achievements'}
+            {t('nav_achievements')}
           </Link>}
         </div>
 
@@ -70,13 +71,9 @@ export default function Navbar({ compareCount, user, onLogout }) {
             <SlidersHorizontal size={15} />
             {t('nav_preferences')}
           </Link>
-          {user?.role === 'admin' && <Link to="/admin" className={styles.prefsBtn}>Admin</Link>}
+          {user?.role === 'admin' && <Link to="/admin" className={styles.prefsBtn}>{l('Admin', 'Администрирование')}</Link>}
 
-          {/* Language switcher */}
-          <button className={styles.langBtn} onClick={toggleLang} title="Switch language">
-            <span className={styles.langFlag}>{lang === 'ru' ? '🇷🇺' : '🇬🇧'}</span>
-            <span className={styles.langLabel}>{lang === 'ru' ? 'RU' : 'EN'}</span>
-          </button>
+          <LanguageSelect compact />
 
           {user ? (
             <div className={styles.userBlock}>
@@ -84,7 +81,7 @@ export default function Navbar({ compareCount, user, onLogout }) {
                 {user.name?.[0]?.toUpperCase() || '?'}
               </div>
               <span className={styles.userName}>{user.name}</span>
-              <button className={styles.logoutBtn} onClick={onLogout} title={lang === 'ru' ? 'Выйти' : 'Sign out'}>
+              <button className={styles.logoutBtn} onClick={onLogout} title={t('nav_logout')}>
                 <LogOut size={14} />
               </button>
             </div>

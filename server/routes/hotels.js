@@ -3,6 +3,7 @@ const router = express.Router();
 const { db } = require('../db/database');
 const { v4: uuidv4 } = require('uuid');
 const { analyzeHotel } = require('../services/ai');
+const { localizeHotel } = require('../services/localization');
 const { calculateHotelScore, getUserWeights, recordScoreSnapshot, tripContextKey, SCORE_VERSION } = require('../services/personalization');
 const { normalizePrice, roundMoney } = require('../services/pricing');
 const { selectComparableRate, rateAvailability, marketBenchmark } = require('../services/comparablePricing');
@@ -1130,7 +1131,8 @@ router.get('/:id', requireAuth, requireEmailVerified, requireOnboarding, async (
     const reviews = await db.prepare('SELECT * FROM hotel_reviews WHERE hotel_id = ?').get(req.params.id);
     const scoring = await scoreHotelForUser(hotel, rooms, reviews, prices, req.user.id, req.query.language || 'en', req.query.guests, req.query.trip_purpose);
 
-    res.json({ hotel, images, rooms, prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), reviews, scoring, price_meta: { check_in: checkIn, check_out: checkOut, ttl_hours: CACHE_TTL_HOURS } });
+    const localized = await localizeHotel(hotel, req.query.language, rooms);
+    res.json({ hotel: localized.hotel, images, rooms: localized.rooms, prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), reviews, scoring, price_meta: { check_in: checkIn, check_out: checkOut, ttl_hours: CACHE_TTL_HOURS } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

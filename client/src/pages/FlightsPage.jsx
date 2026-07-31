@@ -327,7 +327,7 @@ function savedTravelTrip() {
 }
 
 export default function FlightsPage() {
-  const { t, lang } = useLang();
+  const { t, lang , l} = useLang();
   const [searchParams, setSearchParams] = useSearchParams();
   const savedDates = savedTravelDates();
   const savedTrip = savedTravelTrip();
@@ -486,9 +486,7 @@ export default function FlightsPage() {
       setAlternativeReturnFlights(inbound.alternatives);
       if (results.length) {
         const best = results[0];
-        setAiMessage(lang === 'ru'
-          ? `Лучший перелёт под ваши предпочтения — **${best.airline} ${best.flight_number}** (Score ${best.fairworth_score}/100). ${best.duration_label}, ${best.stops === 0 ? 'без пересадок' : `${best.stops} пересадка`}, от $${best.price}.`
-          : `Best flight for your preferences — **${best.airline} ${best.flight_number}** (Score ${best.fairworth_score}/100). ${best.duration_label}, ${best.stops === 0 ? 'direct' : `${best.stops} stop`}, from $${best.price}.`);
+        setAiMessage(l(`Best flight for your preferences — **${best.airline} ${best.flight_number}** (Score ${best.fairworth_score}/100). ${best.duration_label}, ${best.stops === 0 ? 'direct' : `${best.stops} stop`}, from $${best.price}.`, `Лучший перелёт под ваши предпочтения — **${best.airline} ${best.flight_number}** (Score ${best.fairworth_score}/100). ${best.duration_label}, ${best.stops === 0 ? 'без пересадок' : `${best.stops} пересадка`}, от $${best.price}.`));
       } else {
         setAiMessage('');
       }
@@ -567,7 +565,7 @@ export default function FlightsPage() {
               <div className={styles.inlineDivider} />
               <div className={styles.inlineField}><span className={styles.inlineLabel}>{t('flight_departure')}</span><input className={styles.inlineInput} type="date" min={formatLocalDate(new Date())} value={departureDate} onChange={e => setDepartureDate(e.target.value)} /></div>
               <div className={styles.inlineDivider} />
-              <div className={styles.inlineField}><span className={styles.inlineLabel}>{lang === 'ru' ? 'Обратно' : 'Return'}</span><input className={styles.inlineInput} type="date" min={departureDate} value={returnDate} onChange={e => setReturnDate(e.target.value)} /></div>
+              <div className={styles.inlineField}><span className={styles.inlineLabel}>{l('Return', 'Обратно')}</span><input className={styles.inlineInput} type="date" min={departureDate} value={returnDate} onChange={e => setReturnDate(e.target.value)} /></div>
               <div className={styles.inlineDivider} />
               <div className={styles.inlineField}><span className={styles.inlineLabel}>{t('results_guests')}</span>
                 <select className={styles.inlineInput} value={passengers} onChange={e => setPassengers(e.target.value)}>
@@ -605,7 +603,7 @@ export default function FlightsPage() {
                 {SORTS.map(opt => (
                   <button key={opt.value} className={`${styles.sortItem} ${sort === opt.value ? styles.sortItemActive : ''}`} onClick={() => setSort(opt.value)}>
                     {sort === opt.value && <span className={styles.sortDot} />}
-                    {lang === 'ru' ? opt.ru : opt.en}
+                    {l(opt.en, opt.ru)}
                   </button>
                 ))}
               </div>
@@ -649,7 +647,7 @@ export default function FlightsPage() {
             <span className={styles.resultsCount}>
               {loading
                 ? t('results_searching')
-                : `${flights.length} ${t('flight_results_count')} ${from} → ${to}${returnDate ? ` · ${returnFlights.length} ${lang === 'ru' ? 'обратно' : 'return'}` : ''}`}
+                : `${flights.length} ${t('flight_results_count')} ${from} → ${to}${returnDate ? ` · ${returnFlights.length} ${l('return', 'обратно')}` : ''}`}
             </span>
           </div>
           {loading && (
@@ -671,7 +669,7 @@ export default function FlightsPage() {
             <div className={styles.flightColumns}>
               <section className={styles.flightColumn}>
                 <div className={styles.flightSectionHeader}>
-                  <span className={styles.flightSectionTitle}>{lang === 'ru' ? 'Туда' : 'Outbound'}</span>
+                  <span className={styles.flightSectionTitle}>{l('Outbound', 'Туда')}</span>
                   <span className={styles.flightSectionNote}>{from} → {to} · {departureDate}</span>
                 </div>
                 <div className={styles.cards}>
@@ -680,7 +678,7 @@ export default function FlightsPage() {
                   ))}
                   {flights.length === 0 && alternativeFlights.length === 0 && (
                     <div className={styles.noResults}>
-                      {lang === 'ru' ? 'Доступных тарифов на выбранную дату не найдено. Попробуйте соседнюю дату или ближайший крупный аэропорт.' : 'No available fares were found for this date. Try a nearby date or major airport.'}
+                      {l('No available fares were found for this date. Try a nearby date or major airport.', 'Доступных тарифов на выбранную дату не найдено. Попробуйте соседнюю дату или ближайший крупный аэропорт.')}
                     </div>
                   )}
                 </div>
@@ -688,12 +686,10 @@ export default function FlightsPage() {
                   <section className={styles.altSection}>
                     <div className={styles.altHeader}>
                       <span className={styles.altTitle}>
-                        {lang === 'ru' ? 'Альтернативные даты туда' : 'Alternative outbound dates'}
+                        {l('Alternative outbound dates', 'Альтернативные даты туда')}
                       </span>
                       <span className={styles.altNote}>
-                        {lang === 'ru'
-                          ? `На ${departureDate} найдено ${flights.length} из 5 вариантов`
-                          : `${flights.length} of 5 options found for ${departureDate}`}
+                        {l(`${flights.length} of 5 options found for ${departureDate}`, `На ${departureDate} найдено ${flights.length} из 5 вариантов`)}
                       </span>
                     </div>
                     <div className={styles.cards}>
@@ -708,7 +704,7 @@ export default function FlightsPage() {
               {returnDate && (
                 <section className={styles.flightColumn}>
                   <div className={styles.flightSectionHeader}>
-                    <span className={styles.flightSectionTitle}>{lang === 'ru' ? 'Обратно' : 'Return'}</span>
+                    <span className={styles.flightSectionTitle}>{l('Return', 'Обратно')}</span>
                     <span className={styles.flightSectionNote}>{to} → {from} · {returnDate}</span>
                   </div>
                   <div className={styles.cards}>
@@ -717,7 +713,7 @@ export default function FlightsPage() {
                     ))}
                     {returnFlights.length === 0 && alternativeReturnFlights.length === 0 && (
                       <div className={styles.noResults}>
-                        {lang === 'ru' ? 'Доступных обратных тарифов на выбранную дату не найдено. Попробуйте соседнюю дату или ближайший крупный аэропорт.' : 'No available return fares were found for this date. Try a nearby date or major airport.'}
+                        {l('No available return fares were found for this date. Try a nearby date or major airport.', 'Доступных обратных тарифов на выбранную дату не найдено. Попробуйте соседнюю дату или ближайший крупный аэропорт.')}
                       </div>
                     )}
                   </div>
@@ -725,12 +721,10 @@ export default function FlightsPage() {
                     <section className={styles.altSection}>
                       <div className={styles.altHeader}>
                         <span className={styles.altTitle}>
-                          {lang === 'ru' ? 'Альтернативные даты обратно' : 'Alternative return dates'}
+                          {l('Alternative return dates', 'Альтернативные даты обратно')}
                         </span>
                         <span className={styles.altNote}>
-                          {lang === 'ru'
-                            ? `На ${returnDate} найдено ${returnFlights.length} из 5 вариантов`
-                            : `${returnFlights.length} of 5 options found for ${returnDate}`}
+                          {l(`${returnFlights.length} of 5 options found for ${returnDate}`, `На ${returnDate} найдено ${returnFlights.length} из 5 вариантов`)}
                         </span>
                       </div>
                       <div className={styles.cards}>

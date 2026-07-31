@@ -76,18 +76,18 @@ const SCORE_FIELD_LABELS = {
   review_integrity: { ru: 'целостность отзывов', en: 'review integrity' },
 };
 
-function scoreFieldLabel(field, isRu) {
+function scoreFieldLabel(field, localize) {
   const [type, value] = String(field).split(':');
   const key = ['amenity', 'travel_tier', 'quality', 'review_freshness'].includes(type) ? value : type;
-  return SCORE_FIELD_LABELS[key]?.[isRu ? 'ru' : 'en'] || String(key || field || '').replace(/_/g, ' ');
+  const label = SCORE_FIELD_LABELS[key];
+  return label ? localize(label.en, label.ru) : String(key || field || '').replace(/_/g, ' ');
 }
 
 export default function HotelDetailPage({ compareList, toggleCompare, isInCompare }) {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { lang } = useLang();
-  const isRu = lang === 'ru';
+  const { lang , l} = useLang();
   const { capabilities, loading: capabilitiesLoading } = useCapabilities();
   const aiReady = capabilities?.ai?.status === 'ready';
   const partnerBookingReady = capabilities?.partner_booking?.status === 'ready';
@@ -160,7 +160,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
       window.removeEventListener('pagehide', sendDwell);
       sendDwell();
     };
-  }, [id, checkIn, checkOut, guests, tripPurpose]);
+  }, [id, checkIn, checkOut, guests, tripPurpose, lang]);
 
   const runAnalysis = async () => {
     if (!aiReady) return;
@@ -171,8 +171,8 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
       setAnalysis(res.data.analysis);
     } catch (e) {
       console.error(e);
-      const message = e.response?.data?.error || e.message || (isRu ? 'Проверьте OPENROUTER_API_KEY в server/.env' : 'Check OPENROUTER_API_KEY in server/.env');
-      setAnalysis({ error: `${isRu ? 'Не удалось получить ИИ-анализ.' : 'Could not generate the AI analysis.'} ${message}` });
+      const message = e.response?.data?.error || e.message || (l('Check OPENROUTER_API_KEY in server/.env', 'Проверьте OPENROUTER_API_KEY в server/.env'));
+      setAnalysis({ error: `${l('Could not generate the AI analysis.', 'Не удалось получить ИИ-анализ.')} ${message}` });
     } finally {
       setAnalysisLoading(false);
     }
@@ -242,7 +242,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
   if (error || !data) return (
     <div className={styles.page}>
       <div style={{ padding: '80px 32px', textAlign: 'center', color: 'var(--red)' }}>
-        {isRu ? 'Ошибка загрузки отеля. Убедитесь что сервер запущен.' : 'Could not load the hotel. Make sure the server is running.'}
+        {l('Could not load the hotel. Make sure the server is running.', 'Ошибка загрузки отеля. Убедитесь что сервер запущен.')}
       </div>
     </div>
   );
@@ -273,7 +273,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
         <div className={styles.heroContent}>
           <div className={styles.breadcrumb}>
             <button type="button" onClick={() => navigate(-1)} className={styles.backLink}>
-              <ArrowLeft size={14} /> {isRu ? 'Результаты поиска' : 'Search results'}
+              <ArrowLeft size={14} /> {l('Search results', 'Результаты поиска')}
             </button>
             <span className={styles.breadSep}>/</span>
             <span>{hotel.name}</span>
@@ -292,7 +292,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                 {reviews && (
                   <span className={styles.heroRating}>
                     <Star size={13} fill="#C9A84C" color="#C9A84C" />
-                    {reviews.rating.toFixed(1)} · {reviews.count.toLocaleString()} {isRu ? 'отзывов' : 'reviews'}
+                    {reviews.rating.toFixed(1)} · {reviews.count.toLocaleString()} {l('reviews', 'отзывов')}
                   </span>
                 )}
               </div>
@@ -301,7 +301,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
               <button className={styles.bookmarkBtn} onClick={toggleBookmark}>
                 {bookmarked ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
               </button>
-              <button className={styles.bookmarkBtn} onClick={togglePriceWatch} disabled={watchBusy} title={isRu ? 'Отслеживать цену' : 'Track price'}>
+              <button className={styles.bookmarkBtn} onClick={togglePriceWatch} disabled={watchBusy} title={l('Track price', 'Отслеживать цену')}>
                 {priceWatch ? <BellOff size={18} /> : <Bell size={18} />}
               </button>
               <button
@@ -309,12 +309,12 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                 onClick={() => toggleCompare({ id: hotel.id, name: hotel.name })}
               >
                 {isInCompare(id) ? <Check size={14} /> : <Plus size={14} />}
-                {isInCompare(id) ? (isRu ? 'В сравнении' : 'Comparing') : (isRu ? 'Сравнить' : 'Compare')}
+                {isInCompare(id) ? (l('Comparing', 'В сравнении')) : (l('Compare', 'Сравнить'))}
               </button>
             </div>
           </div>
           {galleryImages.length > 1 && (
-            <div className={styles.galleryRail} aria-label={isRu ? 'Фотографии отеля' : 'Hotel photos'}>
+            <div className={styles.galleryRail} aria-label={l('Hotel photos', 'Фотографии отеля')}>
               {galleryImages.slice(0, 8).map((image, index) => (
                 <button
                   key={`${image.provider || 'photo'}-${image.url}-${index}`}
@@ -324,7 +324,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                     setActiveImageIndex(index);
                     interactionsApi.track('gallery_view', { hotel_id: id, context: { image_index: index, provider: image.provider || null } }).catch(() => {});
                   }}
-                  aria-label={isRu ? `Фото ${index + 1}` : `Photo ${index + 1}`}
+                  aria-label={l(`Photo ${index + 1}`, `Фото ${index + 1}`)}
                 >
                   <img src={image.url} alt="" loading="lazy" />
                 </button>
@@ -333,7 +333,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
           )}
           {photoAttributions.length > 0 && (
             <div className={styles.photoAttribution}>
-              {isRu ? 'Фото' : 'Photo'}:{' '}
+              {l('Photo', 'Фото')}:{' '}
               {photoAttributions.slice(0, 3).map((item, index) => (
                 <React.Fragment key={item.uri || item.displayName}>
                   {index > 0 ? ', ' : ''}
@@ -361,9 +361,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                 if (t === 'rooms') interactionsApi.track('rooms_open', { hotel_id: id }).catch(() => {});
               }}
             >
-              {(isRu
-                ? { overview: 'Обзор', rooms: 'Номера', prices: 'Цены', reviews: 'Отзывы' }
-                : { overview: 'Overview', rooms: 'Rooms', prices: 'Prices', reviews: 'Reviews' })[t]}
+              {(l({ overview: 'Overview', rooms: 'Rooms', prices: 'Prices', reviews: 'Reviews' }, { overview: 'Обзор', rooms: 'Номера', prices: 'Цены', reviews: 'Отзывы' }))[t]}
             </button>
           ))}
         </div>
@@ -378,8 +376,8 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
             <div className={styles.aiCardHeader}>
               <div className={styles.aiIconWrap}><Sparkles size={18} /></div>
               <div>
-                <div className={styles.aiCardTitle}>{isRu ? 'ИИ-анализ отеля' : 'AI hotel analysis'}</div>
-                <div className={styles.aiCardSub}>{isRu ? 'Персонализировано под ваши предпочтения' : 'Personalised to your preferences'}</div>
+                <div className={styles.aiCardTitle}>{l('AI hotel analysis', 'ИИ-анализ отеля')}</div>
+                <div className={styles.aiCardSub}>{l('Personalised to your preferences', 'Персонализировано под ваши предпочтения')}</div>
               </div>
               {!analysis && (
                 <button
@@ -388,9 +386,9 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                   disabled={analysisLoading || !aiReady}
                 >
                   {analysisLoading ? (
-                    <><span className={styles.spinner} /> {isRu ? 'Анализирую...' : 'Analysing...'}</>
+                    <><span className={styles.spinner} /> {l('Analysing...', 'Анализирую...')}</>
                   ) : (
-                    <><Sparkles size={13} /> {isRu ? 'Запустить анализ' : 'Run analysis'}</>
+                    <><Sparkles size={13} /> {l('Run analysis', 'Запустить анализ')}</>
                   )}
                 </button>
               )}
@@ -400,7 +398,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
 
             {!analysis && !analysisLoading && aiReady && (
               <p className={styles.aiPlaceholder}>
-                {isRu ? 'Нажмите «Запустить анализ» — ИИ оценит отель с учётом ваших предпочтений, порекомендует лучший номер, объяснит риски и выберет оптимального туроператора.' : 'Select “Run analysis” and AI will evaluate this hotel for your preferences, recommend a room, explain risks, and choose the best booking provider.'}
+                {l('Select “Run analysis” and AI will evaluate this hotel for your preferences, recommend a room, explain risks, and choose the best booking provider.', 'Нажмите «Запустить анализ» — ИИ оценит отель с учётом ваших предпочтений, порекомендует лучший номер, объяснит риски и выберет оптимального туроператора.')}
               </p>
             )}
 
@@ -409,19 +407,19 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                 <div className={styles.aiLoadingDots}>
                   <span /><span /><span />
                 </div>
-                <span>{isRu ? 'ИИ анализирует доступные данные отеля и ваши предпочтения…' : 'AI is analysing available hotel data and your preferences…'}</span>
+                <span>{l('AI is analysing available hotel data and your preferences…', 'ИИ анализирует доступные данные отеля и ваши предпочтения…')}</span>
               </div>
             )}
 
             {analysis && !analysis.error && (
               <div className={styles.aiInsights}>
                 <div className={styles.aiInsight}>
-                  <div className={styles.aiInsightLabel}>🏆 {isRu ? 'Вывод' : 'Verdict'}</div>
+                  <div className={styles.aiInsightLabel}>🏆 {l('Verdict', 'Вывод')}</div>
                   <div className={styles.aiInsightText}>{analysis.verdict}</div>
                 </div>
                 {analysis.personalization_match && (
                   <div className={styles.aiInsight}>
-                    <div className={styles.aiInsightLabel}>✅ {isRu ? 'Соответствие вашим предпочтениям' : 'Match with your preferences'}</div>
+                    <div className={styles.aiInsightLabel}>✅ {l('Match with your preferences', 'Соответствие вашим предпочтениям')}</div>
                     <div className={styles.matchTags}>
                       {analysis.personalization_match.matches?.map((m, i) => (
                         <span key={i} className={styles.matchTagGreen}>{m}</span>
@@ -434,21 +432,21 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                 )}
                 {analysis.best_room && (
                   <div className={styles.aiInsight}>
-                    <div className={styles.aiInsightLabel}>🛏 {isRu ? 'Какой номер выбрать' : 'Which room to choose'}</div>
+                    <div className={styles.aiInsightLabel}>🛏 {l('Which room to choose', 'Какой номер выбрать')}</div>
                     <div className={styles.aiInsightText}>
-                      <strong>{analysis.best_room.name}</strong> ({isRu ? 'от' : 'from'} ${formatAmount(analysis.best_room.price_per_night, lang)}/{isRu ? 'ночь' : 'night'}) — {analysis.best_room.why}
+                      <strong>{analysis.best_room.name}</strong> ({l('from', 'от')} ${formatAmount(analysis.best_room.price_per_night, lang)}/{l('night', 'ночь')}) — {analysis.best_room.why}
                     </div>
                   </div>
                 )}
                 {analysis.booking_timing && (
                   <div className={styles.aiInsight}>
-                    <div className={styles.aiInsightLabel}>📅 {isRu ? 'Когда бронировать' : 'When to book'}</div>
+                    <div className={styles.aiInsightLabel}>📅 {l('When to book', 'Когда бронировать')}</div>
                     <div className={styles.aiInsightText}>{analysis.booking_timing}</div>
                   </div>
                 )}
                 {analysis.warnings?.length > 0 && (
                   <div className={styles.aiInsight}>
-                    <div className={styles.aiInsightLabel}>⚠️ {isRu ? 'На что обратить внимание' : 'Things to consider'}</div>
+                    <div className={styles.aiInsightLabel}>⚠️ {l('Things to consider', 'На что обратить внимание')}</div>
                     {analysis.warnings.map((w, i) => (
                       <div key={i} className={styles.aiInsightText}>• {w}</div>
                     ))}
@@ -456,13 +454,13 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                 )}
                 {analysis.weather_note && (
                   <div className={styles.aiInsight}>
-                    <div className={styles.aiInsightLabel}>🌡 {isRu ? 'Погода и сезон' : 'Weather and season'}</div>
+                    <div className={styles.aiInsightLabel}>🌡 {l('Weather and season', 'Погода и сезон')}</div>
                     <div className={styles.aiInsightText}>{analysis.weather_note}</div>
                   </div>
                 )}
                 {analysis.best_operator && (
                   <div className={styles.aiInsight}>
-                    <div className={styles.aiInsightLabel}>💡 {isRu ? 'Рекомендуемый оператор' : 'Recommended provider'}</div>
+                    <div className={styles.aiInsightLabel}>💡 {l('Recommended provider', 'Рекомендуемый оператор')}</div>
                     <div className={styles.aiInsightText}>
                       <strong>{analysis.best_operator.name}</strong> — {analysis.best_operator.why}
                     </div>
@@ -478,7 +476,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
 
           {/* Description */}
           <div className={styles.descCard}>
-            <h2 className={styles.sectionTitle}>{isRu ? 'Об отеле' : 'About the hotel'}</h2>
+            <h2 className={styles.sectionTitle}>{l('About the hotel', 'Об отеле')}</h2>
             <p className={styles.descText}>{hotel.description}</p>
             <div className={styles.amenityGrid}>
               {(showAllAmenities ? amenities : amenities.slice(0, 24)).map((a, index) => (
@@ -491,25 +489,25 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
             {amenities.length > 24 && (
               <button type="button" className={styles.amenitiesToggle} onClick={() => setShowAllAmenities(value => !value)}>
                 {showAllAmenities
-                  ? (isRu ? 'Скрыть часть удобств' : 'Show fewer amenities')
-                  : (isRu ? `Показать все удобства (${amenities.length})` : `Show all amenities (${amenities.length})`)}
+                  ? (l('Show fewer amenities', 'Скрыть часть удобств'))
+                  : (l(`Show all amenities (${amenities.length})`, `Показать все удобства (${amenities.length})`))}
               </button>
             )}
           </div>
 
           {/* Rooms */}
           <div className={styles.roomsSection}>
-            <h2 className={styles.sectionTitle}>{isRu ? 'Номера и цены' : 'Rooms and prices'}</h2>
+            <h2 className={styles.sectionTitle}>{l('Rooms and prices', 'Номера и цены')}</h2>
             <div className={styles.roomsGrid}>
               {rooms?.map(room => {
                 const isRecommended = analysis?.best_room?.name === room.name;
                 return (
                   <div key={room.id} className={`${styles.roomCard} ${isRecommended ? styles.roomCardBest : ''}`}>
-                    {isRecommended && <div className={styles.roomBestBadge}>✦ {isRu ? 'Рекомендация ИИ' : 'AI recommendation'}</div>}
+                    {isRecommended && <div className={styles.roomBestBadge}>✦ {l('AI recommendation', 'Рекомендация ИИ')}</div>}
                     <div className={styles.roomName}>{room.name}</div>
                     <div className={styles.roomFeatures}>
-                      <span>👥 {room.max_guests} {isRu ? 'чел.' : 'guests'}</span>
-                      <span>📐 {room.size_sqm} {isRu ? 'м²' : 'm²'}</span>
+                      <span>👥 {room.max_guests} {l('guests', 'чел.')}</span>
+                      <span>📐 {room.size_sqm} {l('m²', 'м²')}</span>
                       <span>🌅 {room.view_type}</span>
                     </div>
                     {stringList(room.amenities).slice(0, 3).map((a, index) => (
@@ -517,8 +515,8 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                     ))}
                     <div className={styles.roomPrice}>
                       <span className={styles.roomPriceVal}>${formatAmount(room.base_price_per_night, lang)}</span>
-                      <span className={styles.roomPricePer}>/{isRu ? 'ночь' : 'night'}</span>
-                      <span className={styles.roomPriceTotal}>· {isRu ? 'итого' : 'total'} ${formatAmount(room.base_price_per_night * nights, lang)}</span>
+                      <span className={styles.roomPricePer}>/{l('night', 'ночь')}</span>
+                      <span className={styles.roomPriceTotal}>· {l('total', 'итого')} ${formatAmount(room.base_price_per_night * nights, lang)}</span>
                     </div>
                   </div>
                 );
@@ -529,13 +527,13 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
           {/* Reviews breakdown */}
           {reviews && (
             <div className={styles.reviewsCard}>
-              <h2 className={styles.sectionTitle}>{isRu ? 'Оценки гостей' : 'Guest scores'}</h2>
+              <h2 className={styles.sectionTitle}>{l('Guest scores', 'Оценки гостей')}</h2>
               <div className={styles.reviewsGrid}>
                 {[
-                  { label: isRu ? 'Чистота' : 'Cleanliness', val: reviews.cleanliness },
-                  { label: isRu ? 'Сервис' : 'Service', val: reviews.service },
-                  { label: isRu ? 'Расположение' : 'Location', val: reviews.location_score },
-                  { label: isRu ? 'Ценность' : 'Value', val: reviews.value },
+                  { label: l('Cleanliness', 'Чистота'), val: reviews.cleanliness },
+                  { label: l('Service', 'Сервис'), val: reviews.service },
+                  { label: l('Location', 'Расположение'), val: reviews.location_score },
+                  { label: l('Value', 'Ценность'), val: reviews.value },
                 ].map(r => (
                   <div key={r.label} className={styles.reviewRow}>
                     <span className={styles.reviewLabel}>{r.label}</span>
@@ -569,9 +567,9 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                 {analysis?.score_breakdown ? (
                   <>
                     {[
-                      { label: isRu ? 'Ценность' : 'Value', val: analysis.score_breakdown.value },
-                      { label: isRu ? 'Качество' : 'Quality', val: analysis.score_breakdown.quality },
-                      { label: isRu ? 'Доверие' : 'Trust', val: analysis.score_breakdown.trust },
+                      { label: l('Value', 'Ценность'), val: analysis.score_breakdown.value },
+                      { label: l('Quality', 'Качество'), val: analysis.score_breakdown.quality },
+                      { label: l('Trust', 'Доверие'), val: analysis.score_breakdown.trust },
                     ].map(s => (
                       <div key={s.label}>
                         <div className={styles.sbRow}>
@@ -585,11 +583,11 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                       color: analysis.score_breakdown.risk === 'low' ? 'var(--green)' : analysis.score_breakdown.risk === 'high' ? 'var(--red)' : '#B8860B',
                       background: analysis.score_breakdown.risk === 'low' ? 'var(--green-bg)' : analysis.score_breakdown.risk === 'high' ? 'var(--red-bg)' : 'var(--gold-bg)',
                     }}>
-                      {isRu ? 'Риск' : 'Risk'}: {(isRu ? { low: 'Низкий', medium: 'Средний', high: 'Высокий' } : { low: 'Low', medium: 'Medium', high: 'High' })[analysis.score_breakdown.risk] || '—'}
+                      {l('Risk', 'Риск')}: {(l({ low: 'Low', medium: 'Medium', high: 'High' }, { low: 'Низкий', medium: 'Средний', high: 'Высокий' }))[analysis.score_breakdown.risk] || '—'}
                     </div>
                   </>
                 ) : (
-                  <p className={styles.sbHint}>{isRu ? 'Запустите ИИ-анализ для детальной оценки' : 'Run AI analysis for a detailed score'}</p>
+                  <p className={styles.sbHint}>{l('Run AI analysis for a detailed score', 'Запустите ИИ-анализ для детальной оценки')}</p>
                 )}
               </div>
             </div>
@@ -598,105 +596,101 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
 
             {data.scoring && (
               <div style={{ fontSize: 12, lineHeight: 1.55, color: 'var(--text-secondary)' }}>
-                <strong>{isRu ? 'Почему такой Score' : 'Why this Score'}</strong>
+                <strong>{l('Why this Score', 'Почему такой Score')}</strong>
                 <p>{data.scoring.score_explanation}</p>
-                <div>{isRu ? 'Версия формулы' : 'Formula version'}: {data.scoring.score_version} · {isRu ? 'рассчитано' : 'calculated'}: {new Date(data.scoring.calculated_at).toLocaleString(lang)}</div>
-                <div>{isRu ? 'Полнота данных' : 'Data completeness'}: {data.scoring.data_completeness?.score}%</div>
-                <div>{isRu ? 'Уверенность в индексе' : 'Score reliability'}: {data.scoring.score_reliability}% ({isRu ? { high: 'высокая', medium: 'средняя', low: 'низкая' }[data.scoring.score_reliability_level] : { high: 'high', medium: 'medium', low: 'low' }[data.scoring.score_reliability_level]})</div>
-                <div>{isRu ? 'Контекстное обучение' : 'Contextual learning'}: {Math.round((data.scoring.calculation_parameters?.contextual_learning_confidence || 0) * 100)}%</div>
-                {(data.scoring.calculation_parameters?.active_learning_contexts || []).length > 0 && <div>{isRu ? 'Применённые контексты' : 'Applied contexts'}: {data.scoring.calculation_parameters.active_learning_contexts.join(', ')}</div>}
-                <div>{isRu ? 'Оценка для сортировки' : 'Adjusted ranking score'}: {data.scoring.adjusted_score}/100</div>
-                <div>{isRu ? 'Уверенность в цене' : 'Price confidence'}: {data.scoring.price_confidence}% ({isRu ? { high: 'высокая', medium: 'средняя', low: 'низкая' }[data.scoring.price_confidence_level] : data.scoring.price_confidence_level})</div>
-                <div>{isRu ? 'Допущен к AI Top Pick' : 'Eligible for AI Top Pick'}: {data.scoring.top_pick_eligible ? (isRu ? 'да' : 'yes') : (isRu ? 'нет' : 'no')}</div>
+                <div>{l('Formula version', 'Версия формулы')}: {data.scoring.score_version} · {l('calculated', 'рассчитано')}: {new Date(data.scoring.calculated_at).toLocaleString(lang)}</div>
+                <div>{l('Data completeness', 'Полнота данных')}: {data.scoring.data_completeness?.score}%</div>
+                <div>{l('Score reliability', 'Уверенность в индексе')}: {data.scoring.score_reliability}% ({l({ high: 'high', medium: 'medium', low: 'low' }[data.scoring.score_reliability_level], { high: 'высокая', medium: 'средняя', low: 'низкая' }[data.scoring.score_reliability_level])})</div>
+                <div>{l('Contextual learning', 'Контекстное обучение')}: {Math.round((data.scoring.calculation_parameters?.contextual_learning_confidence || 0) * 100)}%</div>
+                {(data.scoring.calculation_parameters?.active_learning_contexts || []).length > 0 && <div>{l('Applied contexts', 'Применённые контексты')}: {data.scoring.calculation_parameters.active_learning_contexts.join(', ')}</div>}
+                <div>{l('Adjusted ranking score', 'Оценка для сортировки')}: {data.scoring.adjusted_score}/100</div>
+                <div>{l('Price confidence', 'Уверенность в цене')}: {data.scoring.price_confidence}% ({l(data.scoring.price_confidence_level, { high: 'высокая', medium: 'средняя', low: 'низкая' }[data.scoring.price_confidence_level])})</div>
+                <div>{l('Eligible for AI Top Pick', 'Допущен к AI Top Pick')}: {data.scoring.top_pick_eligible ? (l('yes', 'да')) : (l('no', 'нет'))}</div>
                 {data.scoring.room_preference_match && (
                   <div style={{ marginTop: 8 }}>
-                    <strong>{isRu ? 'Совпадение номера' : 'Room preference match'}</strong>
-                    <div>{isRu ? 'Тип' : 'Type'}: {data.scoring.room_preference_match.type?.score == null ? '—' : `${data.scoring.room_preference_match.type.wanted} → ${data.scoring.room_preference_match.type.actual}: ${data.scoring.room_preference_match.type.score}/100`}</div>
-                    <div>{isRu ? 'Вид' : 'View'}: {data.scoring.room_preference_match.view?.score == null ? '—' : `${data.scoring.room_preference_match.view.wanted} → ${data.scoring.room_preference_match.view.actual}: ${data.scoring.room_preference_match.view.score}/100`}</div>
+                    <strong>{l('Room preference match', 'Совпадение номера')}</strong>
+                    <div>{l('Type', 'Тип')}: {data.scoring.room_preference_match.type?.score == null ? '—' : `${data.scoring.room_preference_match.type.wanted} → ${data.scoring.room_preference_match.type.actual}: ${data.scoring.room_preference_match.type.score}/100`}</div>
+                    <div>{l('View', 'Вид')}: {data.scoring.room_preference_match.view?.score == null ? '—' : `${data.scoring.room_preference_match.view.wanted} → ${data.scoring.room_preference_match.view.actual}: ${data.scoring.room_preference_match.view.score}/100`}</div>
                   </div>
                 )}
                 {data.scoring.quality_breakdown && (
                   <div style={{ marginTop: 8 }}>
-                    <strong>{isRu ? 'Качество для вашего типа поездки' : 'Quality for your travel style'}: {data.scoring.score_breakdown?.quality ?? '—'}/100</strong>
-                    <div>{isRu ? 'Профили' : 'Profiles'}: {(data.scoring.quality_profiles || []).join(', ')}</div>
+                    <strong>{l('Quality for your travel style', 'Качество для вашего типа поездки')}: {data.scoring.score_breakdown?.quality ?? '—'}/100</strong>
+                    <div>{l('Profiles', 'Профили')}: {(data.scoring.quality_profiles || []).join(', ')}</div>
                     {Object.entries(data.scoring.quality_breakdown).map(([key, value]) => value === null ? null : (
-                      <div key={key}>{scoreFieldLabel(`quality:${key}`, isRu)}: {value}/100 · {isRu ? 'вес' : 'weight'} {Math.round((data.scoring.quality_weights?.[key] || 0) * 100)}%</div>
+                      <div key={key}>{scoreFieldLabel(`quality:${key}`, l)}: {value}/100 · {l('weight', 'вес')} {Math.round((data.scoring.quality_weights?.[key] || 0) * 100)}%</div>
                     ))}
                   </div>
                 )}
                 {data.scoring.review_freshness_breakdown && (
                   <div style={{ marginTop: 8 }}>
-                    <strong>{isRu ? 'Актуальность отзывов' : 'Review freshness'}: {data.scoring.quality_breakdown?.review_freshness ?? '—'}/100</strong>
-                    <div>{isRu ? 'Надёжность данных о свежести' : 'Freshness data reliability'}: {data.scoring.review_freshness_reliability}%</div>
-                    <div>{isRu ? 'Последний отзыв' : 'Latest review'}: {data.scoring.latest_review_at ? new Date(data.scoring.latest_review_at).toLocaleDateString(lang) : '—'}</div>
-                    <div>{isRu ? 'Свежие отзывы за 12 месяцев' : 'Reviews from the last 12 months'}: {data.scoring.recent_review_share === null || data.scoring.recent_review_share === undefined ? '—' : `${Math.round(data.scoring.recent_review_share * 100)}%`}</div>
-                    <div>{isRu ? 'Динамика рейтинга' : 'Rating trend'}: {data.scoring.rating_trend === null || data.scoring.rating_trend === undefined ? '—' : `${data.scoring.rating_trend > 0 ? '+' : ''}${Number(data.scoring.rating_trend).toFixed(1)}`} ({(isRu ? { sharp_decline: 'резкое ухудшение', decline: 'ухудшение', stable: 'стабильно', improvement: 'улучшение', sharp_improvement: 'резкое улучшение', unknown: 'нет данных' } : { sharp_decline: 'sharp decline', decline: 'decline', stable: 'stable', improvement: 'improvement', sharp_improvement: 'sharp improvement', unknown: 'unknown' })[data.scoring.rating_trend_direction] || '—'})</div>
+                    <strong>{l('Review freshness', 'Актуальность отзывов')}: {data.scoring.quality_breakdown?.review_freshness ?? '—'}/100</strong>
+                    <div>{l('Freshness data reliability', 'Надёжность данных о свежести')}: {data.scoring.review_freshness_reliability}%</div>
+                    <div>{l('Latest review', 'Последний отзыв')}: {data.scoring.latest_review_at ? new Date(data.scoring.latest_review_at).toLocaleDateString(lang) : '—'}</div>
+                    <div>{l('Reviews from the last 12 months', 'Свежие отзывы за 12 месяцев')}: {data.scoring.recent_review_share === null || data.scoring.recent_review_share === undefined ? '—' : `${Math.round(data.scoring.recent_review_share * 100)}%`}</div>
+                    <div>{l('Rating trend', 'Динамика рейтинга')}: {data.scoring.rating_trend === null || data.scoring.rating_trend === undefined ? '—' : `${data.scoring.rating_trend > 0 ? '+' : ''}${Number(data.scoring.rating_trend).toFixed(1)}`} ({(l({ sharp_decline: 'sharp decline', decline: 'decline', stable: 'stable', improvement: 'improvement', sharp_improvement: 'sharp improvement', unknown: 'unknown' }, { sharp_decline: 'резкое ухудшение', decline: 'ухудшение', stable: 'стабильно', improvement: 'улучшение', sharp_improvement: 'резкое улучшение', unknown: 'нет данных' }))[data.scoring.rating_trend_direction] || '—'})</div>
                     {Object.entries(data.scoring.review_freshness_breakdown).map(([key, value]) => value === null ? null : (
-                      <div key={key}>{scoreFieldLabel(`review_freshness:${key}`, isRu)}: {value}/100</div>
+                      <div key={key}>{scoreFieldLabel(`review_freshness:${key}`, l)}: {value}/100</div>
                     ))}
                   </div>
                 )}
                 {data.scoring.review_confidence_breakdown && (
                   <div style={{ marginTop: 8 }}>
-                    <strong>{isRu ? 'Доверие к отзывам' : 'Review confidence'}: {data.scoring.review_confidence ?? '—'}/100</strong>
-                    <div>{isRu ? 'Надёжность оценки доверия' : 'Confidence assessment reliability'}: {data.scoring.review_confidence_reliability}%</div>
-                    <div>{isRu ? 'Площадок с отзывами' : 'Review sources'}: {data.scoring.review_source_count || '—'}</div>
+                    <strong>{l('Review confidence', 'Доверие к отзывам')}: {data.scoring.review_confidence ?? '—'}/100</strong>
+                    <div>{l('Confidence assessment reliability', 'Надёжность оценки доверия')}: {data.scoring.review_confidence_reliability}%</div>
+                    <div>{l('Review sources', 'Площадок с отзывами')}: {data.scoring.review_source_count || '—'}</div>
                     {Object.entries(data.scoring.review_confidence_breakdown).map(([key, value]) => (
-                      <div key={key}>{scoreFieldLabel(key, isRu)}: {value === null ? (isRu ? 'нет данных' : 'no data') : `${value}/100`} {value !== null && `· ${isRu ? 'вес' : 'weight'} ${Math.round((data.scoring.review_confidence_weights?.[key] || 0) * 100)}%`}</div>
+                      <div key={key}>{scoreFieldLabel(key, l)}: {value === null ? (l('no data', 'нет данных')) : `${value}/100`} {value !== null && `· ${l('weight', 'вес')} ${Math.round((data.scoring.review_confidence_weights?.[key] || 0) * 100)}%`}</div>
                     ))}
-                    <p>{isRu
-                      ? 'Неизвестные признаки структуры исключаются из расчёта; процент надёжности показывает полноту проверки.'
-                      : 'Unknown review-structure signals are excluded; the reliability percentage shows how complete the assessment is.'}</p>
+                    <p>{l('Unknown review-structure signals are excluded; the reliability percentage shows how complete the assessment is.', 'Неизвестные признаки структуры исключаются из расчёта; процент надёжности показывает полноту проверки.')}</p>
                   </div>
                 )}
                 {data.scoring.travel_tier_score !== null && data.scoring.travel_tier_score !== undefined && (
                   <div style={{ marginTop: 8 }}>
-                    <strong>{isRu ? 'Соответствие классу отдыха' : 'Travel tier match'}: {data.scoring.travel_tier_score}/100</strong>
+                    <strong>{l('Travel tier match', 'Соответствие классу отдыха')}: {data.scoring.travel_tier_score}/100</strong>
                     {Object.entries(data.scoring.travel_tier_breakdown || {}).map(([key, value]) => value === null ? null : (
                       <div key={key}>
-                        {(isRu ? {
-                          star_fit: 'Звёздность', verified_quality: 'Подтверждённое качество', service: 'Сервис',
-                          room_size: 'Размер номера', premium_amenities: 'Премиальные удобства', brand: 'Бренд',
-                          room_category: 'Категория номера', room_condition: 'Состояние номера',
-                          breakfast_quality: 'Качество завтрака', luxury_review_sentiment: 'Luxury-семантика отзывов',
-                          renovation_freshness: 'Свежесть ремонта', market_price: 'Позиция цены',
-                        } : {
+                        {(l({
                           star_fit: 'Star rating', verified_quality: 'Verified quality', service: 'Service',
                           room_size: 'Room size', premium_amenities: 'Premium amenities', brand: 'Brand',
                           room_category: 'Room category', room_condition: 'Room condition',
                           breakfast_quality: 'Breakfast quality', luxury_review_sentiment: 'Luxury review sentiment',
                           renovation_freshness: 'Renovation freshness', market_price: 'Market price position',
-                        })[key] || key}: {value}/100
+                        }, {
+                          star_fit: 'Звёздность', verified_quality: 'Подтверждённое качество', service: 'Сервис',
+                          room_size: 'Размер номера', premium_amenities: 'Премиальные удобства', brand: 'Бренд',
+                          room_category: 'Категория номера', room_condition: 'Состояние номера',
+                          breakfast_quality: 'Качество завтрака', luxury_review_sentiment: 'Luxury-семантика отзывов',
+                          renovation_freshness: 'Свежесть ремонта', market_price: 'Позиция цены',
+                        }))[key] || key}: {value}/100
                       </div>
                     ))}
                   </div>
                 )}
-                <div>{isRu ? 'Источник цены' : 'Price source'}: {data.scoring.price_details?.provider || data.scoring.price_details?.source || '—'}</div>
-                <div>{isRu ? 'Валюта' : 'Currency'}: {data.scoring.price_details?.currency || '—'} · {isRu ? 'Налоги' : 'Taxes'}: {({ included: isRu ? 'включены' : 'included', not_included: isRu ? 'не включены' : 'not included', unknown: isRu ? 'неизвестно' : 'unknown' })[data.scoring.price_details?.tax_status || 'unknown']}</div>
-                <div>{isRu ? 'За ночь: база / сборы / итог' : 'Per night: base / taxes & fees / total'}: {formatAmount(data.scoring.price_details?.base_price, lang)} / {formatAmount(data.scoring.price_details?.taxes_and_fees_per_night, lang)} / {formatAmount(data.scoring.price_details?.nightly_total_price, lang)}</div>
-                <div>{isRu ? 'Итого за период' : 'Stay total'}: {formatAmount(data.scoring.price_details?.stay_total_price, lang)} {data.scoring.price_details?.currency || ''}</div>
-                <div>{isRu ? 'Сопоставимая цена для индекса' : 'Comparable price used by the index'}: {formatAmount(data.scoring.comparable_price, lang)} {data.scoring.price_details?.currency || ''} {isRu ? 'за ночь' : 'per night'}</div>
-                <div>{isRu ? 'Условия тарифа' : 'Rate conditions'}: {data.scoring.price_details?.refundable ? (isRu ? 'возвратный' : 'refundable') : (isRu ? 'невозвратный' : 'non-refundable')} · {data.scoring.price_details?.includes_breakfast ? (isRu ? 'завтрак включён' : 'breakfast included') : (isRu ? 'без завтрака' : 'breakfast not included')} · {data.scoring.price_details?.requested_guests || guests} {isRu ? 'гост.' : 'guests'}</div>
-                {data.scoring.price_details?.comparison_adjustments?.length > 0 && <div>{isRu ? 'Поправки сопоставимости' : 'Comparability adjustments'}: {data.scoring.price_details.comparison_adjustments.join(', ')}</div>}
+                <div>{l('Price source', 'Источник цены')}: {data.scoring.price_details?.provider || data.scoring.price_details?.source || '—'}</div>
+                <div>{l('Currency', 'Валюта')}: {data.scoring.price_details?.currency || '—'} · {l('Taxes', 'Налоги')}: {({ included: l('included', 'включены'), not_included: l('not included', 'не включены'), unknown: l('unknown', 'неизвестно') })[data.scoring.price_details?.tax_status || 'unknown']}</div>
+                <div>{l('Per night: base / taxes & fees / total', 'За ночь: база / сборы / итог')}: {formatAmount(data.scoring.price_details?.base_price, lang)} / {formatAmount(data.scoring.price_details?.taxes_and_fees_per_night, lang)} / {formatAmount(data.scoring.price_details?.nightly_total_price, lang)}</div>
+                <div>{l('Stay total', 'Итого за период')}: {formatAmount(data.scoring.price_details?.stay_total_price, lang)} {data.scoring.price_details?.currency || ''}</div>
+                <div>{l('Comparable price used by the index', 'Сопоставимая цена для индекса')}: {formatAmount(data.scoring.comparable_price, lang)} {data.scoring.price_details?.currency || ''} {l('per night', 'за ночь')}</div>
+                <div>{l('Rate conditions', 'Условия тарифа')}: {data.scoring.price_details?.refundable ? (l('refundable', 'возвратный')) : (l('non-refundable', 'невозвратный'))} · {data.scoring.price_details?.includes_breakfast ? (l('breakfast included', 'завтрак включён')) : (l('breakfast not included', 'без завтрака'))} · {data.scoring.price_details?.requested_guests || guests} {l('guests', 'гост.')}</div>
+                {data.scoring.price_details?.comparison_adjustments?.length > 0 && <div>{l('Comparability adjustments', 'Поправки сопоставимости')}: {data.scoring.price_details.comparison_adjustments.join(', ')}</div>}
                 {data.scoring.market_price_benchmark && (
                   <div style={{ marginTop: 6 }}>
-                    <strong>{isRu ? 'Рыночный ориентир' : 'Market benchmark'}</strong>
-                    <div>{isRu ? 'Сегмент' : 'Segment'}: {data.scoring.market_price_benchmark.segment} · {isRu ? 'отелей в выборке' : 'sample'}: {data.scoring.market_price_benchmark.sample_size}</div>
-                    <div>P25 / median / P75: {formatAmount(data.scoring.market_price_benchmark.p25, lang)} / {formatAmount(data.scoring.market_price_benchmark.median, lang)} / {formatAmount(data.scoring.market_price_benchmark.p75, lang)} {data.scoring.market_price_benchmark.currency}</div>
+                    <strong>{l('Market benchmark', 'Рыночный ориентир')}</strong>
+                    <div>{l('Segment', 'Сегмент')}: {data.scoring.market_price_benchmark.segment} · {l('sample', 'отелей в выборке')}: {data.scoring.market_price_benchmark.sample_size}</div>
+                    <div>{l('P25 / median / P75', 'P25 / медиана / P75')}: {formatAmount(data.scoring.market_price_benchmark.p25, lang)} / {formatAmount(data.scoring.market_price_benchmark.median, lang)} / {formatAmount(data.scoring.market_price_benchmark.p75, lang)} {data.scoring.market_price_benchmark.currency}</div>
                   </div>
                 )}
-                <div>{isRu ? 'Обновлено' : 'Updated'}: {data.scoring.price_details?.updated_at ? new Date(data.scoring.price_details.updated_at).toLocaleString(lang) : '—'}</div>
+                <div>{l('Updated', 'Обновлено')}: {data.scoring.price_details?.updated_at ? new Date(data.scoring.price_details.updated_at).toLocaleString(lang) : '—'}</div>
                 {data.scoring.price_details?.price_warnings?.length > 0 && <div style={{ color: 'var(--red)' }}>⚠ {data.scoring.price_details.price_warnings.join(', ')}</div>}
-                <div>{isRu ? 'Доступные признаки' : 'Available features'}: {data.scoring.feature_availability?.available.join(', ')}</div>
-                <div>{isRu ? 'Недоступные признаки' : 'Unavailable features'}: {data.scoring.feature_availability?.unavailable.join(', ')}</div>
+                <div>{l('Available features', 'Доступные признаки')}: {data.scoring.feature_availability?.available.join(', ')}</div>
+                <div>{l('Unavailable features', 'Недоступные признаки')}: {data.scoring.feature_availability?.unavailable.join(', ')}</div>
                 {data.scoring.unknown_preference_data?.length > 0 && (
                   <div className={styles.scoreUnknown}>
-                    <strong>{isRu ? 'Не подтверждено провайдером' : 'Not confirmed by the provider'}</strong>
-                    <p>{isRu
-                      ? 'Эти параметры исключены из расчёта и не снижают Score:'
-                      : 'These items were excluded from the calculation and do not reduce the Score:'}</p>
+                    <strong>{l('Not confirmed by the provider', 'Не подтверждено провайдером')}</strong>
+                    <p>{l('These items were excluded from the calculation and do not reduce the Score:', 'Эти параметры исключены из расчёта и не снижают Score:')}</p>
                     <ul>
-                      {data.scoring.unknown_preference_data.map(field => <li key={field}>{scoreFieldLabel(field, isRu)}</li>)}
+                      {data.scoring.unknown_preference_data.map(field => <li key={field}>{scoreFieldLabel(field, l)}</li>)}
                     </ul>
                   </div>
                 )}
@@ -708,8 +702,8 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
             {/* Operators */}
             <div className={styles.opSection}>
               <div className={styles.opHeader}>
-                {isRu ? 'Где бронировать' : 'Where to book'}
-                {livePrices.length > 0 && <span className={styles.livePriceBadge}>Xotelo live</span>}
+                {l('Where to book', 'Где бронировать')}
+                {livePrices.length > 0 && <span className={styles.livePriceBadge}>{l('Xotelo live', 'Актуальная цена Xotelo')}</span>}
               </div>
               {prices?.map(p => (
                 <div key={p.id} className={`${styles.opRow} ${p.id === officialPrice?.id ? styles.opRowBest : ''}`}>
@@ -717,20 +711,20 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                     <div className={styles.opName}>{p.operator}</div>
                     <div className={styles.opMeta}>
                       {p.source === 'xotelo'
-                        ? `${p.currency || 'USD'} · ${p.tax_status === 'included' ? (isRu ? 'налоги включены' : 'taxes included') : p.tax_status === 'not_included' ? (isRu ? 'налоги не включены' : 'taxes not included') : (isRu ? 'налоги неизвестны' : 'tax status unknown')} · ${p.provider_code || 'provider'}`
-                        : `${p.includes_breakfast ? (isRu ? '🍳 Завтрак' : '🍳 Breakfast') : ''}${p.cancellation_policy === 'free_cancellation' ? (isRu ? ' · Бесплатная отмена' : ' · Free cancellation') : (isRu ? ' · Невозвратный' : ' · Non-refundable')}`}
+                        ? `${p.currency || 'USD'} · ${p.tax_status === 'included' ? (l('taxes included', 'налоги включены')) : p.tax_status === 'not_included' ? (l('taxes not included', 'налоги не включены')) : (l('tax status unknown', 'налоги неизвестны'))} · ${p.provider_code || 'provider'}`
+                        : `${p.includes_breakfast ? (l('🍳 Breakfast', '🍳 Завтрак')) : ''}${p.cancellation_policy === 'free_cancellation' ? (l(' · Free cancellation', ' · Бесплатная отмена')) : (l(' · Non-refundable', ' · Невозвратный'))}`}
                     </div>
                   </div>
                   <div className={styles.opRight}>
                     <div className={styles.opPrice}>${formatAmount(p.price_per_night, lang)}</div>
                     {p.id === officialPrice?.id && (
-                      <span className={styles.opBestBadge}>{isRu ? 'Лучшая' : 'Best'}</span>
+                      <span className={styles.opBestBadge}>{l('Best', 'Лучшая')}</span>
                     )}
                     {p.source === 'xotelo' && (
-                      <span className={styles.opPackageBadge}>Live</span>
+                      <span className={styles.opPackageBadge}>{l('Live', 'Актуальная')}</span>
                     )}
                     {p.operator === 'Expedia' && p.source !== 'xotelo' && (
-                      <span className={styles.opPackageBadge}>{isRu ? 'Пакет' : 'Package'}</span>
+                      <span className={styles.opPackageBadge}>{l('Package', 'Пакет')}</span>
                     )}
                   </div>
                 </div>
@@ -741,15 +735,15 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
 
             {/* Total */}
             <div className={styles.totalRow}>
-              <span>{isRu ? `Итого за ${nights} ночей` : `Total for ${nights} nights`}</span>
+              <span>{l(`Total for ${nights} nights`, `Итого за ${nights} ночей`)}</span>
               <span className={styles.totalPrice}>${formatAmount(officialPrice?.stay_total_price || (officialPrice?.price_per_night || 0) * nights, lang)}</span>
             </div>
 
             <button className={styles.bookBtn} data-testid="continue-at-provider" onClick={handleBooking} disabled={!partnerBookingReady || (!officialPrice?.url && !hotel.tripadvisor_url)}>
-              {partnerBookingReady ? <>{isRu ? 'Перейти к партнёру' : 'Continue at provider'} — ${formatAmount(officialPrice?.price_per_night || 0, lang)}/{isRu ? 'ночь' : 'night'}</> : (isRu ? 'Бронирование скоро будет доступно' : 'Booking will be soon')}
+              {partnerBookingReady ? <>{l('Continue at provider', 'Перейти к партнёру')} — ${formatAmount(officialPrice?.price_per_night || 0, lang)}/{l('night', 'ночь')}</> : (l('Booking will be soon', 'Бронирование скоро будет доступно'))}
             </button>
             <p className={styles.bookNote}>
-              {!partnerBookingReady ? (isRu ? 'Сейчас Fairworth показывает и сравнивает реальные цены, но не перенаправляет к бронированию.' : 'Fairworth currently displays and compares live prices but does not redirect to booking.') : livePrices.length > 0 ? (isRu ? `Цены Xotelo · обновление до ${data.price_meta?.ttl_hours || 12} часов` : `Xotelo prices · refreshed within ${data.price_meta?.ttl_hours || 12} hours`) : (isRu ? 'Проверьте итоговые условия у поставщика' : 'Confirm final terms with the provider')}
+              {!partnerBookingReady ? (l('Fairworth currently displays and compares live prices but does not redirect to booking.', 'Сейчас Fairworth показывает и сравнивает реальные цены, но не перенаправляет к бронированию.')) : livePrices.length > 0 ? (l(`Xotelo prices · refreshed within ${data.price_meta?.ttl_hours || 12} hours`, `Цены Xotelo · обновление до ${data.price_meta?.ttl_hours || 12} часов`)) : (l('Confirm final terms with the provider', 'Проверьте итоговые условия у поставщика'))}
             </p>
 
             <button
@@ -757,7 +751,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
               onClick={() => toggleCompare({ id: hotel.id, name: hotel.name })}
             >
               {isInCompare(id) ? <Check size={14} /> : <Plus size={14} />}
-              {isInCompare(id) ? (isRu ? 'Добавлено в сравнение' : 'Added to compare') : (isRu ? 'Добавить в сравнение' : 'Add to compare')}
+              {isInCompare(id) ? (l('Added to compare', 'Добавлено в сравнение')) : (l('Add to compare', 'Добавить в сравнение'))}
             </button>
           </div>
         </div>

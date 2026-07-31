@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db/database');
+const { t } = require('../i18n');
 const { sendEmail } = require('./email');
 
 const frontendUrl = () => process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -26,28 +27,32 @@ function oneClickUrl(unsubscribe) {
 }
 
 function render(type, payload, locale, unsubscribe) {
-  const ru = locale === 'ru';
-  const name = escapeHtml(payload.name || 'traveller');
-  const footer = unsubscribe ? `<p style="font-size:12px;color:#667"><a href="${unsubscribe}">${ru ? 'Настроить уведомления или отписаться' : 'Manage notifications or unsubscribe'}</a></p>` : '';
+  const name = payload.name || t(locale, 'notification.traveller');
+  const greeting = t(locale, 'email.greeting', { name });
+  const footer = unsubscribe ? `<p style="font-size:12px;color:#667"><a href="${escapeHtml(unsubscribe)}">${escapeHtml(t(locale, 'notification.manage'))}</a></p>` : '';
   if (type === 'price_change') {
     const down = payload.direction === 'drop';
-    const subject = down ? (ru ? `Цена на ${payload.hotel_name} снизилась` : `${payload.hotel_name} price dropped`) : (ru ? `Цена на ${payload.hotel_name} выросла` : `${payload.hotel_name} price increased`);
-    const body = ru ? `Новая цена: ${payload.currency} ${payload.new_price} за ночь. Предыдущая: ${payload.currency} ${payload.old_price}.` : `New price: ${payload.currency} ${payload.new_price} per night. Previous: ${payload.currency} ${payload.old_price}.`;
-    return { subject, text: `${body}\n${unsubscribe}`, html: `<p>${name},</p><p>${escapeHtml(body)}</p>${footer}` };
+    const subject = t(locale, down ? 'notification.price_drop_subject' : 'notification.price_rise_subject', { hotel: payload.hotel_name });
+    const body = t(locale, 'notification.price_body', {
+      currency: payload.currency,
+      newPrice: payload.new_price,
+      oldPrice: payload.old_price,
+    });
+    return { subject, text: `${greeting}\n\n${body}${unsubscribe ? `\n${unsubscribe}` : ''}`, html: `<p>${escapeHtml(greeting)}</p><p>${escapeHtml(body)}</p>${footer}` };
   }
   if (type === 'trip_reminder') {
-    const subject = ru ? `Напоминание о поездке: ${payload.title}` : `Trip reminder: ${payload.title}`;
-    const body = ru ? `Поездка начинается ${payload.start_date}. До начала: ${payload.label}.` : `Your trip starts on ${payload.start_date}. Time remaining: ${payload.label}.`;
-    return { subject, text: `${body}\n${unsubscribe}`, html: `<p>${name},</p><p>${escapeHtml(body)}</p>${footer}` };
+    const subject = t(locale, 'notification.trip_subject', { title: payload.title });
+    const body = t(locale, 'notification.trip_body', { date: payload.start_date, label: payload.label });
+    return { subject, text: `${greeting}\n\n${body}${unsubscribe ? `\n${unsubscribe}` : ''}`, html: `<p>${escapeHtml(greeting)}</p><p>${escapeHtml(body)}</p>${footer}` };
   }
   if (type === 'booking_reminder') {
-    const subject = ru ? 'Завершить бронирование поездки' : 'Complete your trip booking';
-    const body = ru ? `Вы переходили к ${payload.provider}, но подтверждение бронирования ещё не получено. Проверьте статус у поставщика.` : `You visited ${payload.provider}, but we have not received a booking confirmation. Check the status with the provider.`;
-    return { subject, text: `${body}\n${unsubscribe}`, html: `<p>${name},</p><p>${escapeHtml(body)}</p>${footer}` };
+    const subject = t(locale, 'notification.booking_subject');
+    const body = t(locale, 'notification.booking_body', { provider: payload.provider });
+    return { subject, text: `${greeting}\n\n${body}`, html: `<p>${escapeHtml(greeting)}</p><p>${escapeHtml(body)}</p>` };
   }
-  const subject = ru ? 'Ваш еженедельный Fairworth Insights' : 'Your weekly Fairworth Insights';
-  const lines = payload.items?.length ? payload.items : [ru ? 'Новых предложений по вашим сохранённым поездкам пока нет.' : 'There are no new offers for your saved trips yet.'];
-  return { subject, text: `${lines.join('\n')}\n${unsubscribe}`, html: `<p>${name},</p><h2>${escapeHtml(subject)}</h2><ul>${lines.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>${footer}` };
+  const subject = t(locale, 'notification.weekly_subject');
+  const lines = payload.items?.length ? payload.items : [t(locale, 'notification.weekly_empty')];
+  return { subject, text: `${greeting}\n\n${lines.join('\n')}${unsubscribe ? `\n${unsubscribe}` : ''}`, html: `<p>${escapeHtml(greeting)}</p><h2>${escapeHtml(subject)}</h2><ul>${lines.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>${footer}` };
 }
 
 async function processOne() {

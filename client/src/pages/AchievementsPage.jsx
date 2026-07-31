@@ -6,21 +6,6 @@ import { achievementsApi } from '../api';
 import { useLang } from '../i18n/LanguageContext';
 import styles from './AchievementsPage.module.css';
 
-const COUNTRY_ALIASES = {
-  'United States of America': 'United States',
-  'Russian Federation': 'Russia',
-  'Czechia': 'Czech Republic',
-  'Republic of Serbia': 'Serbia',
-  'The Bahamas': 'Bahamas',
-  'Dem. Rep. Congo': 'Congo (Kinshasa)',
-  'Republic of the Congo': 'Congo (Brazzaville)',
-  'Dominican Rep.': 'Dominican Republic',
-  'Bosnia and Herz.': 'Bosnia and Herzegovina',
-  'Central African Rep.': 'Central African Republic',
-  'Eq. Guinea': 'Equatorial Guinea',
-  'S. Sudan': 'South Sudan',
-};
-
 function normalized(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
@@ -29,14 +14,8 @@ function flag(code) {
   return String(code || '').toUpperCase().replace(/./g, char => String.fromCodePoint(127397 + char.charCodeAt(0)));
 }
 
-function geographyCountryName(geography) {
-  const name = geography.properties?.name || '';
-  return COUNTRY_ALIASES[name] || name;
-}
-
 export default function AchievementsPage() {
-  const { lang } = useLang();
-  const ru = lang === 'ru';
+  const { lang , l} = useLang();
   const [visits, setVisits] = useState([]);
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,14 +25,15 @@ export default function AchievementsPage() {
   const [selected, setSelected] = useState(null);
   const [activeVisit, setActiveVisit] = useState(null);
   const [position, setPosition] = useState({ coordinates: [0, 14], zoom: 1 });
+  const [compactMap, setCompactMap] = useState(() => window.matchMedia('(max-width: 760px)').matches);
   const searchRef = useRef(null);
 
   useEffect(() => {
     achievementsApi.get()
       .then(response => setVisits(response.data.visits || []))
-      .catch(() => setError(ru ? 'Не удалось загрузить вашу карту.' : 'We could not load your map.'))
+      .catch(() => setError(l('We could not load your map.', 'Не удалось загрузить вашу карту.')))
       .finally(() => setLoading(false));
-  }, [ru]);
+  }, [lang]);
 
   useEffect(() => {
     fetch('/data/world-cities.json')
@@ -65,30 +45,38 @@ export default function AchievementsPage() {
         type: 'city', key: `city-${city.i}`, city: city.n, admin: city.a, country: city.c,
         countryCode: city.cc, longitude: city.x, latitude: city.y, population: city.p,
       }))))
-      .catch(() => setError(ru ? 'Справочник городов временно недоступен.' : 'The city directory is temporarily unavailable.'));
-  }, [ru]);
+      .catch(() => setError(l('The city directory is temporarily unavailable.', 'Справочник городов временно недоступен.')));
+  }, [lang]);
 
-  const countries = useMemo(() => Array.from(new Map(cities.map(city => [city.countryCode, {
-    type: 'country', key: `country-${city.countryCode}`, country: city.country, countryCode: city.countryCode,
-  }])).values()).sort((a, b) => a.country.localeCompare(b.country)), [cities]);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 760px)');
+    const update = event => setCompactMap(event.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
 
   const results = useMemo(() => {
     const needle = normalized(query);
     if (needle.length < 2) return [];
-    const countryMatches = countries.filter(item => normalized(item.country).includes(needle)).slice(0, 3);
-    const cityMatches = cities.filter(item => normalized(`${item.city} ${item.admin} ${item.country}`).includes(needle)).slice(0, 7);
-    return [...countryMatches, ...cityMatches].slice(0, 8);
-  }, [query, cities, countries]);
+    return cities
+      .filter(item => normalized(`${item.city} ${item.admin} ${item.country}`).includes(needle))
+      .slice(0, 8);
+  }, [query, cities]);
 
-  const visitedCountries = useMemo(() => new Set(visits.map(visit => normalized(visit.country_name))), [visits]);
-  const cityVisits = useMemo(() => visits.filter(visit => visit.city_name), [visits]);
-  const stats = useMemo(() => ({ countries: new Set(visits.map(visit => visit.country_code)).size, cities: cityVisits.length }), [visits, cityVisits]);
+  const cityVisits = useMemo(
+    () => visits.filter(visit => visit.city_name && visit.latitude != null && visit.longitude != null),
+    [visits],
+  );
+  const stats = useMemo(() => ({
+    countries: new Set(cityVisits.map(visit => visit.country_code)).size,
+    cities: cityVisits.length,
+  }), [cityVisits]);
 
   const choosePlace = place => {
     setSelected(place);
-    setQuery(place.type === 'city' ? `${place.city}, ${place.country}` : place.country);
+    setQuery(`${place.city}, ${place.country}`);
     setError('');
-    if (place.type === 'city') setPosition({ coordinates: [place.longitude, place.latitude], zoom: 3 });
+    setPosition({ coordinates: [place.longitude, place.latitude], zoom: 3 });
   };
 
   const addVisit = async () => {
@@ -99,17 +87,17 @@ export default function AchievementsPage() {
       const response = await achievementsApi.addVisit({
         country_code: selected.countryCode,
         country_name: selected.country,
-        city_name: selected.type === 'city' ? selected.city : null,
-        latitude: selected.type === 'city' ? selected.latitude : null,
-        longitude: selected.type === 'city' ? selected.longitude : null,
+        city_name: selected.city,
+        latitude: selected.latitude,
+        longitude: selected.longitude,
       });
       setVisits(current => [...current, response.data.visit]);
       setSelected(null);
       setQuery('');
     } catch (requestError) {
       setError(requestError.response?.status === 409
-        ? (ru ? 'Это место уже отмечено на вашей карте.' : 'This place is already on your map.')
-        : (ru ? 'Не удалось сохранить место.' : 'We could not save this place.'));
+        ? (l('This place is already on your map.', 'Это место уже отмечено на вашей карте.'))
+        : (l('We could not save this place.', 'Не удалось сохранить место.')));
     } finally { setSaving(false); }
   };
 
@@ -119,30 +107,31 @@ export default function AchievementsPage() {
       setVisits(current => current.filter(item => item.id !== visit.id));
       setActiveVisit(null);
     } catch {
-      setError(ru ? 'Не удалось удалить место.' : 'We could not remove this place.');
+      setError(l('We could not remove this place.', 'Не удалось удалить место.'));
     }
   };
 
   const resetMap = () => setPosition({ coordinates: [0, 14], zoom: 1 });
+  const markerScale = compactMap ? 1.8 : 1;
 
   return (
     <main className={styles.page}>
       <header className={styles.header}>
         <div>
-          <span className={styles.eyebrow}><Globe2 size={14} /> {ru ? 'Ваша история путешествий' : 'Your travel story'}</span>
-          <h1>{ru ? 'Достижения' : 'Achievements'}</h1>
-          <p>{ru ? 'Отмечайте страны и города, в которых вы уже побывали.' : 'Mark the countries and cities you have already explored.'}</p>
+          <span className={styles.eyebrow}><Globe2 size={14} /> {l('Your travel story', 'Ваша история путешествий')}</span>
+          <h1>{l('Achievements', 'Достижения')}</h1>
+          <p>{l('Pin the cities you have already explored.', 'Отмечайте города, в которых вы уже побывали.')}</p>
         </div>
-        <div className={styles.stats} aria-label={ru ? 'Статистика путешествий' : 'Travel statistics'}>
-          <div><strong>{stats.countries}</strong><span>{ru ? 'стран' : 'countries'}</span></div>
-          <div><strong>{stats.cities}</strong><span>{ru ? 'городов' : 'cities'}</span></div>
+        <div className={styles.stats} aria-label={l('Travel statistics', 'Статистика путешествий')}>
+          <div><strong>{stats.countries}</strong><span>{l('countries', 'стран')}</span></div>
+          <div><strong>{stats.cities}</strong><span>{l('cities', 'городов')}</span></div>
         </div>
       </header>
 
       <section className={styles.workspace}>
         <aside className={styles.sidebar}>
           <div className={styles.searchBlock}>
-            <label htmlFor="achievement-place">{ru ? 'Добавить место' : 'Add a place'}</label>
+            <label htmlFor="achievement-place">{l('Add a city', 'Добавить город')}</label>
             <div className={styles.searchInput}>
               <Search size={17} />
               <input
@@ -150,45 +139,45 @@ export default function AchievementsPage() {
                 id="achievement-place"
                 value={query}
                 onChange={event => { setQuery(event.target.value); setSelected(null); }}
-                placeholder={ru ? 'Например, Paris или France' : 'Try Paris or France'}
+                placeholder={l('Try Paris', 'Например, Paris')}
                 autoComplete="off"
               />
-              {query && <button type="button" onClick={() => { setQuery(''); setSelected(null); searchRef.current?.focus(); }} aria-label={ru ? 'Очистить' : 'Clear'}><X size={15} /></button>}
+              {query && <button type="button" onClick={() => { setQuery(''); setSelected(null); searchRef.current?.focus(); }} aria-label={l('Clear', 'Очистить')}><X size={15} /></button>}
             </div>
             {query.length >= 2 && !selected && (
               <div className={styles.results} role="listbox">
                 {results.map(place => (
                   <button key={place.key} type="button" role="option" onClick={() => choosePlace(place)}>
                     <span className={styles.flag}>{flag(place.countryCode)}</span>
-                    <span><strong>{place.type === 'city' ? place.city : place.country}</strong><small>{place.type === 'city' ? [place.admin, place.country].filter(Boolean).join(', ') : (ru ? 'Страна' : 'Country')}</small></span>
+                    <span><strong>{place.city}</strong><small>{[place.admin, place.country].filter(Boolean).join(', ')}</small></span>
                     <Plus size={15} />
                   </button>
                 ))}
-                {!results.length && <p>{ru ? 'Ничего не найдено' : 'No places found'}</p>}
+                {!results.length && <p>{l('No places found', 'Ничего не найдено')}</p>}
               </div>
             )}
             {selected && (
               <button className={styles.addButton} type="button" onClick={addVisit} disabled={saving}>
-                {saving ? (ru ? 'Сохраняем...' : 'Saving...') : <><Check size={17} /> {ru ? 'Отметить как посещённое' : 'Mark as visited'}</>}
+                {saving ? (l('Saving...', 'Сохраняем...')) : <><Check size={17} /> {l('Mark as visited', 'Отметить как посещённое')}</>}
               </button>
             )}
             {error && <p className={styles.error} role="alert">{error}</p>}
           </div>
 
           <div className={styles.visitedHeader}>
-            <h2>{ru ? 'Посещённые места' : 'Visited places'}</h2>
-            <span>{visits.length}</span>
+            <h2>{l('Visited cities', 'Посещённые города')}</h2>
+            <span>{cityVisits.length}</span>
           </div>
           <div className={styles.visitList}>
-            {loading && <p className={styles.empty}>{ru ? 'Загружаем карту...' : 'Loading your map...'}</p>}
-            {!loading && !visits.length && <p className={styles.empty}>{ru ? 'Начните с первой страны или города.' : 'Start with your first country or city.'}</p>}
-            {visits.map(visit => (
+            {loading && <p className={styles.empty}>{l('Loading your map...', 'Загружаем карту...')}</p>}
+            {!loading && !cityVisits.length && <p className={styles.empty}>{l('Start with your first city.', 'Добавьте свой первый город.')}</p>}
+            {cityVisits.map(visit => (
               <button key={visit.id} type="button" className={`${styles.visitItem} ${activeVisit?.id === visit.id ? styles.visitActive : ''}`} onClick={() => {
                 setActiveVisit(visit);
-                if (visit.city_name) setPosition({ coordinates: [visit.longitude, visit.latitude], zoom: 4 });
+                setPosition({ coordinates: [visit.longitude, visit.latitude], zoom: 4 });
               }}>
                 <span className={styles.flag}>{flag(visit.country_code)}</span>
-                <span><strong>{visit.city_name || visit.country_name}</strong><small>{visit.city_name ? visit.country_name : (ru ? 'Вся страна' : 'Country')}</small></span>
+                <span><strong>{visit.city_name}</strong><small>{visit.country_name}</small></span>
                 <MapPin size={15} />
               </button>
             ))}
@@ -197,35 +186,50 @@ export default function AchievementsPage() {
 
         <div className={styles.mapPanel}>
           <div className={styles.mapToolbar}>
-            <button type="button" onClick={() => setPosition(current => ({ ...current, zoom: Math.min(6, current.zoom * 1.5) }))} title={ru ? 'Приблизить' : 'Zoom in'}><ZoomIn size={18} /></button>
-            <button type="button" onClick={() => setPosition(current => ({ ...current, zoom: Math.max(1, current.zoom / 1.5) }))} title={ru ? 'Отдалить' : 'Zoom out'}><ZoomOut size={18} /></button>
-            <button type="button" onClick={resetMap}>{ru ? 'Весь мир' : 'World view'}</button>
+            <button type="button" onClick={() => setPosition(current => ({ ...current, zoom: Math.min(6, current.zoom * 1.5) }))} title={l('Zoom in', 'Приблизить')}><ZoomIn size={18} /></button>
+            <button type="button" onClick={() => setPosition(current => ({ ...current, zoom: Math.max(1, current.zoom / 1.5) }))} title={l('Zoom out', 'Отдалить')}><ZoomOut size={18} /></button>
+            <button type="button" onClick={resetMap}>{l('World view', 'Весь мир')}</button>
           </div>
-          <ComposableMap projection="geoMercator" projectionConfig={{ center: [0, 12], scale: 128 }} className={styles.map} aria-label={ru ? 'Карта посещённых мест' : 'Map of visited places'}>
+          <ComposableMap projection="geoMercator" projectionConfig={{ center: [0, 12], scale: 128 }} className={styles.map} aria-label={l('Map of visited places', 'Карта посещённых мест')}>
             <ZoomableGroup center={position.coordinates} zoom={position.zoom} onMoveEnd={setPosition} minZoom={1} maxZoom={6}>
               <Geographies geography={worldMap}>
-                {({ geographies }) => geographies.filter(geography => geography.properties?.name !== 'Antarctica').map(geography => {
-                  const isVisited = visitedCountries.has(normalized(geographyCountryName(geography)));
-                  return <Geography key={geography.rsmKey} geography={geography} tabIndex={-1} data-visited={isVisited ? 'true' : 'false'} className={isVisited ? styles.countryVisited : styles.country} />;
-                })}
+                {({ geographies }) => geographies
+                  .filter(geography => geography.properties?.name !== 'Antarctica')
+                  .map(geography => (
+                    <Geography key={geography.rsmKey} geography={geography} tabIndex={-1} className={styles.country} />
+                  ))}
               </Geographies>
               {cityVisits.map(visit => (
                 <Marker key={visit.id} coordinates={[visit.longitude, visit.latitude]} onClick={() => setActiveVisit(visit)}>
-                  <g className={styles.marker} role="button" tabIndex="0" aria-label={`${visit.city_name}, ${visit.country_name}`}>
-                    <circle r={3.5 / position.zoom} />
-                    <circle className={styles.markerPulse} r={7 / position.zoom} />
+                  <g
+                    className={styles.marker}
+                    role="button"
+                    tabIndex="0"
+                    aria-label={`${visit.city_name}, ${visit.country_name}`}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setActiveVisit(visit);
+                      }
+                    }}
+                  >
+                    <circle className={styles.markerHitArea} r={(10 * markerScale) / position.zoom} />
+                    <circle className={styles.markerShadow} cx={(1.3 * markerScale) / position.zoom} cy={(1.8 * markerScale) / position.zoom} r={(6.2 * markerScale) / position.zoom} />
+                    <circle className={styles.markerRim} r={(6.2 * markerScale) / position.zoom} />
+                    <circle className={styles.markerHead} r={(4.7 * markerScale) / position.zoom} />
+                    <circle className={styles.markerHighlight} cx={(-1.5 * markerScale) / position.zoom} cy={(-1.5 * markerScale) / position.zoom} r={(1.25 * markerScale) / position.zoom} />
                   </g>
                 </Marker>
               ))}
             </ZoomableGroup>
           </ComposableMap>
-          <div className={styles.legend}><span />{ru ? 'Посещённая страна' : 'Visited country'}<i />{ru ? 'Посещённый город' : 'Visited city'}</div>
+          <div className={styles.legend}><i />{l('Visited city', 'Посещённый город')}</div>
           {activeVisit && (
             <div className={styles.mapPopup}>
-              <button type="button" className={styles.popupClose} onClick={() => setActiveVisit(null)} aria-label={ru ? 'Закрыть' : 'Close'}><X size={15} /></button>
+              <button type="button" className={styles.popupClose} onClick={() => setActiveVisit(null)} aria-label={l('Close', 'Закрыть')}><X size={15} /></button>
               <span className={styles.popupFlag}>{flag(activeVisit.country_code)}</span>
-              <div><strong>{activeVisit.city_name || activeVisit.country_name}</strong><small>{activeVisit.city_name ? activeVisit.country_name : (ru ? 'Страна отмечена целиком' : 'Country marked as visited')}</small></div>
-              <button type="button" className={styles.deleteButton} onClick={() => removeVisit(activeVisit)} title={ru ? 'Удалить отметку' : 'Remove visit'}><Trash2 size={16} /></button>
+              <div><strong>{activeVisit.city_name}</strong><small>{activeVisit.country_name}</small></div>
+              <button type="button" className={styles.deleteButton} onClick={() => removeVisit(activeVisit)} title={l('Remove visit', 'Удалить отметку')}><Trash2 size={16} /></button>
             </div>
           )}
           <p className={styles.attribution}>City data: SimpleMaps, CC BY 4.0</p>

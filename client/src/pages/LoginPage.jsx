@@ -4,11 +4,11 @@ import axios from 'axios';
 import { Eye, EyeOff } from 'lucide-react';
 import styles from './RegisterPage.module.css';
 import { useLang } from '../i18n/LanguageContext';
+import LanguageSelect from '../components/LanguageSelect';
 
 export default function LoginPage({ onLogin }) {
   const navigate = useNavigate();
-  const { lang, toggleLang, t } = useLang();
-  const isRu = lang === 'ru';
+  const { lang, t , l} = useLang();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ export default function LoginPage({ onLogin }) {
       if (onLogin) onLogin(user);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.error || (isRu ? 'Ошибка входа' : 'Sign-in failed'));
+      setError(err.response?.data?.error || (l('Sign-in failed', 'Ошибка входа')));
     } finally {
       setLoading(false);
     }
@@ -36,7 +36,7 @@ export default function LoginPage({ onLogin }) {
     <div className={`${styles.page} ${styles.registerPage}`}>
       <header className={styles.registerHeader}>
         <Link to="/" className={styles.registerLogo}>Tripalora</Link>
-        <button type="button" className={styles.langBtn} onClick={toggleLang}>{isRu ? 'EN' : 'RU'}</button>
+        <LanguageSelect />
       </header>
       <main className={`${styles.registerMain} ${styles.loginMain}`}>
         <div className={styles.formWrap}>
@@ -52,8 +52,8 @@ export default function LoginPage({ onLogin }) {
             <div className={styles.field}>
               <label className={styles.label}>{t('reg_password')}</label>
               <div className={styles.passwordWrap}>
-                <input className={styles.input} type={showPassword ? 'text' : 'password'} placeholder={isRu ? 'Ваш пароль' : 'Your password'} value={form.password} onChange={e => set('password', e.target.value)} required />
-                <button type="button" className={styles.eyeBtn} onClick={() => setShowPassword(p => !p)} aria-label={showPassword ? (isRu ? 'Скрыть пароль' : 'Hide password') : (isRu ? 'Показать пароль' : 'Show password')}>
+                <input className={styles.input} type={showPassword ? 'text' : 'password'} placeholder={l('Your password', 'Ваш пароль')} value={form.password} onChange={e => set('password', e.target.value)} required />
+                <button type="button" className={styles.eyeBtn} onClick={() => setShowPassword(p => !p)} aria-label={showPassword ? (l('Hide password', 'Скрыть пароль')) : (l('Show password', 'Показать пароль'))}>
                   {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
@@ -63,7 +63,7 @@ export default function LoginPage({ onLogin }) {
               {loading ? <><span className={styles.spinner} /> {t('login_loading')}</> : t('login_submit')}
             </button>
           </form>
-          <p className={styles.terms} style={{ marginTop: 32 }}><Link to="/forgot-password">{isRu ? 'Забыли пароль?' : 'Forgot your password?'}</Link></p>
+          <p className={styles.terms} style={{ marginTop: 32 }}><Link to="/forgot-password">{l('Forgot your password?', 'Забыли пароль?')}</Link></p>
         </div>
       </main>
     </div>

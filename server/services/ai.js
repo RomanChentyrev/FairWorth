@@ -42,6 +42,23 @@ async function callAI(prompt) {
   return text.trim();
 }
 
+const LANGUAGE_NAMES = {
+  en: 'English',
+  ru: 'Russian',
+  de: 'German',
+  fr: 'French',
+  it: 'Italian',
+  es: 'Spanish',
+};
+
+function supportedLanguage(language) {
+  return Object.hasOwn(LANGUAGE_NAMES, language) ? language : 'en';
+}
+
+function languageName(language) {
+  return LANGUAGE_NAMES[supportedLanguage(language)];
+}
+
 function parseAIJson(text) {
   const clean = String(text || '')
     .replace(/^```json\s*/i, '')
@@ -64,7 +81,7 @@ function parseAIJson(text) {
 async function analyzeHotel(hotel, rooms, reviews, prices, userPrefs, checkIn, checkOut, language = 'en') {
   const nights = Math.ceil((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24));
 
-  const responseLanguage = language === 'ru' ? 'Russian' : 'English';
+  const responseLanguage = languageName(language);
   const prompt = `You are a luxury travel AI analyst. Analyze this hotel for a specific traveler and return a JSON response. Write all user-facing text in ${responseLanguage}.
 
 HOTEL DATA:
@@ -137,7 +154,7 @@ Respond ONLY with valid JSON (no markdown, no explanation), in this exact struct
  * Generate AI comparison verdict for multiple hotels
  */
 async function compareHotels(hotelsData, userPrefs, language = 'en') {
-  const responseLanguage = language === 'ru' ? 'Russian' : 'English';
+  const responseLanguage = languageName(language);
   const prompt = `You are a luxury travel AI analyst. Compare these hotels and give a recommendation. Return JSON only. Write all user-facing text in ${responseLanguage}.
 
 HOTELS TO COMPARE:
@@ -199,4 +216,4 @@ Return ONLY valid JSON:
   return parseAIJson(text);
 }
 
-module.exports = { analyzeHotel, compareHotels, updateUserProfile };
+module.exports = { analyzeHotel, compareHotels, updateUserProfile, callAI, languageName, supportedLanguage };

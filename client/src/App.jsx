@@ -43,7 +43,7 @@ function RequireAdmin({ user, children }) {
 }
 
 export default function App() {
-  const { lang } = useLang();
+  const { lang , l} = useLang();
   const [compareList, setCompareList] = useState([]);
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('fw_user')); } catch { return null; }
@@ -102,7 +102,7 @@ export default function App() {
   const isInCompare = (id) => compareList.some(h => h.id === id);
 
   return (
-    <><a className="skip-link" href="#app-content">{lang === 'ru' ? 'К содержанию' : 'Skip to content'}</a><div id="app-content" tabIndex="-1"><Routes>
+    <><a className="skip-link" href="#app-content">{l('Skip to content', 'К содержанию')}</a><div id="app-content" tabIndex="-1"><Routes>
       <Route path="/register" element={<RegisterPage onLogin={handleLogin} />} />
       <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
@@ -135,7 +135,7 @@ export default function App() {
             } />
             <Route path="/achievements" element={
               <RequireAuth user={user}>
-                <Suspense fallback={<main className="system-page"><p>{lang === 'ru' ? 'Загружаем карту...' : 'Loading your map...'}</p></main>}>
+                <Suspense fallback={<main className="system-page"><p>{l('Loading your map...', 'Загружаем карту...')}</p></main>}>
                   <AchievementsPage />
                 </Suspense>
               </RequireAuth>

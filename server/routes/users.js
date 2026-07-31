@@ -7,18 +7,27 @@ const { sendEmail } = require('../services/email');
 const { accountEmail } = require('../services/emailTemplates');
 const { validate } = require('../middleware/validate');
 const { profileSchema, preferencesSchema } = require('../config/apiSchemas');
+const { normalizeLocale, SUPPORTED_LOCALES } = require('../config/locales');
 
 // GET /api/users/me
 router.get('/me', async (req, res) => {
   try {
     const userId = req.user.id;
-    const user = await db.prepare('SELECT id, email, name, phone, city, country, bio, website, avatar, onboarding_completed, behavioural_tracking_consent, created_at, updated_at FROM users WHERE id = ?').get(userId);
+    const user = await db.prepare('SELECT id, email, name, phone, city, country, bio, website, avatar, locale, onboarding_completed, behavioural_tracking_consent, created_at, updated_at FROM users WHERE id = ?').get(userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
     const prefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
     res.json({ user: { ...user, onboarding_completed: Boolean(user.onboarding_completed), behavioural_tracking_consent: Boolean(user.behavioural_tracking_consent) }, preferences: prefs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+router.put('/locale', async (req, res) => {
+  const requested = String(req.body.locale || '');
+  if (!SUPPORTED_LOCALES.has(requested)) return res.status(400).json({ error: 'Unsupported locale' });
+  const locale = normalizeLocale(requested);
+  await db.prepare('UPDATE users SET locale = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(locale, req.user.id);
+  res.json({ locale });
 });
 
 // PUT /api/users/profile
@@ -263,12 +272,12 @@ router.post('/onboarding/complete', async (req, res) => {
   try {
     const userId = req.user.id;
     const prefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
-    if (!prefs) return res.status(400).json({ error: 'Сначала сохраните предпочтения' });
+    if (!prefs) return res.status(400).json({ error: 'Save your preferences first' });
     const stars = (() => { try { return JSON.parse(prefs.hotel_stars || '[]'); } catch { return []; } })();
     const amenities = (() => { try { return JSON.parse(prefs.hotel_amenities || '[]'); } catch { return []; } })();
     const requiredAmenities = (() => { try { return JSON.parse(prefs.required_hotel_amenities || '[]'); } catch { return []; } })();
     if (!stars.length || (!amenities.length && !requiredAmenities.length) || !prefs.budget_per_night_max) {
-      return res.status(400).json({ error: 'Выберите звёздность, удобства и бюджет' });
+      return res.status(400).json({ error: 'Select a star rating, amenities and budget' });
     }
     await db.prepare('UPDATE users SET onboarding_completed = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(userId);
     const user = await db.prepare(`

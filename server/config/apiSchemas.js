@@ -100,15 +100,11 @@ const partnerPostbackSchema = z.object({
 const travelVisitSchema = z.object({
   country_code: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, 'must be an ISO 3166-1 alpha-2 country code'),
   country_name: z.string().trim().min(2).max(120),
-  city_name: z.string().trim().min(1).max(120).nullish(),
-  latitude: z.number().finite().min(-90).max(90).nullish(),
-  longitude: z.number().finite().min(-180).max(180).nullish(),
+  city_name: z.string().trim().min(1).max(120),
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
   visited_at: date.nullish(),
-}).strict().superRefine((value, context) => {
-  const coordinates = value.latitude != null && value.longitude != null;
-  if (value.city_name && !coordinates) context.addIssue({ code: 'custom', path: ['latitude'], message: 'city visits require latitude and longitude' });
-  if (!value.city_name && (value.latitude != null || value.longitude != null)) context.addIssue({ code: 'custom', path: ['city_name'], message: 'coordinates require a city' });
-});
+}).strict();
 
 const demoHotelSchema = z.object({
   id: identifier, name: z.string().trim().min(1).max(240), city: optionalText(120),

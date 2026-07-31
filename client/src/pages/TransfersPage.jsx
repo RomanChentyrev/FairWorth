@@ -48,7 +48,7 @@ const SORTS = [
 ];
 
 export default function TransfersPage() {
-  const { t, lang } = useLang();
+  const { t, lang , l} = useLang();
   const { basket } = useTripBasket();
   const [searchParams, setSearchParams] = useSearchParams();
   const basketAirport = basket.outboundFlight?.destinationCode;
@@ -115,9 +115,7 @@ export default function TransfersPage() {
       setTransfers(results);
       if (results.length) {
         const best = results[0];
-        setAiMessage(lang === 'ru'
-          ? `Лучший трансфер — **${best.provider} ${best.vehicle_name}** (Score ${best.fairworth_score}/100). ${best.duration_label}, до ${best.max_passengers} пассажиров, от $${best.price}.`
-          : `Best transfer — **${best.provider} ${best.vehicle_name}** (Score ${best.fairworth_score}/100). ${best.duration_label}, up to ${best.max_passengers} passengers, from $${best.price}.`);
+        setAiMessage(l(`Best transfer — **${best.provider} ${best.vehicle_name}** (Score ${best.fairworth_score}/100). ${best.duration_label}, up to ${best.max_passengers} passengers, from $${best.price}.`, `Лучший трансфер — **${best.provider} ${best.vehicle_name}** (Score ${best.fairworth_score}/100). ${best.duration_label}, до ${best.max_passengers} пассажиров, от $${best.price}.`));
       } else {
         setAiMessage('');
       }
@@ -217,7 +215,7 @@ export default function TransfersPage() {
                 {SORTS.map(opt => (
                   <button key={opt.value} className={`${styles.sortItem} ${sort === opt.value ? styles.sortItemActive : ''}`} onClick={() => setSort(opt.value)}>
                     {sort === opt.value && <span className={styles.sortDot} />}
-                    {lang === 'ru' ? opt.ru : opt.en}
+                    {l(opt.en, opt.ru)}
                   </button>
                 ))}
               </div>
