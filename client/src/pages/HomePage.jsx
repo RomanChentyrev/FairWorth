@@ -11,20 +11,48 @@ import useCapabilities from '../hooks/useCapabilities';
 import ProviderUnavailable from '../components/ProviderUnavailable';
 
 const CITIES = [
-  { name: 'Сингапур', nameEn: 'Singapore', code: 'SIN', country: 'Сингапур', countryEn: 'Singapore', flag: '🇸🇬' },
-  { name: 'Дубай', nameEn: 'Dubai', code: 'DXB', country: 'ОАЭ', countryEn: 'UAE', flag: '🇦🇪' },
-  { name: 'Абу-Даби', nameEn: 'Abu Dhabi', code: 'AUH', country: 'ОАЭ', countryEn: 'UAE', flag: '🇦🇪' },
-  { name: 'Париж', nameEn: 'Paris', code: 'PAR', country: 'Франция', countryEn: 'France', flag: '🇫🇷' },
-  { name: 'Нью-Йорк', nameEn: 'New York', code: 'NYC', country: 'США', countryEn: 'USA', flag: '🇺🇸' },
-  { name: 'Москва', nameEn: 'Moscow', code: 'MOW', country: 'Россия', countryEn: 'Russia', flag: '🇷🇺' },
-  { name: 'Пекин', nameEn: 'Beijing', code: 'BJS', country: 'Китай', countryEn: 'China', flag: '🇨🇳' },
-  { name: 'Шанхай', nameEn: 'Shanghai', code: 'SHA', country: 'Китай', countryEn: 'China', flag: '🇨🇳' },
-  { name: 'Нячанг', nameEn: 'Nha Trang', code: 'NHA', country: 'Вьетнам', countryEn: 'Vietnam', flag: '🇻🇳' },
-  { name: 'Дананг', nameEn: 'Da Nang', code: 'DAD', country: 'Вьетнам', countryEn: 'Vietnam', flag: '🇻🇳' },
-  { name: 'Куала-Лумпур', nameEn: 'Kuala Lumpur', code: 'SZB', country: 'Малайзия', countryEn: 'Malaysia', flag: '🇲🇾' },
+  { name: 'Сингапур', nameEn: 'Singapore', names: { de: 'Singapur', fr: 'Singapour', it: 'Singapore', es: 'Singapur' }, code: 'SIN', country: 'Сингапур', countryEn: 'Singapore', countries: { de: 'Singapur', fr: 'Singapour', it: 'Singapore', es: 'Singapur' }, flag: '🇸🇬' },
+  { name: 'Дубай', nameEn: 'Dubai', names: { de: 'Dubai', fr: 'Dubaï', it: 'Dubai', es: 'Dubái' }, code: 'DXB', country: 'ОАЭ', countryEn: 'UAE', countries: { de: 'Vereinigte Arabische Emirate', fr: 'Émirats arabes unis', it: 'Emirati Arabi Uniti', es: 'Emiratos Árabes Unidos' }, flag: '🇦🇪' },
+  { name: 'Абу-Даби', nameEn: 'Abu Dhabi', names: { de: 'Abu Dhabi', fr: 'Abou Dabi', it: 'Abu Dhabi', es: 'Abu Dabi' }, code: 'AUH', country: 'ОАЭ', countryEn: 'UAE', countries: { de: 'Vereinigte Arabische Emirate', fr: 'Émirats arabes unis', it: 'Emirati Arabi Uniti', es: 'Emiratos Árabes Unidos' }, flag: '🇦🇪' },
+  { name: 'Париж', nameEn: 'Paris', names: { de: 'Paris', fr: 'Paris', it: 'Parigi', es: 'París' }, code: 'PAR', country: 'Франция', countryEn: 'France', countries: { de: 'Frankreich', fr: 'France', it: 'Francia', es: 'Francia' }, flag: '🇫🇷' },
+  { name: 'Нью-Йорк', nameEn: 'New York', names: { de: 'New York', fr: 'New York', it: 'New York', es: 'Nueva York' }, code: 'NYC', country: 'США', countryEn: 'USA', countries: { de: 'USA', fr: 'États-Unis', it: 'Stati Uniti', es: 'Estados Unidos' }, flag: '🇺🇸' },
+  { name: 'Москва', nameEn: 'Moscow', names: { de: 'Moskau', fr: 'Moscou', it: 'Mosca', es: 'Moscú' }, code: 'MOW', country: 'Россия', countryEn: 'Russia', countries: { de: 'Russland', fr: 'Russie', it: 'Russia', es: 'Rusia' }, flag: '🇷🇺' },
+  { name: 'Пекин', nameEn: 'Beijing', names: { de: 'Peking', fr: 'Pékin', it: 'Pechino', es: 'Pekín' }, code: 'BJS', country: 'Китай', countryEn: 'China', countries: { de: 'China', fr: 'Chine', it: 'Cina', es: 'China' }, flag: '🇨🇳' },
+  { name: 'Шанхай', nameEn: 'Shanghai', names: { de: 'Shanghai', fr: 'Shanghai', it: 'Shanghai', es: 'Shanghái' }, code: 'SHA', country: 'Китай', countryEn: 'China', countries: { de: 'China', fr: 'Chine', it: 'Cina', es: 'China' }, flag: '🇨🇳' },
+  { name: 'Нячанг', nameEn: 'Nha Trang', names: { de: 'Nha Trang', fr: 'Nha Trang', it: 'Nha Trang', es: 'Nha Trang' }, code: 'NHA', country: 'Вьетнам', countryEn: 'Vietnam', countries: { de: 'Vietnam', fr: 'Viêt Nam', it: 'Vietnam', es: 'Vietnam' }, flag: '🇻🇳' },
+  { name: 'Дананг', nameEn: 'Da Nang', names: { de: 'Da Nang', fr: 'Da Nang', it: 'Da Nang', es: 'Da Nang' }, code: 'DAD', country: 'Вьетнам', countryEn: 'Vietnam', countries: { de: 'Vietnam', fr: 'Viêt Nam', it: 'Vietnam', es: 'Vietnam' }, flag: '🇻🇳' },
+  { name: 'Куала-Лумпур', nameEn: 'Kuala Lumpur', names: { de: 'Kuala Lumpur', fr: 'Kuala Lumpur', it: 'Kuala Lumpur', es: 'Kuala Lumpur' }, code: 'SZB', country: 'Малайзия', countryEn: 'Malaysia', countries: { de: 'Malaysia', fr: 'Malaisie', it: 'Malesia', es: 'Malasia' }, flag: '🇲🇾' },
 ];
 
-const SUPPORTED_CITY_NAMES = new Set(CITIES.flatMap(city => [city.name, city.nameEn]).map(name => name.toLowerCase()));
+function cityNames(city) {
+  return [city.name, city.nameEn, ...Object.values(city.names || {})];
+}
+
+function countryNames(city) {
+  return [city.country, city.countryEn, ...Object.values(city.countries || {})];
+}
+
+function localizedCityName(city, lang) {
+  if (lang === 'ru') return city.name;
+  if (lang === 'en') return city.nameEn;
+  return city.names?.[lang] || city.nameEn;
+}
+
+function localizedCountryName(city, lang) {
+  if (lang === 'ru') return city.country;
+  if (lang === 'en') return city.countryEn;
+  return city.countries?.[lang] || city.countryEn;
+}
+
+function knownCity(value) {
+  const normalized = cleanPlace(value).toLocaleLowerCase();
+  return CITIES.find(city => (
+    city.code.toLocaleLowerCase() === normalized
+    || cityNames(city).some(name => name.toLocaleLowerCase() === normalized)
+  ));
+}
+
+const SUPPORTED_CITY_NAMES = new Set(CITIES.flatMap(cityNames).map(name => name.toLocaleLowerCase()));
 
 export function cleanPlace(value = '') {
   return String(value).replace(/\s*\([^)]*\)/, '').trim();
@@ -32,13 +60,12 @@ export function cleanPlace(value = '') {
 
 export function canonicalPlace(value = '') {
   const cleaned = cleanPlace(value);
-  const normalized = cleaned.toLocaleLowerCase();
-  const knownCity = CITIES.find(city => (
-    city.name.toLocaleLowerCase() === normalized
-    || city.nameEn.toLocaleLowerCase() === normalized
-    || city.code.toLocaleLowerCase() === normalized
-  ));
-  return knownCity?.nameEn || cleaned;
+  return knownCity(cleaned)?.nameEn || cleaned;
+}
+
+export function localizedPlace(value = '', lang = 'en') {
+  const city = knownCity(value);
+  return city ? localizedCityName(city, lang) : cleanPlace(value);
 }
 
 let worldCitiesPromise;
@@ -95,11 +122,9 @@ function CityDropdown({
             || city.a?.toLocaleLowerCase().includes(normalizedQuery)
             || city.cc.toLocaleLowerCase() === normalizedQuery;
         }
-        return city.name.toLocaleLowerCase().includes(normalizedQuery)
-          || city.nameEn.toLocaleLowerCase().includes(normalizedQuery)
+        return cityNames(city).some(name => name.toLocaleLowerCase().includes(normalizedQuery))
           || city.code.toLocaleLowerCase().includes(normalizedQuery)
-          || city.country.toLocaleLowerCase().includes(normalizedQuery)
-          || city.countryEn.toLocaleLowerCase().includes(normalizedQuery);
+          || countryNames(city).some(country => country.toLocaleLowerCase().includes(normalizedQuery));
       }).slice(0, 7)
     : availableCities.slice(0, 6);
 
@@ -124,12 +149,14 @@ function CityDropdown({
   }, []);
 
   useEffect(() => {
-    setQuery(value || '');
-  }, [value]);
+    const city = knownCity(value);
+    setQuery(city ? `${localizedCityName(city, lang)} (${city.code})` : (value || ''));
+  }, [value, lang]);
 
   const handleSelect = (city) => {
     const isWorldCity = Boolean(city.n);
-    const displayName = isWorldCity ? city.n : (lang === 'ru' ? city.name : city.nameEn);
+    const curatedCity = isWorldCity ? knownCity(city.n) : city;
+    const displayName = curatedCity ? localizedCityName(curatedCity, lang) : city.n;
     const val = isWorldCity ? displayName : `${displayName} (${city.code})`;
     setQuery(val);
     onChange(val);
@@ -218,9 +245,9 @@ function CityDropdown({
               <button key={city.i || city.code} className={styles.dropdownItem} onMouseDown={() => handleSelect(city)} type="button">
                 <span className={styles.cityFlag}>{city.n ? countryFlag(city.cc) : city.flag}</span>
                 <div className={styles.cityInfo}>
-                  <span className={styles.cityName}>{city.n || (lang === 'ru' ? city.name : city.nameEn)}</span>
+                  <span className={styles.cityName}>{city.n ? localizedPlace(city.n, lang) : localizedCityName(city, lang)}</span>
                   <span className={styles.cityMeta}>
-                    {city.n ? city.c : (lang === 'ru' ? city.country : city.countryEn)}
+                    {city.n ? city.c : localizedCountryName(city, lang)}
                     {!city.n && ` · ${city.code}`}
                   </span>
                 </div>
@@ -387,7 +414,7 @@ export default function HomePage() {
                 >
                   <div className={styles.destinationTop}>
                     <div>
-                      <h3 className={styles.destinationName}>{destination.city}</h3>
+                      <h3 className={styles.destinationName}>{localizedPlace(destination.city, lang)}</h3>
                       <div className={styles.destinationCountry}>
                         <MapPin size={12} />
                         {destination.country}

@@ -5,6 +5,8 @@ const { canonicalHotelCity } = require('../utils/cities');
 test('canonicalHotelCity maps localized catalog names to provider names', () => {
   assert.equal(canonicalHotelCity('Париж'), 'Paris');
   assert.equal(canonicalHotelCity('Москва (MOW)'), 'Moscow');
+  assert.equal(canonicalHotelCity('Parigi (PAR)'), 'Paris');
+  assert.equal(canonicalHotelCity('Mosca'), 'Moscow');
 });
 
 test('canonicalHotelCity preserves worldwide provider names', () => {
