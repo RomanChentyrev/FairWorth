@@ -26,6 +26,21 @@ const CITIES = [
 
 const SUPPORTED_CITY_NAMES = new Set(CITIES.flatMap(city => [city.name, city.nameEn]).map(name => name.toLowerCase()));
 
+export function cleanPlace(value = '') {
+  return String(value).replace(/\s*\([^)]*\)/, '').trim();
+}
+
+export function canonicalPlace(value = '') {
+  const cleaned = cleanPlace(value);
+  const normalized = cleaned.toLocaleLowerCase();
+  const knownCity = CITIES.find(city => (
+    city.name.toLocaleLowerCase() === normalized
+    || city.nameEn.toLocaleLowerCase() === normalized
+    || city.code.toLocaleLowerCase() === normalized
+  ));
+  return knownCity?.nameEn || cleaned;
+}
+
 let worldCitiesPromise;
 
 function loadWorldCities() {
@@ -114,7 +129,7 @@ function CityDropdown({
 
   const handleSelect = (city) => {
     const isWorldCity = Boolean(city.n);
-    const displayName = isWorldCity ? city.n : (lang === 'en' ? city.nameEn : city.name);
+    const displayName = isWorldCity ? city.n : (lang === 'ru' ? city.name : city.nameEn);
     const val = isWorldCity ? displayName : `${displayName} (${city.code})`;
     setQuery(val);
     onChange(val);
@@ -203,9 +218,9 @@ function CityDropdown({
               <button key={city.i || city.code} className={styles.dropdownItem} onMouseDown={() => handleSelect(city)} type="button">
                 <span className={styles.cityFlag}>{city.n ? countryFlag(city.cc) : city.flag}</span>
                 <div className={styles.cityInfo}>
-                  <span className={styles.cityName}>{city.n || (lang === 'en' ? city.nameEn : city.name)}</span>
+                  <span className={styles.cityName}>{city.n || (lang === 'ru' ? city.name : city.nameEn)}</span>
                   <span className={styles.cityMeta}>
-                    {city.n ? city.c : (lang === 'en' ? city.countryEn : city.country)}
+                    {city.n ? city.c : (lang === 'ru' ? city.country : city.countryEn)}
                     {!city.n && ` · ${city.code}`}
                   </span>
                 </div>
@@ -243,7 +258,6 @@ export default function HomePage() {
 
   const TABS = [t('home_tab_hotel'), t('home_tab_flights'), t('home_tab_package')];
 
-  const cleanPlace = (value) => value.replace(/\s*\([^)]*\)/, '').trim();
   const isSupportedCity = (value) => SUPPORTED_CITY_NAMES.has(cleanPlace(value).toLowerCase());
 
   const validateSearch = () => {
@@ -276,8 +290,8 @@ export default function HomePage() {
       check_out: form.check_out,
     }));
     window.sessionStorage.setItem('fairworth_trip', JSON.stringify({
-      from: cleanPlace(form.from),
-      to: cleanPlace(form.city),
+      from: canonicalPlace(form.from),
+      to: canonicalPlace(form.city),
       check_in: form.check_in,
       check_out: form.check_out,
       guests: form.guests,
@@ -312,8 +326,8 @@ export default function HomePage() {
     if (!validateSearch()) return;
     if (!activeReady) return;
 
-    const origin = cleanPlace(form.from);
-    const destination = cleanPlace(form.city);
+    const origin = canonicalPlace(form.from);
+    const destination = canonicalPlace(form.city);
     if (tab === 1) {
       navigate(`/flights?from=${encodeURIComponent(origin)}&to=${encodeURIComponent(destination)}&departure_date=${form.check_in}&check_in=${form.check_in}&check_out=${form.check_out}&passengers=${form.guests}&cabin_class=${form.cabin_class}`);
       return;
@@ -326,7 +340,7 @@ export default function HomePage() {
     label: `${n} ${l(n === 1 ? 'adult' : 'adults', n === 1 ? 'взрослый' : 'взрослых')}`
   }));
 
-  const destinationForCalendar = cleanPlace(form.city);
+  const destinationForCalendar = canonicalPlace(form.city);
   const showPriceCalendar = Boolean(destinationForCalendar) && activeReady;
 
   return (

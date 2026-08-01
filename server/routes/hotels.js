@@ -9,6 +9,7 @@ const { normalizePrice, roundMoney } = require('../services/pricing');
 const { selectComparableRate, rateAvailability, marketBenchmark } = require('../services/comparablePricing');
 const { requireAuth, requireOnboarding, requireEmailVerified } = require('../middleware/auth');
 const { validateDateRange, defaultTravelDates } = require('../utils/dates');
+const { canonicalHotelCity } = require('../utils/cities');
 const { aiLimiter } = require('../middleware/security');
 const { requireCapability, configured } = require('../config/capabilities');
 const travelpayouts = require('../services/travelpayouts');
@@ -610,11 +611,12 @@ async function hotelImages(hotel) {
 router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
   try {
     const {
-      city, check_in, check_out, guests = 2, trip_purpose, stars, min_price, max_price,
+      city: requestedCity, check_in, check_out, guests = 2, trip_purpose, stars, min_price, max_price,
       amenities, districts, rating_min, free_cancel, breakfast,
       sort = 'score', language = 'en', search_event, search_session_id,
       limit = 30, offset = 0
     } = req.query;
+    const city = canonicalHotelCity(requestedCity);
     const pageSize = Math.min(Math.max(Number(limit) || 30, 1), 30);
     const pageOffset = Math.max(Number(offset) || 0, 0);
     const userId = req.user.id;
@@ -1030,13 +1032,14 @@ router.post('/insights/refresh', requireAuth, async (req, res) => {
 router.get('/price-calendar', async (req, res) => {
   try {
     const {
-      city = 'Singapore',
+      city: requestedCity = 'Singapore',
       start,
       days = 35,
       nights = 4,
       check_in,
       check_out,
     } = req.query;
+    const city = canonicalHotelCity(requestedCity);
 
     const startDate = start ? parseDate(start) : parseDate(formatDate(new Date()));
     const requestedDays = Math.min(Math.max(Number(days) || 35, 14), 90);
