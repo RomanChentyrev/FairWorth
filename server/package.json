@@ -8,6 +8,7 @@
     "worker:catalog": "node catalogWorker.js",
     "catalog:sync:mvp": "node scripts/sync-mvp-hotel-catalog.js",
     "catalog:clean:invalid": "node scripts/clean-invalid-hotel-destinations.js",
+    "catalog:deduplicate": "node scripts/deduplicate-hotel-identities.js",
     "providers:check": "node scripts/check-providers.js",
     "mail:check": "node scripts/check-mailpit.js",
     "db:migrate": "node scripts/setup-postgres.js",

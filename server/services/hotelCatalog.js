@@ -77,8 +77,7 @@ async function resolveIata(city) {
 async function findCandidate(source) {
   const identityKey = hotelIdentityKey(source);
   if (identityKey) {
-    const exact = await db.prepare(`SELECT h.* FROM hotels h WHERE h.active = 1 AND h.identity_key = ?
-      AND NOT EXISTS (SELECT 1 FROM hotel_provider_mappings m WHERE m.hotel_id = h.id AND m.provider = 'liteapi') LIMIT 1`).get(identityKey);
+    const exact = await db.prepare('SELECT * FROM hotels WHERE active = 1 AND identity_key = ? LIMIT 1').get(identityKey);
     if (exact) return { row: exact, confidence: 1, method: 'identity_key' };
   }
   const rows = await db.prepare(`SELECT h.* FROM hotels h WHERE h.active = 1 AND NOT EXISTS (SELECT 1 FROM hotel_provider_mappings m WHERE m.hotel_id = h.id AND m.provider = 'liteapi') AND (LOWER(h.city) = LOWER(?) OR (h.latitude BETWEEN ? AND ? AND h.longitude BETWEEN ? AND ?)) LIMIT 100`)
@@ -93,7 +92,7 @@ async function upsertHotel(source, facilities, iataCode, claimedHotelIds = new S
   let match = null;
   if (!hotelId) {
     match = await findCandidate(source);
-    const canClaim = match?.confidence >= 0.92 && !claimedHotelIds.has(match.row.id);
+    const canClaim = match?.confidence >= 0.92 && (match.method === 'identity_key' || !claimedHotelIds.has(match.row.id));
     hotelId = canClaim ? match.row.id : uuidv4();
     created = !canClaim;
     claimedHotelIds.add(hotelId);
