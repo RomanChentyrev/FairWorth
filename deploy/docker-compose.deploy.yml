@@ -58,6 +58,20 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  catalog-worker:
+    image: ${REGISTRY_IMAGE}/api:${IMAGE_TAG}
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    env_file: ${SERVER_ENV_FILE}
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS_ON_START: "false"
+    command: ["node", "catalogWorker.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   caddy_data:
   caddy_config:

@@ -1,7 +1,7 @@
 const express = require('express');
 const { db } = require('../db/database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { syncCatalog } = require('../services/hotelCatalog');
+const { enqueueCatalogSync } = require('../services/hotelCatalog');
 const { v4: uuidv4 } = require('uuid');
 
 const router = express.Router();
@@ -32,17 +32,18 @@ router.patch('/anomalies/:type/:id/resolve', async (req, res) => {
 
 router.post('/catalog/sync', async (req, res) => {
   try {
-    const { city, iata_code, limit } = req.body || {};
+    const { city, iata_code, reset } = req.body || {};
     if (!city && !iata_code) return res.status(400).json({ error: 'city or iata_code is required' });
-    const result = await syncCatalog({ city, iataCode: iata_code, limit });
-    await recordAdminAction(req, 'catalog.sync', 'hotel_catalog', result?.id || result?.sync_id || null, { city: city || null, iata_code: iata_code || null, requested_limit: limit || null });
-    return res.json(result);
+    const result = await enqueueCatalogSync({ city, iataCode: iata_code, reset: reset === true });
+    await recordAdminAction(req, 'catalog.sync.enqueue', 'hotel_catalog', result?.iata_code || null, { city: city || null, iata_code: iata_code || null, reset: reset === true });
+    return res.status(202).json({ queued: true, cursor: result });
   } catch (error) { return res.status(502).json({ error: error.message }); }
 });
 
 router.get('/catalog/syncs', async (req, res) => {
   const rows = await db.prepare(`SELECT * FROM hotel_catalog_syncs ORDER BY started_at DESC LIMIT 100`).all();
-  res.json({ syncs: rows });
+  const cursors = await db.prepare(`SELECT * FROM hotel_catalog_cursors ORDER BY status, requested_at DESC`).all();
+  res.json({ syncs: rows, cursors });
 });
 
 router.get('/catalog/mapping-reviews', async (req, res) => {

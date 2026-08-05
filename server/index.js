@@ -114,7 +114,6 @@ const { db } = require('./db/database');
 const ready = init().then(async () => {
   if (process.env.RUN_MIGRATIONS_ON_START !== 'false') await ensureDatabaseSchema();
   await ensurePersonalizationSchema();
-  require('./services/hotelCatalog').startCatalogScheduler();
   // Routes loaded AFTER db is ready so they can require db safely
   app.use('/api/auth', authLimiter, require('./routes/auth'));
   app.use('/api/legal', require('./routes/legal'));

@@ -19,6 +19,19 @@ function normalize(value = '') {
     .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function hotelIdentityKey(hotel = {}) {
+  const name = normalize(hotel.name);
+  const city = normalize(hotel.city);
+  const country = normalize(hotel.country);
+  if (!name || !city) return null;
+  const latitude = Number(hotel.latitude);
+  const longitude = Number(hotel.longitude);
+  const geo = Number.isFinite(latitude) && Number.isFinite(longitude)
+    ? `${latitude.toFixed(4)}:${longitude.toFixed(4)}`
+    : normalize(hotel.address || hotel.location);
+  return [country, city, name, geo].filter(Boolean).join('|');
+}
+
 function stripHtml(value = '') {
   return String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -62,6 +75,12 @@ async function resolveIata(city) {
 }
 
 async function findCandidate(source) {
+  const identityKey = hotelIdentityKey(source);
+  if (identityKey) {
+    const exact = await db.prepare(`SELECT h.* FROM hotels h WHERE h.active = 1 AND h.identity_key = ?
+      AND NOT EXISTS (SELECT 1 FROM hotel_provider_mappings m WHERE m.hotel_id = h.id AND m.provider = 'liteapi') LIMIT 1`).get(identityKey);
+    if (exact) return { row: exact, confidence: 1, method: 'identity_key' };
+  }
   const rows = await db.prepare(`SELECT h.* FROM hotels h WHERE h.active = 1 AND NOT EXISTS (SELECT 1 FROM hotel_provider_mappings m WHERE m.hotel_id = h.id AND m.provider = 'liteapi') AND (LOWER(h.city) = LOWER(?) OR (h.latitude BETWEEN ? AND ? AND h.longitude BETWEEN ? AND ?)) LIMIT 100`)
     .all(source.city || '', Number(source.latitude || 0) - 0.05, Number(source.latitude || 0) + 0.05, Number(source.longitude || 0) - 0.05, Number(source.longitude || 0) + 0.05);
   return rows.map(row => ({ row, confidence: matchConfidence(source, row) })).sort((a, b) => b.confidence - a.confidence)[0] || null;
@@ -84,20 +103,23 @@ async function upsertHotel(source, facilities, iataCode, claimedHotelIds = new S
   const amenities = [...new Set(names.map(normalizedAmenity).filter(Boolean))];
   const stars = Math.max(0, Math.min(5, Math.round(Number(source.stars || 0))));
   const location = source.address || source.city || source.country || 'Unknown';
+  const identityKey = hotelIdentityKey(source);
   if (created) {
-    await db.prepare(`INSERT INTO hotels (id, name, location, city, country, stars, description, amenities, latitude, longitude, address, postal_code, image_url, thumbnail_url, hotel_type, chain_name, content_source, source_updated_at, active, content_raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'liteapi', CURRENT_TIMESTAMP, ?, ?)`)
-      .run(hotelId, source.name, location, source.city || '', String(source.country || '').toUpperCase(), stars, stripHtml(source.hotelDescription), JSON.stringify(amenities), source.latitude, source.longitude, source.address, source.zip, source.main_photo, source.thumbnail, String(source.hotelTypeId || ''), source.chain || null, source.deletedAt ? 0 : 1, JSON.stringify(source));
+    await db.prepare(`INSERT INTO hotels (id, name, location, city, country, stars, description, amenities, latitude, longitude, address, postal_code, image_url, thumbnail_url, hotel_type, chain_name, content_source, source_updated_at, active, content_raw_json, identity_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'liteapi', CURRENT_TIMESTAMP, ?, ?, ?)`)
+      .run(hotelId, source.name, location, source.city || '', String(source.country || '').toUpperCase(), stars, stripHtml(source.hotelDescription), JSON.stringify(amenities), source.latitude, source.longitude, source.address, source.zip, source.main_photo, source.thumbnail, String(source.hotelTypeId || ''), source.chain || null, source.deletedAt ? 0 : 1, JSON.stringify(source), identityKey);
   } else {
-    await db.prepare(`UPDATE hotels SET name = ?, location = ?, city = ?, country = ?, stars = ?, description = ?, amenities = ?, latitude = ?, longitude = ?, address = ?, postal_code = ?, image_url = ?, thumbnail_url = ?, hotel_type = ?, chain_name = ?, content_source = 'liteapi', source_updated_at = CURRENT_TIMESTAMP, active = ?, content_raw_json = ? WHERE id = ?`)
-      .run(source.name, location, source.city || '', String(source.country || '').toUpperCase(), stars, stripHtml(source.hotelDescription), JSON.stringify(amenities), source.latitude, source.longitude, source.address, source.zip, source.main_photo, source.thumbnail, String(source.hotelTypeId || ''), source.chain || null, source.deletedAt ? 0 : 1, JSON.stringify(source), hotelId);
+    await db.prepare(`UPDATE hotels SET name = ?, location = ?, city = ?, country = ?, stars = ?, description = ?, amenities = ?, latitude = ?, longitude = ?, address = ?, postal_code = ?, image_url = ?, thumbnail_url = ?, hotel_type = ?, chain_name = ?, content_source = 'liteapi', source_updated_at = CURRENT_TIMESTAMP, active = ?, content_raw_json = ?, identity_key = ? WHERE id = ?`)
+      .run(source.name, location, source.city || '', String(source.country || '').toUpperCase(), stars, stripHtml(source.hotelDescription), JSON.stringify(amenities), source.latitude, source.longitude, source.address, source.zip, source.main_photo, source.thumbnail, String(source.hotelTypeId || ''), source.chain || null, source.deletedAt ? 0 : 1, JSON.stringify(source), identityKey, hotelId);
   }
 
   await db.prepare(`INSERT INTO hotel_provider_mappings (id, hotel_id, provider, provider_hotel_id, match_confidence, verified, match_method, metadata) VALUES (?, ?, 'liteapi', ?, ?, ?, ?, ?) ON CONFLICT (provider, provider_hotel_id) DO UPDATE SET hotel_id = EXCLUDED.hotel_id, match_confidence = EXCLUDED.match_confidence, metadata = EXCLUDED.metadata, updated_at = CURRENT_TIMESTAMP`)
     .run(uuidv4(), hotelId, source.id, match?.confidence || 1, match?.confidence >= 0.92 ? 1 : 0, mapped ? 'provider_id' : match?.confidence >= 0.92 ? 'automatic' : 'provider_import', JSON.stringify({ iata_code: iataCode }));
 
   if (!mapped && match && match.confidence >= 0.7 && match.confidence < 0.92) {
-    await db.prepare(`INSERT INTO hotel_mapping_reviews (id, hotel_id, candidate_hotel_id, provider, provider_hotel_id, confidence, evidence) VALUES (?, ?, ?, 'liteapi', ?, ?, ?)`)
-      .run(uuidv4(), hotelId, match.row.id, source.id, match.confidence, JSON.stringify({ source_name: source.name, candidate_name: match.row.name, distance_km: distanceKm(source, match.row) }));
+    await db.prepare(`INSERT INTO hotel_mapping_reviews (id, hotel_id, candidate_hotel_id, provider, provider_hotel_id, confidence, evidence)
+      SELECT ?, ?, ?, 'liteapi', ?, ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM hotel_mapping_reviews WHERE provider = 'liteapi' AND provider_hotel_id = ? AND status = 'open')`)
+      .run(uuidv4(), hotelId, match.row.id, source.id, match.confidence, JSON.stringify({ source_name: source.name, candidate_name: match.row.name, distance_km: distanceKm(source, match.row) }), source.id);
   }
   const reviewDates = [];
   const reviewRatings = [];
@@ -162,34 +184,111 @@ async function upsertHotel(source, facilities, iataCode, claimedHotelIds = new S
   return { hotelId, created };
 }
 
-async function syncCatalog({ city, iataCode, limit } = {}) {
+function positiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+async function enqueueCatalogSync({ city, iataCode, reset = false } = {}) {
   if (!liteapi.configured()) throw new Error('LiteAPI is not configured');
-  const code = iataCode || await resolveIata(city);
+  const code = String(iataCode || await resolveIata(city) || '').toUpperCase();
   if (!code) throw new Error(`Could not resolve an IATA code for ${city}`);
-  const maxHotels = Math.max(1, Number(limit || process.env.CATALOG_SYNC_MAX_HOTELS || 500));
-  const key = code.toUpperCase();
+  const label = city || code;
+  await db.prepare(`INSERT INTO hotel_catalog_cursors (provider, iata_code, city, status, requested_at)
+    VALUES ('liteapi', ?, ?, 'pending', CURRENT_TIMESTAMP)
+    ON CONFLICT (provider, iata_code) DO UPDATE SET
+      city = EXCLUDED.city,
+      status = CASE
+        WHEN ? = 1 THEN 'pending'
+        WHEN hotel_catalog_cursors.status IN ('running', 'completed') THEN hotel_catalog_cursors.status
+        ELSE 'pending'
+      END,
+      next_offset = CASE WHEN ? = 1 THEN 0 ELSE hotel_catalog_cursors.next_offset END,
+      total_available = CASE WHEN ? = 1 THEN NULL ELSE hotel_catalog_cursors.total_available END,
+      completed_at = CASE WHEN ? = 1 THEN NULL ELSE hotel_catalog_cursors.completed_at END,
+      requested_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP`)
+    .run(code, label, reset ? 1 : 0, reset ? 1 : 0, reset ? 1 : 0, reset ? 1 : 0);
+  return db.prepare(`SELECT * FROM hotel_catalog_cursors WHERE provider = 'liteapi' AND iata_code = ?`).get(code);
+}
+
+async function claimCatalogCursor(code, syncId) {
+  return db.prepare(`UPDATE hotel_catalog_cursors SET
+      status = 'running', lease_id = ?,
+      lease_until = CURRENT_TIMESTAMP + (? * INTERVAL '1 second'),
+      full_sync_started_at = COALESCE(full_sync_started_at, CURRENT_TIMESTAMP),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE provider = 'liteapi' AND iata_code = ?
+      AND status != 'completed'
+      AND (status != 'running' OR lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)
+    RETURNING *`)
+    .get(syncId, positiveInteger(process.env.CATALOG_SYNC_LEASE_SECONDS, 1800), code);
+}
+
+async function syncCatalog({ city, iataCode, limit, reset = false } = {}) {
+  if (!liteapi.configured()) throw new Error('LiteAPI is not configured');
+  const code = String(iataCode || await resolveIata(city) || '').toUpperCase();
+  if (!code) throw new Error(`Could not resolve an IATA code for ${city}`);
+  const batchLimit = positiveInteger(limit || process.env.CATALOG_SYNC_BATCH_HOTELS, 500);
+  const key = code;
   if (activeSyncs.has(key)) return activeSyncs.get(key);
+
   const job = (async () => {
+    await enqueueCatalogSync({ city: city || code, iataCode: code, reset });
+    const existingCursor = await db.prepare(`SELECT * FROM hotel_catalog_cursors WHERE provider = 'liteapi' AND iata_code = ?`).get(code);
+    if (existingCursor?.status === 'completed' && !reset) {
+      return { city: existingCursor.city, iata_code: code, processed: 0, created: 0, updated: 0, next_offset: existingCursor.next_offset, total_available: existingCursor.total_available, complete: true };
+    }
+
     const syncId = uuidv4();
-    await db.prepare(`INSERT INTO hotel_catalog_syncs (id, provider, city, iata_code, requested_limit) VALUES (?, 'liteapi', ?, ?, ?)`).run(syncId, city || code, code, maxHotels);
-    let processed = 0; let created = 0; let total = 0;
+    const cursor = await claimCatalogCursor(code, syncId);
+    if (!cursor) {
+      const current = await db.prepare(`SELECT * FROM hotel_catalog_cursors WHERE provider = 'liteapi' AND iata_code = ?`).get(code);
+      return { city: current?.city || city, iata_code: code, processed: 0, created: 0, updated: 0, next_offset: current?.next_offset || 0, total_available: current?.total_available, complete: current?.status === 'completed', in_progress: current?.status === 'running' };
+    }
+
+    await db.prepare(`INSERT INTO hotel_catalog_syncs (id, provider, city, iata_code, requested_limit, metadata) VALUES (?, 'liteapi', ?, ?, ?, ?)`)
+      .run(syncId, cursor.city, code, batchLimit, JSON.stringify({ start_offset: Number(cursor.next_offset || 0), mode: 'resumable' }));
+    let processed = 0; let created = 0; let total = Number(cursor.total_available || 0);
+    let nextOffset = Number(cursor.next_offset || 0);
+    let complete = false;
     try {
       const facilitiesData = await liteapi.getFacilities();
       const facilities = new Map(facilitiesData.map(item => [String(item.facility_id), item.facility]));
       const claimedHotelIds = new Set();
-      const pageSize = 100;
-      for (let offset = 0; offset < maxHotels; offset += pageSize) {
-        const result = await liteapi.getHotels({ iataCode: code, offset, limit: Math.min(pageSize, maxHotels - offset) });
+      const pageSize = Math.min(100, positiveInteger(process.env.CATALOG_SYNC_PAGE_SIZE, Number(cursor.page_size || 100)));
+      const stopOffset = nextOffset + batchLimit;
+
+      while (nextOffset < stopOffset) {
+        const requested = Math.min(pageSize, stopOffset - nextOffset);
+        const result = await liteapi.getHotels({ iataCode: code, offset: nextOffset, limit: requested });
         const hotels = Array.isArray(result.data) ? result.data : [];
-        total = Number(result.total || hotels.length);
-        const savedHotels = await mapConcurrent(hotels, Math.max(1, Number(process.env.CATALOG_SYNC_CONCURRENCY || 5)), hotel => upsertHotel(hotel, facilities, code, claimedHotelIds));
-        processed += savedHotels.length; created += savedHotels.filter(item => item.created).length;
-        if (!hotels.length || processed >= total) break;
+        total = Math.max(0, Number(result.total || total || hotels.length));
+        const savedHotels = await mapConcurrent(hotels, positiveInteger(process.env.CATALOG_SYNC_CONCURRENCY, 5), hotel => upsertHotel(hotel, facilities, code, claimedHotelIds));
+        processed += savedHotels.length;
+        created += savedHotels.filter(item => item.created).length;
+        nextOffset += hotels.length;
+        complete = hotels.length === 0 || nextOffset >= total;
+        await db.prepare(`UPDATE hotel_catalog_cursors SET next_offset = ?, total_available = ?, status = ?,
+            lease_until = CURRENT_TIMESTAMP + (? * INTERVAL '1 second'), completed_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END,
+            last_error = NULL, updated_at = CURRENT_TIMESTAMP
+          WHERE provider = 'liteapi' AND iata_code = ? AND lease_id = ?`)
+          .run(nextOffset, total, complete ? 'completed' : 'running', positiveInteger(process.env.CATALOG_SYNC_LEASE_SECONDS, 1800), complete ? 1 : 0, code, syncId);
+        if (complete || hotels.length < requested) break;
       }
-      await db.prepare(`UPDATE hotel_catalog_syncs SET status = 'completed', processed_count = ?, created_count = ?, updated_count = ?, total_available = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(processed, created, processed - created, total, syncId);
-      return { id: syncId, city, iata_code: code, processed, created, updated: processed - created, total_available: total };
+
+      await db.prepare(`UPDATE hotel_catalog_cursors SET status = ?, lease_id = NULL, lease_until = NULL, updated_at = CURRENT_TIMESTAMP WHERE provider = 'liteapi' AND iata_code = ? AND lease_id = ?`)
+        .run(complete ? 'completed' : 'pending', code, syncId);
+      await db.prepare(`UPDATE hotel_catalog_syncs SET status = 'completed', processed_count = ?, created_count = ?, updated_count = ?, total_available = ?, metadata = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .run(processed, created, processed - created, total, JSON.stringify({ start_offset: Number(cursor.next_offset || 0), end_offset: nextOffset, complete, mode: 'resumable' }), syncId);
+      return { id: syncId, city: cursor.city, iata_code: code, processed, created, updated: processed - created, next_offset: nextOffset, total_available: total, complete };
     } catch (error) {
-      await db.prepare(`UPDATE hotel_catalog_syncs SET status = 'failed', processed_count = ?, created_count = ?, error = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(processed, created, error.message.slice(0, 1000), syncId);
+      const message = String(error.message || error).slice(0, 1000);
+      await db.prepare(`UPDATE hotel_catalog_cursors SET status = 'failed', lease_id = NULL, lease_until = NULL,
+          retry_count = retry_count + 1, last_error = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE provider = 'liteapi' AND iata_code = ? AND lease_id = ?`).run(message, code, syncId);
+      await db.prepare(`UPDATE hotel_catalog_syncs SET status = 'failed', processed_count = ?, created_count = ?, updated_count = ?, total_available = ?, error = ?, metadata = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .run(processed, created, processed - created, total || null, message, JSON.stringify({ start_offset: Number(cursor.next_offset || 0), end_offset: nextOffset, mode: 'resumable' }), syncId);
       throw error;
     }
   })().finally(() => activeSyncs.delete(key));
@@ -201,27 +300,44 @@ async function ensureCatalogForCity(city) {
   if (!city || process.env.HOTEL_CATALOG_PROVIDER === 'none' || (process.env.HOTEL_CATALOG_PROVIDER && process.env.HOTEL_CATALOG_PROVIDER !== 'liteapi') || !liteapi.configured() || process.env.NODE_ENV === 'test') return null;
   const code = await resolveIata(city);
   if (!code) return null;
-  const recent = await db.prepare(`SELECT * FROM hotel_catalog_syncs WHERE provider = 'liteapi' AND iata_code = ? AND status = 'completed' AND completed_at > CURRENT_TIMESTAMP - (? * INTERVAL '1 hour') ORDER BY completed_at DESC LIMIT 1`).get(code, Number(process.env.CATALOG_SYNC_INTERVAL_HOURS || 24));
-  if (recent) {
-    const target = Math.min(Number(recent.total_available || Infinity), Number(process.env.CATALOG_SYNC_MAX_HOTELS || 500));
-    if (Number(recent.processed_count || 0) < target) syncCatalog({ city, iataCode: code }).catch(error => console.warn(`[liteapi] catalog expansion: ${error.message}`));
-    return recent;
+  const cursor = await enqueueCatalogSync({ city, iataCode: code });
+  const existing = await db.prepare(`SELECT COUNT(*) AS count FROM hotel_provider_mappings WHERE provider = 'liteapi' AND metadata::jsonb ->> 'iata_code' = ?`).get(code);
+  if (Number(existing?.count || 0) === 0) {
+    return syncCatalog({ city, iataCode: code, limit: positiveInteger(process.env.CATALOG_INITIAL_SYNC_HOTELS, 100) });
   }
-  const existing = await db.prepare(`SELECT COUNT(*) AS count FROM hotel_provider_mappings WHERE provider = 'liteapi' AND metadata LIKE ?`).get(`%\"iata_code\":\"${code}\"%`);
-  if (Number(existing?.count || 0) > 0) { syncCatalog({ city, iataCode: code }).catch(error => console.warn(`[liteapi] background catalog sync: ${error.message}`)); return null; }
-  const initial = await syncCatalog({ city, iataCode: code, limit: Number(process.env.CATALOG_INITIAL_SYNC_HOTELS || 100) });
-  setImmediate(() => syncCatalog({ city, iataCode: code }).catch(error => console.warn(`[liteapi] catalog expansion: ${error.message}`)));
-  return initial;
+  if (cursor.status !== 'completed') {
+    setImmediate(() => syncCatalog({ city, iataCode: code, limit: positiveInteger(process.env.CATALOG_ON_DEMAND_SYNC_HOTELS, 100) })
+      .catch(error => console.warn(`[liteapi] on-demand catalog expansion: ${error.message}`)));
+  }
+  return cursor;
+}
+
+async function processCatalogQueue(limit = 1) {
+  if (!liteapi.configured() || process.env.NODE_ENV === 'test') return [];
+  const intervalHours = positiveInteger(process.env.CATALOG_SYNC_INTERVAL_HOURS, 24);
+  await db.prepare(`UPDATE hotel_catalog_cursors SET status = 'pending', next_offset = 0, total_available = NULL,
+      completed_at = NULL, full_sync_started_at = NULL, requested_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE provider = 'liteapi' AND status = 'completed' AND completed_at < CURRENT_TIMESTAMP - (? * INTERVAL '1 hour')`).run(intervalHours);
+  const queued = await db.prepare(`SELECT city, iata_code FROM hotel_catalog_cursors
+    WHERE provider = 'liteapi'
+      AND (status = 'pending' OR (status = 'failed' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '10 minutes') OR (status = 'running' AND lease_until < CURRENT_TIMESTAMP))
+    ORDER BY requested_at DESC, updated_at ASC LIMIT ?`).all(positiveInteger(limit, 1));
+  const results = [];
+  for (const item of queued) {
+    try { results.push(await syncCatalog({ city: item.city, iataCode: item.iata_code })); }
+    catch (error) { results.push({ city: item.city, iata_code: item.iata_code, error: error.message }); }
+  }
+  return results;
 }
 
 function startCatalogScheduler() {
   if (!liteapi.configured() || process.env.NODE_ENV === 'test') return null;
-  const interval = setInterval(async () => {
-    const stale = await db.prepare(`SELECT DISTINCT ON (iata_code) city, iata_code FROM hotel_catalog_syncs WHERE provider = 'liteapi' AND status = 'completed' AND completed_at < CURRENT_TIMESTAMP - (? * INTERVAL '1 hour') ORDER BY iata_code, completed_at DESC`).all(Number(process.env.CATALOG_SYNC_INTERVAL_HOURS || 24));
-    for (const item of stale) syncCatalog({ city: item.city, iataCode: item.iata_code }).catch(error => console.warn(`[liteapi] scheduled catalog sync: ${error.message}`));
-  }, 60 * 60 * 1000);
+  const interval = setInterval(() => processCatalogQueue(1).catch(error => console.warn(`[liteapi] catalog queue: ${error.message}`)), 5 * 60 * 1000);
   interval.unref();
   return interval;
 }
 
-module.exports = { resolveIata, syncCatalog, ensureCatalogForCity, startCatalogScheduler, normalizedAmenity, normalize, similarity, matchConfidence };
+module.exports = {
+  resolveIata, syncCatalog, enqueueCatalogSync, ensureCatalogForCity, processCatalogQueue, startCatalogScheduler,
+  normalizedAmenity, normalize, hotelIdentityKey, similarity, matchConfidence,
+};

@@ -68,7 +68,11 @@ GOOGLE_PLACES_MAX_PHOTOS=8
 CATALOG_SYNC_CONCURRENCY=5
 CATALOG_SYNC_INTERVAL_HOURS=24
 CATALOG_INITIAL_SYNC_HOTELS=100
-CATALOG_SYNC_MAX_HOTELS=500
+CATALOG_SYNC_BATCH_HOTELS=500
+CATALOG_SYNC_PAGE_SIZE=100
+CATALOG_ON_DEMAND_SYNC_HOTELS=100
+CATALOG_SYNC_LEASE_SECONDS=1800
+CATALOG_WORKER_BATCHES=1
 INSIGHTS_CACHE_TTL_HOURS=6
 INSIGHTS_JOB_TIMEOUT_MS=20000
 MAX_HOTEL_NIGHTLY_PRICE_USD=10000
@@ -161,7 +165,7 @@ Partner redirects and postbacks are disabled for the closed MVP with `PARTNER_BO
 
 ## Score and analytics
 
-LiteAPI is the canonical hotel-content catalog and supplies live room rates. Xotelo remains a secondary rate/referral source. Hotels use internal UUIDs; provider IDs, match confidence and verification state are stored separately. The first search for a city resolves its IATA code and imports the catalog; subsequent imports run after `CATALOG_SYNC_INTERVAL_HOURS`. Admins can manually sync a city and review uncertain hotel matches at `/admin`.
+LiteAPI is the canonical hotel-content catalog and supplies live room rates. Xotelo remains a secondary rate/referral source. Hotels use internal UUIDs; provider IDs, match confidence and verification state are stored separately. Catalog imports are paginated and resumable: the dedicated catalog worker persists the next provider offset after every page and continues until the provider inventory is exhausted. A search raises that destination's queue priority and may import a small on-demand batch. Completed destinations are refreshed after `CATALOG_SYNC_INTERVAL_HOURS`. Admins can enqueue a city sync and review uncertain hotel matches at `/admin`.
 
 The hotel Score combines value, quality, review trust and personal preference match. Each result reports price source, update time, currency/tax metadata, available and unavailable features, and a short explanation.
 

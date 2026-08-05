@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { flattenRates, nightsBetween } = require('../services/hotelRates');
-const { normalizedAmenity, similarity, matchConfidence } = require('../services/hotelCatalog');
+const { normalizedAmenity, hotelIdentityKey, similarity, matchConfidence } = require('../services/hotelCatalog');
 const { amenityMatches } = require('../config/hotelAmenities');
 
 test('LiteAPI stay total is normalized to a nightly price with explicit tax status', () => {
@@ -30,6 +30,13 @@ test('catalog matching favors equal names and nearby coordinates', () => {
   assert.ok(matchConfidence(source, same) >= 0.92);
   assert.ok(matchConfidence(source, same) > matchConfidence(source, other));
   assert.ok(similarity(source.name, same.name) > 0.7);
+});
+
+test('catalog identity is stable across accents, punctuation, and small coordinate formatting differences', () => {
+  const first = hotelIdentityKey({ name: 'Hôtel de Paris!', city: 'París', country: 'FR', latitude: 48.85661, longitude: 2.35221 });
+  const second = hotelIdentityKey({ name: 'Hotel de Paris', city: 'Paris', country: 'fr', latitude: 48.856609, longitude: 2.352209 });
+  assert.equal(first, second);
+  assert.equal(hotelIdentityKey({ name: '', city: 'Paris' }), null);
 });
 
 test('amenities and date ranges are normalized', () => {
