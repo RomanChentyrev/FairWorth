@@ -64,6 +64,7 @@ app.get('/api/health', async (req, res) => {
   const providerCapabilities = capabilities();
   const checks = {
     database: { status: 'unknown' },
+    redis: { status: 'unknown' },
     xotelo: { status: 'unknown' },
     openrouter: { status: providerCapabilities.ai.status === 'ready' ? 'configured' : 'not_configured' },
     travelpayouts: { status: process.env.TRAVELPAYOUTS_TOKEN ? 'configured' : 'not_configured' },
@@ -77,6 +78,7 @@ app.get('/api/health', async (req, res) => {
   } catch (error) {
     checks.database = { status: 'error' };
   }
+  checks.redis = await require('./services/cache').health();
   const probe = async (name, url, headers = {}) => {
     try {
       const response = await fetch(url, { method: 'HEAD', headers, signal: AbortSignal.timeout(2500) });

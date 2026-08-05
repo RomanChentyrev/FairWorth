@@ -16,6 +16,8 @@ const travelpayouts = require('../services/travelpayouts');
 const { ensureCatalogForCity } = require('../services/hotelCatalog');
 const { refreshLiteApiRates } = require('../services/hotelRates');
 const googlePlaces = require('../services/googlePlaces');
+const cache = require('../services/cache');
+const { warmedDestination } = require('../services/hotelSearchWarmup');
 const { amenitySearchTerms, amenityMatches } = require('../config/hotelAmenities');
 const {
   CACHE_TTL_HOURS,
@@ -314,7 +316,7 @@ async function refreshInsightsInBackground({ force = false } = {}) {
   return insightsRefreshPromise;
 }
 
-async function ensureXoteloSchema() {
+async function initializeXoteloSchema() {
   await db.prepare(`
     DELETE FROM hotel_prices
     WHERE operator = 'Fairworth local demo'
@@ -392,6 +394,18 @@ async function ensureXoteloSchema() {
     );
 
   }
+}
+
+let xoteloSchemaReady = false;
+let xoteloSchemaPromise = null;
+async function ensureXoteloSchema() {
+  if (xoteloSchemaReady) return;
+  if (!xoteloSchemaPromise) {
+    xoteloSchemaPromise = initializeXoteloSchema()
+      .then(() => { xoteloSchemaReady = true; })
+      .finally(() => { xoteloSchemaPromise = null; });
+  }
+  return xoteloSchemaPromise;
 }
 
 function defaultCheckOut(checkIn) {
@@ -621,6 +635,22 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
     const pageOffset = Math.max(Number(offset) || 0, 0);
     const userId = req.user.id;
     const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+    const [feedbackVersion, interactionVersion] = await Promise.all([
+      db.prepare(`SELECT COUNT(*) AS count, MAX(created_at) AS latest FROM user_hotel_feedback WHERE user_id = ?`).get(userId),
+      db.prepare(`SELECT COUNT(*) AS count, MAX(created_at) AS latest FROM user_interactions WHERE user_id = ?`).get(userId),
+    ]);
+    const searchCacheKey = cache.cacheKey('hotel-search-v2', {
+      userId,
+      preferences: userPrefs,
+      feedbackVersion,
+      interactionVersion,
+      query: { ...req.query, city, limit: pageSize, offset: pageOffset, search_event: undefined, search_session_id: undefined },
+      scoreVersion: SCORE_VERSION,
+    });
+    if (search_event !== '1') {
+      const cachedSearch = await cache.getJson(searchCacheKey);
+      if (cachedSearch) return res.json({ ...cachedSearch, cached: true });
+    }
     const requiredPreferenceAmenities = (() => {
       try { return JSON.parse(userPrefs?.required_hotel_amenities || '[]'); } catch { return []; }
     })();
@@ -665,7 +695,8 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
           WHEN SUM(CASE WHEN hp.source = 'liteapi' THEN 1 ELSE 0 END) > 0 THEN 'liteapi'
           WHEN SUM(CASE WHEN hp.source = 'xotelo' THEN 1 ELSE 0 END) > 0 THEN 'xotelo'
           ELSE NULL
-        END as price_source
+        END as price_source,
+        COUNT(*) OVER() as catalog_total
       FROM hotels h
       LEFT JOIN hotel_reviews hr ON hr.hotel_id = h.id
       LEFT JOIN hotel_prices hp ON hp.hotel_id = h.id
@@ -745,7 +776,16 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
       hr.rating_stddev, hr.suspicious_review_share, hr.verified_review_share,
       hr.review_source_count, hr.review_source_consistency`;
 
+    if (sort === 'price_asc') query += ` ORDER BY MIN(hp.price_per_night) ASC NULLS LAST, h.id`;
+    else if (sort === 'price_desc') query += ` ORDER BY MIN(hp.price_per_night) DESC NULLS LAST, h.id`;
+    else if (sort === 'rating') query += ` ORDER BY hr.rating DESC NULLS LAST, hr.count DESC NULLS LAST, h.id`;
+    else query += ` ORDER BY hr.rating DESC NULLS LAST, hr.count DESC NULLS LAST, h.stars DESC NULLS LAST, h.id`;
+    query += ` LIMIT ? OFFSET ?`;
+    params.push(pageSize, pageOffset);
+
     let hotels = await db.prepare(query).all(...params);
+    const catalogTotal = Number(hotels[0]?.catalog_total || 0);
+    hotels.forEach(hotel => { delete hotel.catalog_total; });
 
     const candidateHotelIds = hotels.map(hotel => hotel.id);
     const [userWeights, roomRows, catalogAmenityRows] = await Promise.all([
@@ -805,7 +845,8 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
         price_source: comparable?.source || null,
       }, userPrefs, userWeights, scoreContext);
     });
-    // Sort the complete filtered candidate set before applying pagination.
+    // Score only the current SQL candidate window. Interactive filters no longer
+    // trigger a full-city score recalculation for thousands of hotels.
     const sorted = scored.sort((a, b) => {
       if (sort === 'score') return Number(b.top_pick_eligible) - Number(a.top_pick_eligible) || b.adjusted_score - a.adjusted_score || b.fairworth_score - a.fairworth_score;
       if (sort === 'price_asc') return (a.min_price ?? Infinity) - (b.min_price ?? Infinity);
@@ -813,8 +854,8 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
       if (sort === 'rating') return (b.rating || 0) - (a.rating || 0);
       return 0;
     });
-    const totalResults = sorted.length;
-    const pageResults = sorted.slice(pageOffset, pageOffset + pageSize);
+    const totalResults = catalogTotal;
+    const pageResults = sorted;
     const hasMore = pageOffset + pageResults.length < totalResults;
     await Promise.all(pageResults.map(result => recordScoreSnapshot(userId, result)));
 
@@ -828,15 +869,16 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
       `).run(uuidv4(), userId, city, liveCheckIn, liveCheckOut, guests, totalResults, search_session_id, fingerprint);
     }
 
-    const locationFacets = city
+    const warmed = city ? await warmedDestination(city) : null;
+    const locationFacets = warmed?.locations || (city
       ? (await db.prepare(`SELECT DISTINCT location FROM hotels WHERE LOWER(city) LIKE ? OR LOWER(country) LIKE ? ORDER BY location`).all(`%${city.toLowerCase()}%`, `%${city.toLowerCase()}%`)).map(row => row.location)
-      : [];
+      : []);
     const responseHotels = pageResults.map(hotel => {
       const result = { ...hotel };
       delete result.content_raw_json;
       return result;
     });
-    res.json({
+    const payload = {
       hotels: responseHotels,
       total: totalResults,
       has_more: hasMore,
@@ -851,33 +893,37 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
         active_contexts: userWeights.activeContexts,
         interaction_count: userWeights.interactionCount,
       },
-    });
+      cached: false,
+    };
+    await cache.setJson(searchCacheKey, payload, Math.max(30, Number(process.env.HOTEL_SEARCH_CACHE_TTL_SECONDS || 300)));
+    res.json(payload);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/hotels/rates/batch — progressively enrich catalog results with live rates.
-router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
-  try {
-    const {
-      hotel_ids: hotelIds,
-      check_in: checkIn,
-      check_out: checkOut,
-      guests = 2,
-      trip_purpose: tripPurpose,
-      language = 'en',
-      breakfast = false,
-      free_cancel: freeCancel = false,
-    } = req.body || {};
-    if (!Array.isArray(hotelIds) || !hotelIds.length || hotelIds.length > 50) return res.status(400).json({ error: 'hotel_ids must contain between 1 and 50 items' });
-    if (!validateDateRange(checkIn, checkOut)) return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
+async function enrichRateBatch({ hotelIds, checkIn, checkOut, guests = 2, tripPurpose, language = 'en', breakfast = false, freeCancel = false, userId }) {
     const uniqueIds = [...new Set(hotelIds.map(String))];
+    const [cachedPreferences, interactionVersion] = await Promise.all([
+      db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId),
+      db.prepare(`SELECT COUNT(*) AS count, MAX(created_at) AS latest FROM user_interactions WHERE user_id = ?`).get(userId),
+    ]);
+    const rateCacheKey = cache.cacheKey('hotel-rate-batch-v2', {
+      userId, hotelIds: [...uniqueIds].sort(), checkIn, checkOut, guests: Number(guests), tripPurpose,
+      language, breakfast: Boolean(breakfast), freeCancel: Boolean(freeCancel), scoreVersion: SCORE_VERSION,
+      preferences: cachedPreferences, interactionVersion,
+    });
+    const cachedRates = await cache.getJson(rateCacheKey);
+    if (cachedRates) return { ...cachedRates, cached: true };
     const hotels = await db.prepare(`SELECT * FROM hotels WHERE active = 1 AND id IN (${uniqueIds.map(() => '?').join(',')})`).all(...uniqueIds);
-    if (!hotels.length) return res.json({ hotels: [], checked: 0, available: 0, unavailable_hotel_ids: uniqueIds });
+    if (!hotels.length) return { hotels: [], checked: 0, available: 0, unavailable_hotel_ids: uniqueIds, cached: false };
     await refreshLiteApiRates(hotels, checkIn, checkOut, { guests });
-    await Promise.allSettled(hotels.map(hotel => refreshHotelPricesFromXotelo(hotel, checkIn, checkOut).catch(error => {
+    const liteChecks = await db.prepare(`SELECT hotel_id FROM hotel_rate_checks WHERE provider = 'liteapi' AND status = 'available' AND check_in = ? AND check_out = ? AND guests = ? AND hotel_id IN (${uniqueIds.map(() => '?').join(',')})`).all(checkIn, checkOut, Math.max(1, Number(guests) || 2), ...uniqueIds);
+    const liteAvailableIds = new Set(liteChecks.map(row => row.hotel_id));
+    const xoteloEnabled = String(process.env.HOTEL_RATE_PROVIDERS || 'liteapi,xotelo').split(',').map(value => value.trim()).includes('xotelo');
+    const fallbackHotels = xoteloEnabled ? hotels.filter(hotel => !liteAvailableIds.has(hotel.id)) : [];
+    await Promise.allSettled(fallbackHotels.map(hotel => refreshHotelPricesFromXotelo(hotel, checkIn, checkOut).catch(error => {
       console.warn(`[xotelo] ${hotel.name}: ${error.message}`);
       return null;
     })));
@@ -887,8 +933,8 @@ router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding
       db.prepare(`SELECT hotel_id, name, size_sqm, view_type, amenities FROM hotel_rooms WHERE hotel_id IN (${ids.map(() => '?').join(',')})`).all(...ids),
       db.prepare(`SELECT * FROM hotel_reviews WHERE hotel_id IN (${ids.map(() => '?').join(',')})`).all(...ids),
       db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id IN (${ids.map(() => '?').join(',')}) AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ? AND (guests = ? OR guests IS NULL) ORDER BY hotel_id, price_per_night`).all(...ids, checkIn, checkOut, Math.max(1, Number(guests) || 2)),
-      db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(req.user.id),
-      getUserWeights(req.user.id, { destination: hotels[0]?.city, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose }),
+      Promise.resolve(cachedPreferences),
+      getUserWeights(userId, { destination: hotels[0]?.city, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose }),
       cities.length ? db.prepare(`SELECT hp.*, h.city, h.location, h.stars FROM hotels h JOIN hotel_prices hp ON hp.hotel_id = h.id AND hp.price_valid = 1 WHERE h.city IN (${cities.map(() => '?').join(',')}) AND hp.check_in = ? AND hp.check_out = ? AND hp.source IN ('liteapi', 'xotelo') AND (hp.guests = ? OR hp.guests IS NULL)`).all(...cities, checkIn, checkOut, Math.max(1, Number(guests) || 2)) : [],
     ]);
     const roomsByHotel = roomRows.reduce((map, row) => ((map[row.hotel_id] ||= []).push(row), map), {});
@@ -936,8 +982,8 @@ router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding
         ...rateAvailability(comparable, { checkIn, checkOut, guests }),
       };
     });
-    await Promise.all(enriched.map(result => recordScoreSnapshot(req.user.id, result)));
-    res.json({
+    await Promise.all(enriched.filter(result => result.availability_status === 'available').map(result => recordScoreSnapshot(userId, result)));
+    const payload = {
       hotels: enriched.map(result => {
         const compact = { ...result };
         delete compact.content_raw_json;
@@ -947,10 +993,77 @@ router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding
       checked: hotels.length,
       available: enriched.filter(result => result.availability_status === 'available').length,
       unavailable_hotel_ids: enriched.filter(result => result.availability_status !== 'available').map(result => result.id),
-    });
+      cached: false,
+    };
+    await cache.setJson(rateCacheKey, payload, Math.max(60, Number(process.env.HOTEL_RATE_CACHE_TTL_SECONDS || 900)));
+    return payload;
+}
+
+// POST /api/hotels/rates/batch — progressively enrich catalog results with live rates.
+router.post('/rates/batch', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
+  try {
+    const {
+      hotel_ids: hotelIds, check_in: checkIn, check_out: checkOut, guests = 2,
+      trip_purpose: tripPurpose, language = 'en', breakfast = false, free_cancel: freeCancel = false,
+    } = req.body || {};
+    if (!Array.isArray(hotelIds) || !hotelIds.length || hotelIds.length > 50) return res.status(400).json({ error: 'hotel_ids must contain between 1 and 50 items' });
+    if (!validateDateRange(checkIn, checkOut)) return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
+    res.json(await enrichRateBatch({ hotelIds, checkIn, checkOut, guests, tripPurpose, language, breakfast, freeCancel, userId: req.user.id }));
   } catch (error) {
     console.error(error);
     res.status(502).json({ error: 'Could not load the next price batch' });
+  }
+});
+
+// GET /api/hotels/rates/stream — SSE rate updates in provider-sized batches.
+router.get('/rates/stream', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
+  const hotelIds = String(req.query.hotel_ids || '').split(',').filter(Boolean);
+  const checkIn = req.query.check_in;
+  const checkOut = req.query.check_out;
+  if (!hotelIds.length || hotelIds.length > 120) return res.status(400).json({ error: 'hotel_ids must contain between 1 and 120 items' });
+  if (!validateDateRange(checkIn, checkOut)) return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
+
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  let closed = false;
+  req.on('close', () => { closed = true; });
+  const send = (event, data) => {
+    if (!closed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const batchSize = Math.min(15, Math.max(10, Number(process.env.HOTEL_RATE_STREAM_BATCH_SIZE || 12)));
+    let checked = 0;
+    let available = 0;
+    send('started', { total: hotelIds.length, batch_size: batchSize });
+    for (let offset = 0; offset < hotelIds.length && !closed; offset += batchSize) {
+      const batch = hotelIds.slice(offset, offset + batchSize);
+      const result = await enrichRateBatch({
+        hotelIds: batch,
+        checkIn,
+        checkOut,
+        guests: req.query.guests || 2,
+        tripPurpose: req.query.trip_purpose,
+        language: req.query.language || 'en',
+        breakfast: req.query.breakfast === '1',
+        freeCancel: req.query.free_cancel === '1',
+        userId: req.user.id,
+      });
+      checked += result.checked;
+      available += result.available;
+      send('batch', { ...result, progress: { checked, available, total: hotelIds.length } });
+    }
+    send('complete', { checked, available, total: hotelIds.length });
+    if (!closed) res.end();
+  } catch (error) {
+    console.error(error);
+    send('failure', { error: 'Could not load hotel prices' });
+    if (!closed) res.end();
   }
 });
 
@@ -1141,25 +1254,33 @@ router.get('/:id', requireAuth, requireEmailVerified, requireOnboarding, async (
   }
 });
 
-// POST /api/hotels/:id/analyze  — AI analysis
-router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding, requireCapability('ai'), aiLimiter, async (req, res) => {
+async function hotelAnalysisHandler(req, res) {
   try {
     const userId = req.user.id;
     const defaults = defaultTravelDates();
     const { check_in = defaults.checkIn, check_out = defaults.checkOut, language = 'en', guests = 2, trip_purpose: tripPurpose } = req.body;
     if (!validateDateRange(check_in, check_out)) return res.status(400).json({ error: 'Dates must be in the future' });
+    const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
+    if (!userPrefs) return res.status(404).json({ error: 'User preferences not found' });
+    const analysisCacheKey = cache.cacheKey('hotel-analysis-v2', {
+      hotelId: req.params.id, userId, checkIn: check_in, checkOut: check_out,
+      language, guests: Number(guests), tripPurpose: tripPurpose || 'leisure', scoreVersion: SCORE_VERSION, preferences: userPrefs,
+    });
+    const redisAnalysis = await cache.getJson(analysisCacheKey);
+    if (redisAnalysis) return res.json({ analysis: redisAnalysis, cached: true, cache_source: 'redis' });
 
-    // Check cache (5 min TTL)
+    // AI output is deterministic for this complete context and can be reused for hours.
     const cached = await db.prepare(`
       SELECT * FROM ai_analyses 
       WHERE hotel_id = ? AND user_id = ? AND check_in = ? AND check_out = ?
-      AND created_at + INTERVAL '5 minutes' > CURRENT_TIMESTAMP
+      AND created_at + (? * INTERVAL '1 hour') > CURRENT_TIMESTAMP
       ORDER BY created_at DESC LIMIT 1
-    `).get(req.params.id, userId, check_in, check_out);
+    `).get(req.params.id, userId, check_in, check_out, Math.max(1, Number(process.env.HOTEL_AI_CACHE_TTL_HOURS || 12)));
 
     if (cached) {
       const cachedAnalysis = JSON.parse(cached.analysis_json);
       if (cachedAnalysis._language === language && cachedAnalysis._score_version === SCORE_VERSION && Number(cachedAnalysis._guests || 2) === Number(guests || 2) && (cachedAnalysis._trip_purpose || 'leisure') === (tripPurpose || 'leisure')) {
+        await cache.setJson(analysisCacheKey, cachedAnalysis, Math.max(3600, Number(process.env.HOTEL_AI_CACHE_TTL_HOURS || 12) * 3600));
         return res.json({ analysis: cachedAnalysis, cached: true });
       }
     }
@@ -1170,10 +1291,6 @@ router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding
     const rooms = await db.prepare('SELECT * FROM hotel_rooms WHERE hotel_id = ?').all(req.params.id);
     const prices = await db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ? AND (guests = ? OR guests IS NULL)`).all(req.params.id, check_in, check_out, Math.max(1, Number(guests) || 2));
     const reviews = await db.prepare('SELECT * FROM hotel_reviews WHERE hotel_id = ?').get(req.params.id);
-    const userPrefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
-
-    if (!userPrefs) return res.status(404).json({ error: 'User preferences not found' });
-
     const analysis = await analyzeHotel(hotel, rooms, reviews, prices, userPrefs, check_in, check_out, language);
     const deterministicScore = await scoreHotelForUser(hotel, rooms, reviews, prices, userId, language, guests, tripPurpose);
     analysis.fairworth_score = deterministicScore.fairworth_score;
@@ -1217,12 +1334,36 @@ router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding
       INSERT INTO ai_analyses (id, hotel_id, user_id, check_in, check_out, analysis_json)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(uuidv4(), req.params.id, userId, check_in, check_out, JSON.stringify(analysis));
+    await cache.setJson(analysisCacheKey, analysis, Math.max(3600, Number(process.env.HOTEL_AI_CACHE_TTL_HOURS || 12) * 3600));
 
     res.json({ analysis, cached: false });
   } catch (err) {
     console.error('AI analysis error:', err);
     res.status(500).json({ error: err.message });
   }
+}
+
+// POST /api/hotels/:id/analyze — cached AI analysis.
+router.post('/:id/analyze', requireAuth, requireEmailVerified, requireOnboarding, requireCapability('ai'), aiLimiter, hotelAnalysisHandler);
+
+// POST /api/hotels/:id/analyze/stream — newline-delimited progress and result events.
+router.post('/:id/analyze/stream', requireAuth, requireEmailVerified, requireOnboarding, requireCapability('ai'), aiLimiter, async (req, res) => {
+  res.set({ 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  const send = payload => { if (!res.writableEnded) res.write(`${JSON.stringify(payload)}\n`); };
+  send({ type: 'status', stage: 'preparing' });
+  const responseAdapter = {
+    statusCode: 200,
+    status(code) { this.statusCode = code; return this; },
+    json(payload) {
+      if (this.statusCode >= 400) send({ type: 'error', error: payload.error || 'AI analysis failed' });
+      else send({ type: 'analysis', ...payload });
+      res.end();
+      return this;
+    },
+  };
+  send({ type: 'status', stage: 'analysing' });
+  await hotelAnalysisHandler(req, responseAdapter);
 });
 
 // GET /api/hotels/:id/prices

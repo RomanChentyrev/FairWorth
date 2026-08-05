@@ -40,9 +40,12 @@ services:
     environment:
       NODE_ENV: production
       RUN_MIGRATIONS_ON_START: "false"
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   worker:
     image: ${REGISTRY_IMAGE}/api:${IMAGE_TAG}
@@ -53,6 +56,7 @@ services:
     environment:
       NODE_ENV: production
       RUN_MIGRATIONS_ON_START: "false"
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
     command: ["node", "worker.js"]
     depends_on:
       migrate:
@@ -67,11 +71,27 @@ services:
     environment:
       NODE_ENV: production
       RUN_MIGRATIONS_ON_START: "false"
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
     command: ["node", "catalogWorker.js"]
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis_data:/data
 
 volumes:
   caddy_data:
   caddy_config:
+  redis_data:

@@ -179,6 +179,13 @@ test('search → live price → filter → compare → details → booking pendi
     return route.fulfill({ json: { hotels: [...hotels, unavailableHotel], total: 3, has_more: false, facets: { locations: ['Marina Bay', 'City Hall', 'Orchard'] } } });
   });
   await page.route('**/api/hotels/rates/batch', route => route.fulfill({ json: { hotels: [...hotels, unavailableHotel], checked: 3, available: 2, unavailable_hotel_ids: [unavailableHotel.id] } }));
+  await page.route('**/api/hotels/rates/stream?**', route => route.fulfill({
+    contentType: 'text/event-stream',
+    body: [
+      `event: batch\ndata: ${JSON.stringify({ hotels: [...hotels, unavailableHotel], checked: 3, available: 2, unavailable_hotel_ids: [unavailableHotel.id] })}\n\n`,
+      'event: complete\ndata: {"checked":3,"available":2,"total":3}\n\n',
+    ].join(''),
+  }));
   await page.route('**/api/interactions', route => route.fulfill({ status: 201, json: { recorded: 1 } }));
   await page.route('**/api/compare', route => route.fulfill({
     json: {
@@ -197,6 +204,10 @@ test('search → live price → filter → compare → details → booking pendi
     },
   }));
   await page.route('**/api/hotels/hotel-marina-bay-sands/analyze', route => route.fulfill({ json: { analysis: { verdict: 'Strong value for this trip.', match_analysis: 'Matches the selected preferences.' } } }));
+  await page.route('**/api/hotels/hotel-marina-bay-sands/analyze/stream', route => route.fulfill({
+    contentType: 'application/x-ndjson',
+    body: `${JSON.stringify({ type: 'status', stage: 'analysing' })}\n${JSON.stringify({ type: 'analysis', analysis: { verdict: 'Strong value for this trip.', match_analysis: 'Matches the selected preferences.' } })}\n`,
+  }));
   await page.context().addCookies([{ name: 'fw_access', value: account.token, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
   await page.addInitScript(({ token, user }) => {
     localStorage.setItem('fw_user', JSON.stringify({ ...user, onboarding_completed: true, email_verified: true }));

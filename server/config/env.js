@@ -8,6 +8,7 @@ const schema = z.object({
   DATABASE_URL: z.string().url().startsWith('postgresql://'),
   DATABASE_SSL: booleanString.default(false),
   DATABASE_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(10),
+  REDIS_URL: optionalUrl,
   RUN_MIGRATIONS_ON_START: booleanString.default(true),
   JWT_SECRET: z.string().min(1).default('fairworth-dev-secret-change-me'),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).default(900),

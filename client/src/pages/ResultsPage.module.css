@@ -395,6 +395,46 @@
 }
 .skeletonImg { height: 100%; }
 .skeletonBody { padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+
+.pendingRateCard {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  min-height: 112px;
+  border: 1px solid var(--border);
+  background: #fff;
+  opacity: .78;
+  overflow: hidden;
+}
+
+.pendingRateImage {
+  background: linear-gradient(90deg, #eef2f6 25%, #f7f8fa 50%, #eef2f6 75%);
+  background-size: 200% 100%;
+  animation: pending-rate-shimmer 1.4s linear infinite;
+}
+
+.pendingRateBody {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 18px 20px;
+}
+
+.pendingRateBody strong,
+.pendingRateBody span { overflow-wrap: anywhere; }
+.pendingRateBody span { color: var(--text-secondary); font-size: 13px; }
+.pendingRateStatus { color: #8a6400 !important; }
+
+@keyframes pending-rate-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (max-width: 720px) {
+  .pendingRateCard { grid-template-columns: 92px minmax(0, 1fr); }
+  .pendingRateBody { padding: 14px; }
+}
 .skeletonLine { height: 14px; border-radius: 4px; }
 
 .errorMsg {

@@ -100,6 +100,7 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
   const [data, setData] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisStage, setAnalysisStage] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [bookmarked, setBookmarked] = useState(false);
@@ -165,16 +166,22 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
   const runAnalysis = async () => {
     if (!aiReady) return;
     setAnalysisLoading(true);
+    setAnalysisStage('preparing');
     setAnalysis(null);
     try {
-      const res = await hotelsApi.analyze(id, { check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose, language: lang });
-      setAnalysis(res.data.analysis);
+      const result = await hotelsApi.analyzeStream(
+        id,
+        { check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose, language: lang },
+        event => { if (event.type === 'status') setAnalysisStage(event.stage); },
+      );
+      setAnalysis(result.analysis);
     } catch (e) {
       console.error(e);
       const message = e.response?.data?.error || e.message || (l('Check OPENROUTER_API_KEY in server/.env', 'Проверьте OPENROUTER_API_KEY в server/.env'));
       setAnalysis({ error: `${l('Could not generate the AI analysis.', 'Не удалось получить ИИ-анализ.')} ${message}` });
     } finally {
       setAnalysisLoading(false);
+      setAnalysisStage('');
     }
   };
 
@@ -407,7 +414,9 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                 <div className={styles.aiLoadingDots}>
                   <span /><span /><span />
                 </div>
-                <span>{l('AI is analysing available hotel data and your preferences…', 'ИИ анализирует доступные данные отеля и ваши предпочтения…')}</span>
+                <span>{analysisStage === 'preparing'
+                  ? l('Preparing hotel data and your preferences…', 'Подготавливаем данные отеля и ваши предпочтения…')
+                  : l('AI is analysing available hotel data and your preferences…', 'ИИ анализирует доступные данные отеля и ваши предпочтения…')}</span>
               </div>
             )}
 

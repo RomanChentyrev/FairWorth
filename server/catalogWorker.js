@@ -4,6 +4,7 @@ const { init, close } = require('./db/database');
 const { ensureDatabaseSchema } = require('./db/schema');
 const { processCatalogQueue } = require('./services/hotelCatalog');
 const logger = require('./services/logger');
+const { warmPopularDestinations } = require('./services/hotelSearchWarmup');
 
 let stopping = false;
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -12,12 +13,18 @@ async function main() {
   await init();
   if (process.env.RUN_MIGRATIONS_ON_START !== 'false') await ensureDatabaseSchema();
   logger.info('hotel_catalog_worker_started');
+  let nextWarmupAt = 0;
   while (!stopping) {
     let worked = false;
     try {
       const results = await processCatalogQueue(Number(process.env.CATALOG_WORKER_BATCHES || 1));
       worked = results.length > 0;
       for (const result of results) logger.info('hotel_catalog_batch_completed', result);
+      if (Date.now() >= nextWarmupAt) {
+        const warmed = await warmPopularDestinations();
+        nextWarmupAt = Date.now() + Math.max(300000, Number(process.env.HOTEL_DESTINATION_WARM_INTERVAL_MS || 1800000));
+        logger.info('hotel_search_destinations_warmed', { destinations: warmed.length });
+      }
     } catch (error) {
       logger.error('hotel_catalog_worker_cycle_failed', { error: error.message });
     }

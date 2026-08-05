@@ -233,6 +233,8 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   const [searchOpen, setSearchOpen] = useState(false);
 
   const [hotels, setHotels] = useState(cachedResults?.hotels || []);
+  const [pendingHotels, setPendingHotels] = useState([]);
+  const [ratesLoading, setRatesLoading] = useState(false);
   const [loading, setLoading] = useState(!cachedResults);
   const [error, setError] = useState(null);
   const [aiMessage, setAiMessage] = useState(cachedResults?.aiMessage || '');
@@ -258,6 +260,8 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   const [unavailableCount, setUnavailableCount] = useState(cachedResults?.unavailableCount || 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const resultsScrollRef = useRef(null);
+  const requestGenerationRef = useRef(0);
+  const rateStreamsRef = useRef(new Set());
 
   const currentRequestKey = hotelResultsRequestKey({
     search: { city, checkIn, checkOut, guests, tripPurpose },
@@ -293,7 +297,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   }, [cachedResults]);
 
   useEffect(() => {
-    if (loading || error) return;
+    if (loading || ratesLoading || error) return;
     try {
       const existing = JSON.parse(window.sessionStorage.getItem(HOTEL_RESULTS_CACHE_KEY) || 'null');
       window.sessionStorage.setItem(HOTEL_RESULTS_CACHE_KEY, JSON.stringify({
@@ -310,7 +314,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
       console.warn('Hotel results cache was skipped:', cacheError.message);
       window.sessionStorage.removeItem(HOTEL_RESULTS_CACHE_KEY);
     }
-  }, [hotels, loading, error, aiMessage, districtOptions, hasMore, totalResults, catalogOffset, checkedCount, unavailableCount, viewMode, lang]);
+  }, [hotels, loading, ratesLoading, error, aiMessage, districtOptions, hasMore, totalResults, catalogOffset, checkedCount, unavailableCount, viewMode, lang]);
 
   const checkRateBatch = useCallback(async (batch) => {
     const hotelIds = batch.map(hotel => hotel.id).filter(Boolean);
@@ -342,42 +346,121 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
     };
   }, [checkIn, checkOut, guests, tripPurpose, lang, sort, priceRange, freeCancel, breakfastIncl]);
 
+  const streamRateBatch = useCallback((batch, generation) => new Promise((resolve, reject) => {
+    const hotelIds = batch.map(hotel => hotel.id).filter(Boolean);
+    if (!hotelIds.length) return resolve({ hotels: [], checked: 0, unavailable: 0 });
+    const params = new URLSearchParams({
+      hotel_ids: hotelIds.join(','), check_in: checkIn, check_out: checkOut, guests: String(guests),
+      trip_purpose: tripPurpose, language: lang, breakfast: breakfastIncl ? '1' : '0', free_cancel: freeCancel ? '1' : '0',
+    });
+    const source = new globalThis.EventSource(`/api/hotels/rates/stream?${params.toString()}`, { withCredentials: true });
+    rateStreamsRef.current.add(source);
+    const available = [];
+    let checked = 0;
+    let unavailable = 0;
+    let settled = false;
+    const finish = (result, error) => {
+      if (settled) return;
+      settled = true;
+      source.close();
+      rateStreamsRef.current.delete(source);
+      if (error) reject(error); else resolve(result);
+    };
+    source.addEventListener('batch', event => {
+      if (generation !== requestGenerationRef.current) return finish({ hotels: [], checked: 0, unavailable: 0 });
+      const payload = JSON.parse(event.data);
+      const updates = new globalThis.Map((payload.hotels || []).map(hotel => [hotel.id, hotel]));
+      const verified = batch
+        .filter(hotel => updates.has(hotel.id))
+        .map(hotel => ({ ...hotel, ...updates.get(hotel.id) }))
+        .filter(isAvailableOffer)
+        .filter(hotel => matchesLivePriceFilters(hotel, { priceRange, freeCancel, breakfastIncl }));
+      available.push(...verified.filter(hotel => !available.some(item => item.id === hotel.id)));
+      checked += Number(payload.checked || 0);
+      unavailable += Array.isArray(payload.unavailable_hotel_ids) ? payload.unavailable_hotel_ids.length : 0;
+      const processedIds = new Set([...(payload.hotels || []).map(hotel => hotel.id), ...(payload.unavailable_hotel_ids || [])]);
+      setPendingHotels(current => current.filter(hotel => !processedIds.has(hotel.id)));
+      setHotels(current => {
+        const merged = new globalThis.Map(current.map(hotel => [hotel.id, hotel]));
+        verified.forEach(hotel => merged.set(hotel.id, hotel));
+        return sortAvailableHotels([...merged.values()], sort);
+      });
+      setCheckedCount(current => current + Number(payload.checked || 0));
+      setUnavailableCount(current => current + (Array.isArray(payload.unavailable_hotel_ids) ? payload.unavailable_hotel_ids.length : 0));
+    });
+    source.addEventListener('complete', () => finish({ hotels: available, checked, unavailable }));
+    source.addEventListener('failure', event => {
+      const payload = JSON.parse(event.data || '{}');
+      finish(null, new Error(payload.error || 'Could not load hotel prices'));
+    });
+    source.onerror = () => finish(null, new Error('Hotel price stream was interrupted'));
+  }), [checkIn, checkOut, guests, tripPurpose, lang, sort, priceRange, freeCancel, breakfastIncl]);
+
   const fetchHotels = useCallback(async () => {
-    setLoading(true); setError(null);
+    const generation = ++requestGenerationRef.current;
+    rateStreamsRef.current.forEach(source => source.close());
+    rateStreamsRef.current.clear();
+    setLoading(true); setRatesLoading(true); setError(null); setHotels([]); setPendingHotels([]);
+    setCheckedCount(0); setUnavailableCount(0); setTotalResults(0);
     try {
-      const params = { city, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose, sort, language: lang, search_session_id: searchSessionRef.current, limit: 30, offset: 0 };
-      if (explicitSearchRef.current) params.search_event = '1';
-      if (stars.length) params.stars = stars.join(',');
-      if (amenities.length) params.amenities = amenities.join(',');
-      if (districts.length) params.districts = districts.join(',');
-      if (ratingMin > 0) params.rating_min = ratingMin;
-      if (freeCancel) params.free_cancel = '1';
-      if (breakfastIncl) params.breakfast = '1';
-      if (priceRange[1] < 2000) params.max_price = priceRange[1];
-      if (priceRange[0] > 0) params.min_price = priceRange[0];
-      const res = await hotelsApi.search(params);
-      const results = res.data.hotels || [];
-      setDistrictOptions(res.data.facets?.locations || []);
-      const verified = await checkRateBatch(results);
-      if (verified.hotels.length) {
+      let offset = 0;
+      let hasNextPage = true;
+      let availableResults = [];
+      let pages = 0;
+      const maxCandidates = 180;
+      while (generation === requestGenerationRef.current && hasNextPage && availableResults.length < 20 && offset < maxCandidates) {
+        const params = { city, check_in: checkIn, check_out: checkOut, guests, trip_purpose: tripPurpose, sort, language: lang, search_session_id: searchSessionRef.current, limit: 30, offset };
+        if (explicitSearchRef.current && pages === 0) params.search_event = '1';
+        if (stars.length) params.stars = stars.join(',');
+        if (amenities.length) params.amenities = amenities.join(',');
+        if (districts.length) params.districts = districts.join(',');
+        if (ratingMin > 0) params.rating_min = ratingMin;
+        if (freeCancel) params.free_cancel = '1';
+        if (breakfastIncl) params.breakfast = '1';
+        if (priceRange[1] < 2000) params.max_price = priceRange[1];
+        if (priceRange[0] > 0) params.min_price = priceRange[0];
+        const res = await hotelsApi.search(params);
+        if (generation !== requestGenerationRef.current) return;
+        const results = res.data.hotels || [];
+        if (pages === 0) {
+          setDistrictOptions(res.data.facets?.locations || []);
+          setLoading(false);
+        }
+        setPendingHotels(current => {
+          const known = new Set(current.map(hotel => hotel.id));
+          return [...current, ...results.filter(hotel => !known.has(hotel.id))];
+        });
+        setTotalResults(availableResults.length + results.length);
+        const verified = await streamRateBatch(results, generation);
+        availableResults = sortAvailableHotels([...new globalThis.Map([...availableResults, ...verified.hotels].map(hotel => [hotel.id, hotel])).values()], sort);
+        hasNextPage = Boolean(res.data.has_more) && results.length > 0;
+        offset = Number(res.data.next_offset ?? offset + results.length);
+        pages += 1;
+        setHasMore(hasNextPage);
+        setCatalogOffset(offset);
+        setTotalResults(availableResults.length);
+      }
+      if (availableResults.length) {
         interactionsApi.track('impression', {
-          hotel_ids: verified.hotels.map(hotel => hotel.id),
-          event_id: `impression:${searchSessionRef.current}:${JSON.stringify(params)}`,
+          hotel_ids: availableResults.map(hotel => hotel.id),
+          event_id: `impression:${searchSessionRef.current}:${city}:${checkIn}:${checkOut}`,
           context: { city, check_in: checkIn, check_out: checkOut, sort },
         }).catch(() => {});
       }
-      setHotels(verified.hotels);
-      setHasMore(Boolean(res.data.has_more));
-      setTotalResults(verified.hotels.length);
-      setCatalogOffset(results.length);
-      setCheckedCount(verified.checked);
-      setUnavailableCount(verified.unavailable);
+      setHotels(availableResults);
+      setTotalResults(availableResults.length);
       explicitSearchRef.current = false;
     } catch (err) {
       setError(err.response?.data?.error || err.message || t('results_error'));
     }
-    finally { setLoading(false); }
-  }, [city, checkIn, checkOut, guests, tripPurpose, sort, stars, amenities, districts, priceRange, ratingMin, freeCancel, breakfastIncl, lang, searchNonce, checkRateBatch]);
+    finally { if (generation === requestGenerationRef.current) { setLoading(false); setRatesLoading(false); setPendingHotels([]); } }
+  }, [city, checkIn, checkOut, guests, tripPurpose, sort, stars, amenities, districts, priceRange, ratingMin, freeCancel, breakfastIncl, lang, searchNonce, streamRateBatch]);
+
+  useEffect(() => () => {
+    requestGenerationRef.current += 1;
+    rateStreamsRef.current.forEach(source => source.close());
+    rateStreamsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     if (loading || sort !== 'score') return;
@@ -657,8 +740,18 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
                   />
                 </div>
               ))}
-              {hotels.length === 0 && <div className={styles.noResults}>{t('results_nothing')}</div>}
-              {hasMore && (
+              {pendingHotels.map(hotel => (
+                <div key={`pending-${hotel.id}`} className={styles.pendingRateCard} aria-live="polite">
+                  <div className={styles.pendingRateImage} />
+                  <div className={styles.pendingRateBody}>
+                    <strong>{hotel.name}</strong>
+                    <span>{hotel.location || hotel.city}</span>
+                    <span className={styles.pendingRateStatus}>{l('Checking availability and final price…', 'Проверяем наличие и итоговую цену…')}</span>
+                  </div>
+                </div>
+              ))}
+              {hotels.length === 0 && pendingHotels.length === 0 && !ratesLoading && <div className={styles.noResults}>{t('results_nothing')}</div>}
+              {hasMore && !ratesLoading && (
                 <button type="button" className={styles.loadMoreBtn} onClick={loadMoreHotels} disabled={loadingMore}>
                   {loadingMore ? (l('Loading…', 'Загружаем…')) : (l('Load 30 more hotels', 'Загрузить ещё 30 отелей'))}
                 </button>

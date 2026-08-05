@@ -50,6 +50,33 @@ export const hotelsApi = {
   priceCalendar: (params, config = {}) => api.get('/hotels/price-calendar', { params, ...config }),
   get: (id, params = {}) => api.get(`/hotels/${id}`, { params }),
   analyze: (id, body) => api.post(`/hotels/${id}/analyze`, body),
+  analyzeStream: async (id, body, onEvent) => {
+    const response = await fetch(`/api/hotels/${encodeURIComponent(id)}/analyze/stream`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': cookieValue('fw_csrf') },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok || !response.body) throw new Error(`AI analysis HTTP ${response.status}`);
+    const reader = response.body.getReader();
+    const decoder = new globalThis.TextDecoder();
+    let buffer = '';
+    let result = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines.filter(Boolean)) {
+        const event = JSON.parse(line);
+        onEvent?.(event);
+        if (event.type === 'analysis') result = event;
+        if (event.type === 'error') throw new Error(event.error);
+      }
+      if (done) break;
+    }
+    if (!result?.analysis) throw new Error('AI analysis stream ended without a result');
+    return result;
+  },
   prices: (id) => api.get(`/hotels/${id}/prices`),
 };
 
