@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Tripalora PostgreSQL backup (%i)
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+Unit=fairworth-backup@%i.service
+
+[Install]
+WantedBy=timers.target

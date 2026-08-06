@@ -14,8 +14,13 @@ mkdir -p "$STATE_DIR"
 OLD_TAG=$(cat "$STATE_DIR/current" 2>/dev/null || true)
 SERVER_ENV_FILE=$(sed -n 's/^SERVER_ENV_FILE=//p' "$ENV_FILE" | tail -n 1)
 test -n "$SERVER_ENV_FILE"
+BACKUP_CONFIG="$ROOT/secrets/backup.$ENVIRONMENT.env"
 
-"$DEPLOY_DIR/scripts/backup-postgres.sh" "$SERVER_ENV_FILE" "$ROOT/backups/$ENVIRONMENT"
+if test -f "$BACKUP_CONFIG"; then
+  "$DEPLOY_DIR/scripts/backup-postgres.sh" "$SERVER_ENV_FILE" "$ROOT/backups/$ENVIRONMENT" "$BACKUP_CONFIG"
+else
+  "$DEPLOY_DIR/scripts/backup-postgres.sh" "$SERVER_ENV_FILE" "$ROOT/backups/$ENVIRONMENT"
+fi
 
 export IMAGE_TAG="$NEW_TAG"
 docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.deploy.yml" pull

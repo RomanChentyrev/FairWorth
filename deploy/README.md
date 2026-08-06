@@ -81,21 +81,62 @@ Migrations must follow expand/contract deployment rules: first add backwards-com
 
 ## 4. Backups
 
-Enable daily managed-database snapshots and point-in-time recovery when the PostgreSQL provider supports them. The included logical backup is a second recovery path:
+Enable managed-database snapshots and point-in-time recovery when PostgreSQL
+supports them. Tripalora also creates a verified logical dump every day and before
+each release, then copies it to private S3-compatible object storage in another
+failure domain.
+
+Create a private bucket dedicated to backups. Enable provider-side encryption,
+disable public access, and create a separate access key limited to listing,
+uploading, reading, and deleting objects only inside this bucket. Do not reuse the
+main cloud-account credentials.
+
+Install the upload client on the VPS:
 
 ```bash
-/opt/fairworth/deploy/scripts/backup-postgres.sh \
-  /opt/fairworth/secrets/production.server.env \
-  /opt/fairworth/backups/production
+sudo apt-get update
+sudo apt-get install -y rclone
 ```
 
-Schedule it daily with cron (the release script also backs up immediately before migrations):
+Create the protected backup configuration:
 
-```cron
-15 2 * * * /opt/fairworth/deploy/scripts/backup-postgres.sh /opt/fairworth/secrets/production.server.env /opt/fairworth/backups/production >> /var/log/fairworth-backup.log 2>&1
+```bash
+cp /opt/fairworth/deploy/backup.env.example \
+  /opt/fairworth/secrets/backup.production.env
+nano /opt/fairworth/secrets/backup.production.env
+chmod 600 /opt/fairworth/secrets/backup.production.env
 ```
 
-`BACKUP_RETENTION_DAYS` defaults to 14. Encrypt and copy backups to storage in another failure domain. At least monthly, restore the latest backup into a disposable database and verify row counts and application readiness. An untested backup is not a recovery plan.
+Set the S3 endpoint, region, bucket, prefix, and dedicated access-key pair. Keep
+`BACKUP_S3_ENABLED=true`. Local dumps are retained for 14 days by default and
+remote dumps for 90 days. Configure the bucket lifecycle to expire objects after
+the same or a longer remote retention period as a second enforcement layer.
+
+Test one complete backup and remote upload before enabling the schedule:
+
+```bash
+/opt/fairworth/deploy/scripts/daily-backup.sh production
+ls -lh /opt/fairworth/backups/production
+```
+
+Confirm the new object exists in the bucket. Then install the daily systemd timer:
+
+```bash
+/opt/fairworth/deploy/scripts/install-backup-timer.sh production
+sudo systemctl start fairworth-backup@production.service
+sudo systemctl status fairworth-backup@production.service --no-pager
+sudo journalctl -u fairworth-backup@production.service -n 100 --no-pager
+sudo systemctl list-timers fairworth-backup@production.timer --no-pager
+```
+
+The timer runs at 02:15 UTC with a random delay of up to 15 minutes. It uses
+`Persistent=true`, so systemd starts a missed backup after the server returns.
+`flock` prevents a scheduled backup and a release backup from running together.
+Both paths apply local and remote rotation from the protected backup config.
+
+At least monthly, download the latest remote object, restore it into a disposable
+database, and verify row counts and application readiness. A successful upload is
+not proof that the dump can be restored.
 
 ## 5. Rollback
 
