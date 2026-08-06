@@ -165,12 +165,25 @@ async function getUserWeights(userId, context = null) {
     await db.prepare(`
       INSERT INTO user_preference_weights
         (id, user_id, score_weights, declared_weights, learned_weights)
-      VALUES (?, ?, ?, ?, ?)
+      SELECT ?, ?, ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
+      ON CONFLICT (user_id) DO NOTHING
     `).run(
       uuidv4(), userId, JSON.stringify(DEFAULT_SCORE_WEIGHTS),
-      JSON.stringify(DEFAULT_PREFERENCE_WEIGHTS), JSON.stringify(DEFAULT_PREFERENCE_WEIGHTS)
+      JSON.stringify(DEFAULT_PREFERENCE_WEIGHTS), JSON.stringify(DEFAULT_PREFERENCE_WEIGHTS), userId
     );
     row = await db.prepare('SELECT * FROM user_preference_weights WHERE user_id = ?').get(userId);
+  }
+  if (!row) {
+    return {
+      score: { ...DEFAULT_SCORE_WEIGHTS },
+      declared: { ...DEFAULT_PREFERENCE_WEIGHTS },
+      learned: { ...DEFAULT_PREFERENCE_WEIGHTS },
+      confidence: 0,
+      interactionCount: 0,
+      contextualConfidence: 0,
+      activeContexts: [],
+    };
   }
   let learned = parseJson(row.learned_weights, DEFAULT_PREFERENCE_WEIGHTS);
   let contextualConfidence = 0;

@@ -10,10 +10,14 @@ module.exports = {
   error: (message, fields) => write('error', message, fields),
   requestLogger(req, res, next) {
     const started = Date.now();
-    res.on('finish', () => write('info', 'http_request', {
-      method: req.method, path: req.originalUrl.split('?')[0], status: res.statusCode,
-      duration_ms: Date.now() - started, user_id: req.user?.id || null,
-    }));
+    res.on('finish', () => {
+      const path = req.originalUrl.split('?')[0];
+      if (res.statusCode < 400 && ['/api/live', '/api/ready'].includes(path)) return;
+      write('info', 'http_request', {
+        method: req.method, path, status: res.statusCode,
+        duration_ms: Date.now() - started, user_id: req.user?.id || null,
+      });
+    });
     next();
   },
 };

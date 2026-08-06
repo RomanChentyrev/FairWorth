@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const { TERMS_VERSION, PRIVACY_VERSION } = require('../config/legal');
 const travelpayouts = require('../services/travelpayouts');
 const searchApiFlights = require('../services/searchApiFlights');
+const { getUserWeights, DEFAULT_SCORE_WEIGHTS } = require('../services/personalization');
 const legalAcceptance = { terms_version: TERMS_VERSION, privacy_version: PRIVACY_VERSION };
 
 const users = [];
@@ -732,6 +733,9 @@ test('account deletion requires the password and removes user data', async () =>
   assert.equal(removed.status, 204, removed.text);
   const row = await db.prepare('SELECT id FROM users WHERE id = ?').get(account.user.id);
   assert.equal(row, undefined);
+  const orphanWeights = await getUserWeights(account.user.id);
+  assert.deepEqual(orphanWeights.score, DEFAULT_SCORE_WEIGHTS);
+  assert.equal(orphanWeights.confidence, 0);
   const denied = await request(app).post('/api/auth/login').send({ email: account.user.email, password: 'TestPass123!' });
   assert.ok([400, 401].includes(denied.status));
 });
