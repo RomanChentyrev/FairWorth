@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { validateEnv } = require('./config/env');
 const env = validateEnv();
+const { Sentry, enabled: sentryEnabled } = require('./instrument');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -9,15 +10,13 @@ const { ensurePersonalizationSchema } = require('./services/personalization');
 const { ensureDatabaseSchema } = require('./db/schema');
 const { requireAuth, requireOnboarding, requireEmailVerified } = require('./middleware/auth');
 const { authLimiter, apiLimiter, aiLimiter, csrfProtection } = require('./middleware/security');
-const Sentry = require('@sentry/node');
 const logger = require('./services/logger');
+const monitoring = require('./services/monitoring');
 const { capabilities, requireCapability } = require('./config/capabilities');
 
 const app = express();
 const PORT = env.PORT;
 const allowedOrigins = env.CORS_ORIGINS.split(',').map(value => value.trim());
-
-if (process.env.SENTRY_DSN) Sentry.init({ dsn: process.env.SENTRY_DSN, environment: process.env.NODE_ENV || 'development' });
 
 app.set('trust proxy', env.TRUST_PROXY ? 1 : false);
 app.use(helmet({
@@ -46,6 +45,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '100kb' }));
 app.use(logger.requestLogger);
+app.use(monitoring.requestMonitor);
 app.use('/api', apiLimiter);
 app.use('/api', csrfProtection);
 
@@ -71,6 +71,7 @@ app.get('/api/health', async (req, res) => {
     searchapi: { status: process.env.SEARCHAPI_KEY ? 'configured' : 'not_configured' },
     liteapi: { status: providerCapabilities.hotels.status === 'ready' ? 'configured' : 'not_configured' },
     capabilities: providerCapabilities,
+    sentry: { status: sentryEnabled ? 'configured' : 'not_configured', environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development', release: process.env.SENTRY_RELEASE || null },
   };
   try {
     await db.query('SELECT 1');
@@ -91,6 +92,11 @@ app.get('/api/health', async (req, res) => {
     process.env.TRAVELPAYOUTS_TOKEN ? probe('travelpayouts', 'https://api.travelpayouts.com/data/en/airlines.json') : null,
     providerCapabilities.hotels.status === 'ready' ? probe('liteapi', `${(process.env.LITEAPI_BASE_URL || 'https://api.liteapi.travel/v3.0').replace(/\/$/, '')}/data/facilities`, { 'X-API-Key': process.env.LITEAPI_KEY }) : null,
   ].filter(Boolean));
+  for (const [name, check] of Object.entries(checks)) {
+    if (!['database', 'redis', 'capabilities', 'sentry'].includes(name) && check.status === 'error') {
+      monitoring.captureProviderDegradation(name, new Error('Provider health probe failed'), { operation: 'health_probe', status: 'error', http_status: check.http_status });
+    }
+  }
   const ready = checks.database.status === 'ok';
   const externalError = Object.entries(checks).some(([name, check]) => name !== 'database' && check.status === 'error');
   res.status(ready ? 200 : 503).json({ status: ready ? (externalError ? 'degraded' : 'ready') : 'unavailable', checks, timestamp: new Date().toISOString() });
@@ -135,8 +141,9 @@ const ready = init().then(async () => {
   app.use('/api/compare', requireAuth, requireEmailVerified, requireOnboarding, requireCapability('hotels'), require('./routes/compare'));
   app.use('/api/interactions', requireAuth, requireEmailVerified, requireOnboarding, require('./routes/interactions'));
   app.use('/api', (req, res) => res.status(404).json({ error: 'API endpoint not found', code: 'NOT_FOUND' }));
+  if (sentryEnabled) Sentry.setupExpressErrorHandler(app);
   app.use((error, req, res, next) => {
-    if (process.env.SENTRY_DSN) Sentry.captureException(error);
+    res.locals.sentryCaptured = sentryEnabled;
     logger.error('unhandled_error', { error: error.message, path: req.originalUrl });
     if (res.headersSent) return next(error);
     return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
@@ -148,9 +155,11 @@ if (require.main === module) {
   ready.then(() => app.listen(PORT, () => {
     console.log(`\n🚀 Fairworth API running at http://localhost:${PORT}`);
     console.log(`   Health: http://localhost:${PORT}/api/health`);
-  })).catch(err => {
-  console.error('Failed to initialise database:', err);
-  process.exit(1);
+  })).catch(async err => {
+    console.error('Failed to initialise database:', err);
+    monitoring.captureWorkerFailure('api', err, { operation: 'startup' });
+    await monitoring.flush();
+    process.exit(1);
   });
 }
 

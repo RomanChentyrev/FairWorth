@@ -8,6 +8,7 @@ const { db } = require('../db/database');
 const { scoreFlights, FLIGHT_SCORE_VERSION } = require('../services/flightScoring');
 const { buildRouteGraph, routeFallbackTickets } = require('../services/flightRouteGraph');
 const { resolveAirportGroup } = require('../services/flightAirportResolver');
+const monitoring = require('../services/monitoring');
 
 function getTravelpayoutsToken() {
   return process.env.TRAVELPAYOUTS_TOKEN;
@@ -155,6 +156,8 @@ function isProviderTimeout(error) {
 function sendTravelpayoutsError(res, err) {
   console.error('[travelpayouts]', err);
   const timeout = isProviderTimeout(err);
+  monitoring.captureProviderDegradation('Travelpayouts', err, { operation: 'flight_search', status: timeout ? 'timeout' : 'error' });
+  res.locals.sentryCaptured = monitoring.enabled;
   res.status(timeout ? 504 : 502).json({
     success: false,
     error: timeout ? 'Travelpayouts did not respond in time' : 'Travelpayouts request failed',
@@ -168,6 +171,8 @@ function sendFlightProviderError(res, err) {
   if (!err?.provider || err.provider === 'Travelpayouts') return sendTravelpayoutsError(res, err);
   console.error(`[${err.provider}]`, err);
   const timeout = isProviderTimeout(err);
+  monitoring.captureProviderDegradation(err.provider, err, { operation: 'flight_search', status: timeout ? 'timeout' : 'error' });
+  res.locals.sentryCaptured = monitoring.enabled;
   res.status(timeout ? 504 : 502).json({
     success: false,
     error: timeout ? `${err.provider} did not respond in time` : `${err.provider} request failed`,
@@ -329,6 +334,12 @@ router.get('/top', async (req, res) => {
       status.status = isProviderTimeout(result.reason) ? 'timeout' : 'error';
       status.retryable = true;
       status.error_code = isProviderTimeout(result.reason) ? 'PROVIDER_TIMEOUT' : 'PROVIDER_ERROR';
+      monitoring.captureProviderDegradation(provider, result.reason, {
+        operation: `flight_search_${stage}`,
+        status: status.status,
+        origin: params.origin,
+        destination: params.destination,
+      });
       return [];
     }
     const data = result.value || [];

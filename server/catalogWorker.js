@@ -1,10 +1,12 @@
 require('dotenv').config();
 require('./config/env').validateEnv();
+require('./instrument');
 const { init, close } = require('./db/database');
 const { ensureDatabaseSchema } = require('./db/schema');
 const { processCatalogQueue } = require('./services/hotelCatalog');
 const logger = require('./services/logger');
 const { warmPopularDestinations } = require('./services/hotelSearchWarmup');
+const monitoring = require('./services/monitoring');
 
 let stopping = false;
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -27,6 +29,7 @@ async function main() {
       }
     } catch (error) {
       logger.error('hotel_catalog_worker_cycle_failed', { error: error.message });
+      monitoring.captureWorkerFailure('hotel_catalog', error, { operation: 'cycle' });
     }
     if (!stopping) await wait(worked
       ? positiveDelay(process.env.CATALOG_WORKER_ACTIVE_INTERVAL_MS, 5000)
@@ -41,8 +44,10 @@ function positiveDelay(value, fallback) {
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { stopping = true; });
-if (require.main === module) main().catch(error => {
+if (require.main === module) main().catch(async error => {
   logger.error('hotel_catalog_worker_failed', { error: error.message });
+  monitoring.captureWorkerFailure('hotel_catalog', error, { operation: 'startup' });
+  await monitoring.flush();
   process.exit(1);
 });
 

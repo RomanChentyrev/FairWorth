@@ -54,7 +54,13 @@ GitHub repository settings must contain two Environments: `staging` and `product
 - `DEPLOY_USER`
 - `DEPLOY_SSH_KEY`
 - `DEPLOY_KNOWN_HOSTS` (obtain out of band from the host administrator)
-- `VITE_SENTRY_DSN`
+
+Add `VITE_SENTRY_DSN` as a repository-level Actions secret because the immutable
+frontend image is built by the CI workflow before a deployment Environment is
+selected. The DSN is embedded in the public browser bundle and must belong to the
+Tripalora frontend Sentry project. The server project DSN remains in the protected
+`SERVER_ENV_FILE` as `SENTRY_DSN`. Follow [SENTRY.md](SENTRY.md) to create the
+projects, alert rules, and verification events.
 
 Require reviewer approval for the `production` Environment. A successful push to `staging` builds immutable images. Deployment is started with **Actions → Deploy → Run workflow**, selecting the target environment and an already-tested commit SHA. Until a separate staging host, domain and database exist, deploy only `production` manually after CI succeeds.
 

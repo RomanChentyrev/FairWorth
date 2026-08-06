@@ -19,6 +19,7 @@ const { refreshLiteApiRates } = require('../services/hotelRates');
 const googlePlaces = require('../services/googlePlaces');
 const cache = require('../services/cache');
 const { warmedDestination } = require('../services/hotelSearchWarmup');
+const monitoring = require('../services/monitoring');
 const { amenitySearchTerms, amenityMatches } = require('../config/hotelAmenities');
 const {
   CACHE_TTL_HOURS,
@@ -618,6 +619,7 @@ async function hotelImages(hotel) {
     if (googleImages.length) return googleImages;
   } catch (error) {
     console.warn(`[google-places] ${hotel.name}: ${error.message}`);
+    monitoring.captureProviderDegradation('Google Places', error, { operation: 'hotel_photos', hotel_id: hotel.id });
   }
   return fallback;
 }
@@ -965,13 +967,19 @@ async function enrichRateBatch({ hotelIds, checkIn, checkOut, guests = 2, tripPu
     if (cachedRates) return { ...cachedRates, cached: true };
     const hotels = await db.prepare(`SELECT * FROM hotels WHERE active = 1 AND id IN (${uniqueIds.map(() => '?').join(',')})`).all(...uniqueIds);
     if (!hotels.length) return { hotels: [], checked: 0, available: 0, unavailable_hotel_ids: uniqueIds, cached: false };
-    await refreshLiteApiRates(hotels, checkIn, checkOut, { guests });
+    try {
+      await refreshLiteApiRates(hotels, checkIn, checkOut, { guests });
+    } catch (error) {
+      monitoring.captureProviderDegradation('LiteAPI', error, { operation: 'hotel_rate_batch' });
+      throw error;
+    }
     const liteChecks = await db.prepare(`SELECT hotel_id FROM hotel_rate_checks WHERE provider = 'liteapi' AND status = 'available' AND check_in = ? AND check_out = ? AND guests = ? AND hotel_id IN (${uniqueIds.map(() => '?').join(',')})`).all(checkIn, checkOut, Math.max(1, Number(guests) || 2), ...uniqueIds);
     const liteAvailableIds = new Set(liteChecks.map(row => row.hotel_id));
     const xoteloEnabled = String(process.env.HOTEL_RATE_PROVIDERS || 'liteapi,xotelo').split(',').map(value => value.trim()).includes('xotelo');
     const fallbackHotels = xoteloEnabled ? hotels.filter(hotel => !liteAvailableIds.has(hotel.id)) : [];
     await Promise.allSettled(fallbackHotels.map(hotel => refreshHotelPricesFromXotelo(hotel, checkIn, checkOut).catch(error => {
       console.warn(`[xotelo] ${hotel.name}: ${error.message}`);
+      monitoring.captureProviderDegradation('Xotelo', error, { operation: 'hotel_rate_batch', hotel_id: hotel.id });
       return null;
     })));
     const ids = hotels.map(hotel => hotel.id);
@@ -1306,7 +1314,9 @@ router.get('/:id/updates', requireAuth, requireEmailVerified, requireOnboarding,
       })
       .catch(error => {
         console.warn(`[hotel-detail:${provider}] ${hotel.name}: ${error.message}`);
-        send('provider', { provider, status: error.message.includes('timed out') ? 'timeout' : 'failed' });
+        const status = error.message.includes('timed out') ? 'timeout' : 'error';
+        monitoring.captureProviderDegradation(provider, error, { operation: 'hotel_detail', status, hotel_id: hotel.id });
+        send('provider', { provider, status: status === 'error' ? 'failed' : status });
         return null;
       }));
 

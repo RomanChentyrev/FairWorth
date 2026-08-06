@@ -29,6 +29,8 @@ test('central environment validation applies typed defaults', () => {
   assert.equal(env.RUN_MIGRATIONS_ON_START, true);
   assert.equal(env.EMAIL_VERIFICATION_REQUIRED, true);
   assert.equal(env.PARTNER_BOOKING_ENABLED, false);
+  assert.equal(env.SENTRY_TRACES_SAMPLE_RATE, 0.1);
+  assert.equal(env.SENTRY_PROVIDER_EVENT_INTERVAL_MS, 300000);
 });
 
 test('email verification can be disabled explicitly for a closed MVP', () => {
