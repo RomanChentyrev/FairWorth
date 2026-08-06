@@ -88,32 +88,66 @@ ${missing.map((field, index) => `${index + 1}|||${String(field.value).replace(/\
   return output;
 }
 
+function hotelLocalizationFields(hotel, rooms = []) {
+  const fields = [{
+    entityType: 'hotel',
+    entityId: hotel.id,
+    fieldName: 'description',
+    value: hotel.description,
+  }];
+  for (const [index, room] of rooms.entries()) {
+    const entityId = room.id || `${hotel.id}:${index}`;
+    fields.push({ entityType: 'room', entityId, fieldName: 'name', value: room.name });
+    fields.push({ entityType: 'room', entityId, fieldName: 'view_type', value: room.view_type });
+  }
+  return fields;
+}
+
+function applyHotelLocalization(hotel, rooms, values, language, metadata = {}) {
+  let offset = 1;
+  return {
+    hotel: { ...hotel, description: values[0], content_language: language, ...metadata },
+    rooms: rooms.map(room => ({
+      ...room,
+      name: values[offset++],
+      view_type: values[offset++],
+      content_language: language,
+    })),
+  };
+}
+
+async function localizeHotelFromCache(hotel, locale, rooms = []) {
+  const language = supportedLanguage(locale);
+  if (!hotel || language === 'en') return { hotel, rooms, translation_pending: false };
+  const fields = hotelLocalizationFields(hotel, rooms);
+  const cachedValues = await Promise.all(fields.map(async field => {
+    if (!field.value) return { value: field.value, missing: false };
+    const cached = await db.prepare(`
+      SELECT translated_text FROM localized_content
+      WHERE entity_type = ? AND entity_id = ? AND field_name = ? AND locale = ? AND source_hash = ?
+    `).get(field.entityType, field.entityId, field.fieldName, language, sourceHash(field.value));
+    return { value: cached?.translated_text || field.value, missing: !cached };
+  }));
+  const translationPending = cachedValues.some(item => item.missing);
+  return {
+    ...applyHotelLocalization(
+      hotel,
+      rooms,
+      cachedValues.map(item => item.value),
+      translationPending ? 'en' : language,
+      translationPending ? { translation_pending: true } : {},
+    ),
+    translation_pending: translationPending,
+  };
+}
+
 async function localizeHotel(hotel, locale, rooms = []) {
   const language = supportedLanguage(locale);
   if (!hotel || language === 'en') return { hotel, rooms };
   try {
-    const fields = [{
-      entityType: 'hotel',
-      entityId: hotel.id,
-      fieldName: 'description',
-      value: hotel.description,
-    }];
-    for (const [index, room] of rooms.entries()) {
-      const entityId = room.id || `${hotel.id}:${index}`;
-      fields.push({ entityType: 'room', entityId, fieldName: 'name', value: room.name });
-      fields.push({ entityType: 'room', entityId, fieldName: 'view_type', value: room.view_type });
-    }
+    const fields = hotelLocalizationFields(hotel, rooms);
     const values = await translateFields(fields, language);
-    let offset = 1;
-    return {
-      hotel: { ...hotel, description: values[0], content_language: language },
-      rooms: rooms.map(room => ({
-        ...room,
-        name: values[offset++],
-        view_type: values[offset++],
-        content_language: language,
-      })),
-    };
+    return applyHotelLocalization(hotel, rooms, values, language);
   } catch (error) {
     console.warn(`[localization] ${hotel.id}/${language}: ${error.message}`);
     return {
@@ -123,4 +157,4 @@ async function localizeHotel(hotel, locale, rooms = []) {
   }
 }
 
-module.exports = { localizeHotel, translateField, translateFields };
+module.exports = { localizeHotel, localizeHotelFromCache, translateField, translateFields };

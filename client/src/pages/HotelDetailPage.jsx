@@ -116,26 +116,73 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
   const nights = Math.ceil((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24));
 
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
       setLoading(true);
+      setError(null);
       try {
-        const [res, bookmarksRes, watchesRes] = await Promise.all([
-          hotelsApi.get(id, { check_in: checkIn, check_out: checkOut, guests, language: lang }),
-          usersApi.getBookmarks(),
-          notificationsApi.watches(),
-        ]);
+        const res = await hotelsApi.get(id, { check_in: checkIn, check_out: checkOut, guests, language: lang, trip_purpose: tripPurpose });
+        if (cancelled) return;
         setData(res.data);
         setActiveImageIndex(0);
+      } catch (e) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+      Promise.all([usersApi.getBookmarks(), notificationsApi.watches()]).then(([bookmarksRes, watchesRes]) => {
+        if (cancelled) return;
         setBookmarked((bookmarksRes.data.bookmarks || []).some(bookmark => bookmark.id === id));
         setPriceWatch((watchesRes.data.watches || []).find(watch => watch.hotel_id === id && watch.check_in === checkIn && watch.check_out === checkOut && watch.active) || null);
-      } catch (e) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
+      }).catch(() => {});
     };
     fetchData();
-  }, [id, checkIn, checkOut, guests, lang]);
+    return () => { cancelled = true; };
+  }, [id, checkIn, checkOut, guests, lang, tripPurpose]);
+
+  useEffect(() => {
+    if (data?.hotel?.id !== id) return undefined;
+    const params = new URLSearchParams({
+      check_in: checkIn,
+      check_out: checkOut,
+      guests: String(guests),
+      language: lang,
+      trip_purpose: tripPurpose,
+    });
+    const source = new globalThis.EventSource(`/api/hotels/${encodeURIComponent(id)}/updates?${params.toString()}`, { withCredentials: true });
+    const parse = event => {
+      try { return JSON.parse(event.data || '{}'); } catch { return {}; }
+    };
+    source.addEventListener('rates', event => {
+      const update = parse(event);
+      setData(current => current ? {
+        ...current,
+        prices: update.prices || current.prices,
+        scoring: update.scoring || current.scoring,
+        price_meta: update.price_meta || current.price_meta,
+        rates_refreshing: false,
+      } : current);
+    });
+    source.addEventListener('translation', event => {
+      const update = parse(event);
+      setData(current => current ? {
+        ...current,
+        hotel: update.hotel || current.hotel,
+        rooms: update.rooms || current.rooms,
+        translation_pending: false,
+      } : current);
+    });
+    source.addEventListener('images', event => {
+      const update = parse(event);
+      if (!Array.isArray(update.images) || !update.images.length) return;
+      setData(current => current ? { ...current, images: update.images } : current);
+    });
+    const close = () => source.close();
+    source.addEventListener('complete', close);
+    source.addEventListener('failure', close);
+    source.onerror = close;
+    return close;
+  }, [data?.hotel?.id, id, checkIn, checkOut, guests, lang, tripPurpose]);
 
   useEffect(() => {
     visitStartedAt.current = Date.now();

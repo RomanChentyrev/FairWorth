@@ -143,6 +143,26 @@ test('capability endpoint reports deterministic test providers', async () => {
   assert.equal(response.body.capabilities.partner_booking.stage, 'referral_mvp');
 });
 
+test('hotel detail returns a cached snapshot before provider updates arrive through SSE', async () => {
+  const account = await register('hotel-detail-stream');
+  const dates = defaultTravelDates();
+  const auth = { Authorization: `Bearer ${account.token}` };
+  const query = `check_in=${dates.checkIn}&check_out=${dates.checkOut}&guests=2&language=en`;
+
+  const detail = await request(app).get(`/api/hotels/test-live-hotel?${query}`).set(auth);
+  assert.equal(detail.status, 200, detail.text);
+  assert.equal(detail.body.hotel.id, 'test-live-hotel');
+  assert.equal(detail.body.rates_refreshing, true);
+  assert.ok(Array.isArray(detail.body.prices));
+  assert.ok(Array.isArray(detail.body.images));
+
+  const updates = await request(app).get(`/api/hotels/test-live-hotel/updates?${query}`).set(auth);
+  assert.equal(updates.status, 200, updates.text);
+  assert.match(updates.headers['content-type'], /text\/event-stream/);
+  assert.match(updates.text, /event: rates/);
+  assert.match(updates.text, /event: complete/);
+});
+
 test('registration records exact legal versions and rejects stale documents', async () => {
   const stale = await request(app).post('/api/auth/register').send({ name: 'Stale Legal', email: `stale-${Date.now()}@example.com`, password: 'TestPass123!', accept_terms: true, terms_version: '0.9', privacy_version: PRIVACY_VERSION });
   assert.equal(stale.status, 409); assert.equal(stale.body.code, 'LEGAL_VERSION_MISMATCH');

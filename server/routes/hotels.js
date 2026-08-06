@@ -3,7 +3,7 @@ const router = express.Router();
 const { db } = require('../db/database');
 const { v4: uuidv4 } = require('uuid');
 const { analyzeHotel } = require('../services/ai');
-const { localizeHotel } = require('../services/localization');
+const { localizeHotel, localizeHotelFromCache } = require('../services/localization');
 const { calculateHotelScore, getUserWeights, recordScoreSnapshot, tripContextKey, SCORE_VERSION } = require('../services/personalization');
 const { normalizePrice, roundMoney } = require('../services/pricing');
 const { selectComparableRate, rateAvailability, marketBenchmark } = require('../services/comparablePricing');
@@ -622,6 +622,47 @@ async function hotelImages(hotel) {
   return fallback;
 }
 
+async function cachedHotelImages(hotel) {
+  return fallbackImages(hotel, await storedHotelImages(hotel.id));
+}
+
+function detailCacheKey({ hotelId, userId, checkIn, checkOut, guests, language, tripPurpose }) {
+  return cache.cacheKey('hotel-detail-v1', {
+    hotelId, userId, checkIn, checkOut, guests: Math.max(1, Number(guests) || 2),
+    language: language || 'en', tripPurpose: tripPurpose || 'leisure', scoreVersion: SCORE_VERSION,
+  });
+}
+
+async function loadHotelDetailSnapshot({ hotel, userId, checkIn, checkOut, guests = 2, language = 'en', tripPurpose }) {
+  const requestedGuests = Math.max(1, Number(guests) || 2);
+  const [rooms, images, prices, reviews] = await Promise.all([
+    db.prepare('SELECT * FROM hotel_rooms WHERE hotel_id = ? ORDER BY base_price_per_night').all(hotel.id),
+    cachedHotelImages(hotel),
+    db.prepare(`
+      SELECT * FROM hotel_prices
+      WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ?
+        AND (guests = ? OR guests IS NULL)
+      ORDER BY CASE WHEN source = 'liteapi' THEN 0 ELSE 1 END, price_per_night
+    `).all(hotel.id, checkIn, checkOut, requestedGuests),
+    db.prepare('SELECT * FROM hotel_reviews WHERE hotel_id = ?').get(hotel.id),
+  ]);
+  const [scoring, localized] = await Promise.all([
+    scoreHotelForUser(hotel, rooms, reviews, prices, userId, language, requestedGuests, tripPurpose),
+    localizeHotelFromCache(hotel, language, rooms),
+  ]);
+  return {
+    hotel: localized.hotel,
+    images,
+    rooms: localized.rooms,
+    prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)),
+    reviews,
+    scoring,
+    translation_pending: Boolean(localized.translation_pending),
+    rates_refreshing: true,
+    price_meta: { check_in: checkIn, check_out: checkOut, ttl_hours: CACHE_TTL_HOURS },
+  };
+}
+
 // GET /api/hotels/search
 router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
   try {
@@ -1226,36 +1267,107 @@ router.get('/price-calendar', async (req, res) => {
   }
 });
 
-// GET /api/hotels/:id
+// GET /api/hotels/:id/updates — refresh slow providers after the cached card is visible.
+router.get('/:id/updates', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
+  const hotel = await db.prepare('SELECT * FROM hotels WHERE id = ?').get(req.params.id);
+  if (!hotel) return res.status(404).json({ error: 'Hotel not found' });
+  const checkIn = req.query.check_in || formatDate(addDays(new Date(), 30));
+  const checkOut = req.query.check_out || defaultCheckOut(checkIn);
+  if (!validateDateRange(checkIn, checkOut)) return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
+  const guests = Math.max(1, Number(req.query.guests) || 2);
+  const language = req.query.language || 'en';
+  const tripPurpose = req.query.trip_purpose;
+  const providerTimeoutMs = Math.min(5000, Math.max(3000, Number(process.env.HOTEL_DETAIL_PROVIDER_TIMEOUT_MS || 4000)));
+
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  let closed = false;
+  req.on('close', () => { closed = true; });
+  const send = (event, data) => {
+    if (!closed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    send('started', { timeout_ms: providerTimeoutMs });
+    const xoteloEnabled = String(process.env.HOTEL_RATE_PROVIDERS || 'liteapi,xotelo')
+      .split(',').map(value => value.trim()).includes('xotelo');
+    const providerJobs = [
+      ['liteapi', refreshLiteApiRates([hotel], checkIn, checkOut, { guests, force: req.query.refresh === '1' })],
+      ...(xoteloEnabled ? [['xotelo', refreshHotelPricesFromXotelo(hotel, checkIn, checkOut, { force: req.query.refresh === '1' })]] : []),
+    ].map(([provider, job]) => withTimeout(job, providerTimeoutMs, provider)
+      .then(result => {
+        send('provider', { provider, status: 'updated' });
+        return result;
+      })
+      .catch(error => {
+        console.warn(`[hotel-detail:${provider}] ${hotel.name}: ${error.message}`);
+        send('provider', { provider, status: error.message.includes('timed out') ? 'timeout' : 'failed' });
+        return null;
+      }));
+
+    const translationJob = withTimeout(localizeHotel(hotel, language,
+      await db.prepare('SELECT * FROM hotel_rooms WHERE hotel_id = ? ORDER BY base_price_per_night').all(hotel.id)), providerTimeoutMs, 'translation')
+      .then(localized => {
+        send('translation', { hotel: localized.hotel, rooms: localized.rooms });
+        return localized;
+      })
+      .catch(error => console.warn(`[hotel-detail:translation] ${hotel.name}: ${error.message}`));
+    const imagesJob = withTimeout(hotelImages(hotel), providerTimeoutMs, 'hotel images')
+      .then(images => {
+        send('images', { images });
+        return images;
+      })
+      .catch(error => console.warn(`[hotel-detail:images] ${hotel.name}: ${error.message}`));
+
+    await Promise.all(providerJobs);
+    const snapshot = await loadHotelDetailSnapshot({
+      hotel, userId: req.user.id, checkIn, checkOut, guests, language, tripPurpose,
+    });
+    snapshot.rates_refreshing = false;
+    const key = detailCacheKey({ hotelId: hotel.id, userId: req.user.id, checkIn, checkOut, guests, language, tripPurpose });
+    const ttl = Math.max(30, Number(process.env.HOTEL_DETAIL_CACHE_TTL_SECONDS || 120));
+    await cache.setJson(key, snapshot, ttl);
+    send('rates', { prices: snapshot.prices, scoring: snapshot.scoring, price_meta: snapshot.price_meta });
+    const [translationResult, imagesResult] = await Promise.allSettled([translationJob, imagesJob]);
+    if (translationResult.status === 'fulfilled' && translationResult.value) {
+      snapshot.hotel = translationResult.value.hotel;
+      snapshot.rooms = translationResult.value.rooms;
+      snapshot.translation_pending = false;
+    }
+    if (imagesResult.status === 'fulfilled' && imagesResult.value?.length) snapshot.images = imagesResult.value;
+    await cache.setJson(key, snapshot, ttl);
+    send('complete', { rates_refreshed: true });
+    if (!closed) res.end();
+  } catch (error) {
+    console.error(error);
+    send('failure', { error: 'Could not refresh hotel details' });
+    if (!closed) res.end();
+  }
+});
+
+// GET /api/hotels/:id — return only cached/local data; providers refresh through SSE.
 router.get('/:id', requireAuth, requireEmailVerified, requireOnboarding, async (req, res) => {
   try {
     const hotel = await db.prepare('SELECT * FROM hotels WHERE id = ?').get(req.params.id);
     if (!hotel) return res.status(404).json({ error: 'Hotel not found' });
     const checkIn = req.query.check_in || formatDate(addDays(new Date(), 30));
     const checkOut = req.query.check_out || defaultCheckOut(checkIn);
-
-    await refreshLiteApiRates([hotel], checkIn, checkOut, { guests: req.query.guests, force: req.query.refresh === '1' }).catch(err => console.warn(`[liteapi] ${hotel.name}: ${err.message}`));
-    await refreshHotelPricesFromXotelo(hotel, checkIn, checkOut).catch(err => {
-      console.warn(`[xotelo] ${hotel.name}: ${err.message}`);
-      return null;
-    });
-
-    const rooms = await db.prepare('SELECT * FROM hotel_rooms WHERE hotel_id = ? ORDER BY base_price_per_night').all(req.params.id);
-    const images = await hotelImages(hotel);
-    const prices = await db.prepare(`
-      SELECT * FROM hotel_prices
-      WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ?
-        AND (guests = ? OR guests IS NULL)
-      ORDER BY
-        CASE WHEN source = 'liteapi' THEN 0 ELSE 1 END,
-        price_per_night
-    `).all(req.params.id, checkIn, checkOut, Math.max(1, Number(req.query.guests) || 2));
-    const reviews = await db.prepare('SELECT * FROM hotel_reviews WHERE hotel_id = ?').get(req.params.id);
-    const scoring = await scoreHotelForUser(hotel, rooms, reviews, prices, req.user.id, req.query.language || 'en', req.query.guests, req.query.trip_purpose);
-
-    const localized = await localizeHotel(hotel, req.query.language, rooms);
-    res.json({ hotel: localized.hotel, images, rooms: localized.rooms, prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), reviews, scoring, price_meta: { check_in: checkIn, check_out: checkOut, ttl_hours: CACHE_TTL_HOURS } });
+    if (!validateDateRange(checkIn, checkOut)) return res.status(400).json({ error: 'Check-in and check-out must be valid future dates' });
+    const options = {
+      hotel, userId: req.user.id, checkIn, checkOut, guests: req.query.guests,
+      language: req.query.language || 'en', tripPurpose: req.query.trip_purpose,
+    };
+    const key = detailCacheKey({ hotelId: hotel.id, ...options });
+    const result = await cache.rememberJson(key, Math.max(30, Number(process.env.HOTEL_DETAIL_CACHE_TTL_SECONDS || 120)),
+      () => loadHotelDetailSnapshot(options));
+    res.json({ ...result.value, cached: result.cached });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
