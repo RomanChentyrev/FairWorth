@@ -23,7 +23,7 @@ www.{$APP_DOMAIN} {
     Referrer-Policy "strict-origin-when-cross-origin"
     X-Robots-Tag "noindex, nofollow, noarchive"
     Content-Security-Policy "default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://*.sentry.io; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests"
-    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
     -Server
   }
 
