@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const { buildRouteGraph, routeFallbackTickets, hasDirectEdge, possibleAirports } = require('../services/flightRouteGraph');
 
 test('city codes expand to airports for direct edge checks', () => {
-  assert.deepEqual(possibleAirports('MOW'), ['SVO', 'DME', 'VKO']);
+  assert.deepEqual(new Set(possibleAirports('MOW')), new Set(['SVO', 'DME', 'VKO', 'ZIA']));
+  assert.deepEqual(new Set(possibleAirports('JKT')), new Set(['CGK', 'HLP']));
   assert.equal(hasDirectEdge('MOW', 'DXB'), true);
 });
 
@@ -14,6 +15,12 @@ test('route graph returns estimated connections without claiming schedule confir
   assert.ok(graph.options.some(option => option.airports.includes('DXB') || option.airports.includes('DOH') || option.airports.includes('IST')));
   assert.equal(graph.options[0].schedule_confirmed, false);
   assert.equal(graph.options[0].provider_verification_required, true);
+});
+
+test('route graph can return informational two-stop options', () => {
+  const graph = buildRouteGraph({ origin: 'JKT', destination: 'PAR', maxStops: 2, limit: 5 });
+  assert.ok(graph.options.some(option => option.stops === 2));
+  assert.ok(graph.options.every(option => option.schedule_confirmed === false));
 });
 
 test('route-only fallback tickets are not fare offers', () => {

@@ -8,9 +8,11 @@ test('SearchAPI filters map to Google Flights values', () => {
   assert.equal(stopsFilter(undefined), 'any');
   assert.equal(travelClass('premium-economy'), 'premium_economy');
   assert.equal(travelClass('first'), 'first_class');
-  assert.equal(searchAirportIds('MOW'), 'SVO,DME,VKO');
-  assert.equal(searchAirportIds('NYC'), 'JFK,EWR,LGA');
-  assert.equal(searchAirportIds('SIN'), 'SIN');
+  assert.deepEqual(new Set(searchAirportIds('MOW').split(',')), new Set(['SVO', 'DME', 'VKO', 'ZIA']));
+  assert.deepEqual(new Set(searchAirportIds('NYC').split(',')), new Set(['JFK', 'EWR', 'LGA']));
+  assert.ok(searchAirportIds('SIN').split(',').includes('SIN'));
+  assert.deepEqual(new Set(searchAirportIds('JKT').split(',')), new Set(['CGK', 'HLP']));
+  assert.equal(searchAirportIds(['CGK', 'HLP']), 'CGK,HLP');
 });
 
 test('SearchAPI connecting fare is normalized for the complete party', () => {

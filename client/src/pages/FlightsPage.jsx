@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Search, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Route, Search, SlidersHorizontal, X } from 'lucide-react';
 import { flightsApi } from '../api';
 import FlightCard from '../components/FlightCard';
 import { useLang } from '../i18n/LanguageContext';
@@ -38,6 +38,40 @@ function RangeSlider({ min, max, value, onChange, prefix = '$', step = 50 }) {
           className={styles.rangeInput} />
       </div>
     </div>
+  );
+}
+
+function RouteOnlyCard({ option, l }) {
+  const route = option.route_graph_option || {};
+  const airports = route.airports || [option.origin, option.destination].filter(Boolean);
+  return (
+    <div className={styles.routeOnlyCard}>
+      <div className={styles.routeOnlyIcon}><Route size={20} /></div>
+      <div className={styles.routeOnlyBody}>
+        <strong>{airports.join(' → ')}</strong>
+        <span>{route.stops === 0 ? l('Possible direct route', 'Возможный прямой маршрут') : l(`${route.stops} connection route`, `Маршрут с пересадками: ${route.stops}`)}</span>
+        {route.suggested_airlines?.length > 0 && <span>{route.suggested_airlines.join(', ')}</span>}
+      </div>
+      <div className={styles.routeOnlyMeta}>
+        <span>{l('Route found', 'Маршрут найден')}</span>
+        <strong>{l('Fare unavailable', 'Цена не найдена')}</strong>
+      </div>
+    </div>
+  );
+}
+
+function emptySearchMessage(status, l) {
+  if (status === 'provider_unavailable') return l(
+    'Flight providers did not respond. Possible routes are shown below while fares are unavailable.',
+    'Поставщики перелётов не ответили. Ниже показаны возможные маршруты без тарифов.'
+  );
+  if (status === 'route_only') return l(
+    'No confirmed fare was found, but possible routes are shown below.',
+    'Подтверждённый тариф не найден, но ниже показаны возможные маршруты.'
+  );
+  return l(
+    'Providers responded, but no available fares were found for this date or within three nearby days.',
+    'Поставщики ответили, но тарифы не найдены ни на выбранную дату, ни в пределах трёх соседних дней.'
   );
 }
 
@@ -152,7 +186,7 @@ function normalizeTravelpayoutsTicket(ticket, context) {
     airline: airlineName,
     airline_code: airlineCode,
     flight_number: ticket.flight_number
-      ? (ticket.source === 'searchapi' ? ticket.flight_number : `${airlineCode}${ticket.flight_number}`.trim())
+      ? (['searchapi', 'duffel'].includes(ticket.source) ? ticket.flight_number : `${airlineCode}${ticket.flight_number}`.trim())
       : 'Best fare',
     origin_city: context.fromLabel,
     origin_code: originCode,
@@ -238,7 +272,9 @@ function groupFlightFares(flights) {
         flight.price,
         flight.raw?.link,
       ].filter(Boolean).join('|'),
-      operator: flight.source === 'searchapi' ? 'SearchAPI / Google Flights' : flight.raw?.gate || flight.aircraft || 'Travelpayouts',
+      operator: flight.source === 'searchapi'
+        ? 'SearchAPI / Google Flights'
+        : flight.source === 'duffel' ? 'Duffel' : flight.raw?.gate || flight.aircraft || 'Travelpayouts',
       price: Number(flight.price || 0),
       baggage: flight.baggage,
       link: flight.raw?.link,
@@ -345,6 +381,10 @@ export default function FlightsPage() {
   const [alternativeFlights, setAlternativeFlights] = useState([]);
   const [returnFlights, setReturnFlights] = useState([]);
   const [alternativeReturnFlights, setAlternativeReturnFlights] = useState([]);
+  const [outboundRoutes, setOutboundRoutes] = useState([]);
+  const [returnRoutes, setReturnRoutes] = useState([]);
+  const [outboundStatus, setOutboundStatus] = useState('complete_no_offers');
+  const [returnStatus, setReturnStatus] = useState('complete_no_offers');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [aiMessage, setAiMessage] = useState('');
@@ -407,7 +447,7 @@ export default function FlightsPage() {
       };
 
       const loadLeg = async ({ legOriginCode, legDestinationCode, legFromLabel, legToLabel, legDate }) => {
-        if (!legDate) return { results: [], alternatives: [] };
+        if (!legDate) return { results: [], alternatives: [], routes: [], status: 'complete_no_offers' };
 
         const params = {
           origin: legOriginCode,
@@ -456,7 +496,12 @@ export default function FlightsPage() {
           )
           : [];
 
-        return { results, alternatives };
+        return {
+          results,
+          alternatives,
+          routes: res.data?.route_options || [],
+          status: res.data?.search_status || (results.length ? 'complete_with_offers' : 'complete_no_offers'),
+        };
       };
 
       const outbound = await loadLeg({
@@ -475,7 +520,7 @@ export default function FlightsPage() {
           legToLabel: normalizePlaceInput(from) || originCode,
           legDate: returnDate,
         })
-        : { results: [], alternatives: [] };
+        : { results: [], alternatives: [], routes: [], status: 'complete_no_offers' };
 
       let results = outbound.results;
       const alternatives = outbound.alternatives;
@@ -484,6 +529,10 @@ export default function FlightsPage() {
       setAlternativeFlights(alternatives);
       setReturnFlights(inbound.results);
       setAlternativeReturnFlights(inbound.alternatives);
+      setOutboundRoutes(outbound.routes);
+      setReturnRoutes(inbound.routes);
+      setOutboundStatus(outbound.status);
+      setReturnStatus(inbound.status);
       if (results.length) {
         const best = results[0];
         setAiMessage(l(`Best flight for your preferences — **${best.airline} ${best.flight_number}** (Score ${best.fairworth_score}/100). ${best.duration_label}, ${best.stops === 0 ? 'direct' : `${best.stops} stop`}, from $${best.price}.`, `Лучший перелёт под ваши предпочтения — **${best.airline} ${best.flight_number}** (Score ${best.fairworth_score}/100). ${best.duration_label}, ${best.stops === 0 ? 'без пересадок' : `${best.stops} пересадка`}, от $${best.price}.`));
@@ -497,6 +546,8 @@ export default function FlightsPage() {
       setAlternativeFlights([]);
       setReturnFlights([]);
       setAlternativeReturnFlights([]);
+      setOutboundRoutes([]);
+      setReturnRoutes([]);
     } finally {
       setLoading(false);
     }
@@ -618,6 +669,7 @@ export default function FlightsPage() {
                 <button className={`${styles.ratingBtn} ${maxStops === '' ? styles.ratingBtnOn : ''}`} onClick={() => setMaxStops('')}>{t('results_rating_any')}</button>
                 <button className={`${styles.ratingBtn} ${maxStops === '0' ? styles.ratingBtnOn : ''}`} onClick={() => setMaxStops('0')}>{t('flight_direct')}</button>
                 <button className={`${styles.ratingBtn} ${maxStops === '1' ? styles.ratingBtnOn : ''}`} onClick={() => setMaxStops('1')}>1</button>
+                <button className={`${styles.ratingBtn} ${maxStops === '2' ? styles.ratingBtnOn : ''}`} onClick={() => setMaxStops('2')}>2</button>
               </div>
             </FilterSection>
 
@@ -678,10 +730,18 @@ export default function FlightsPage() {
                   ))}
                   {flights.length === 0 && alternativeFlights.length === 0 && (
                     <div className={styles.noResults}>
-                      {l('No available fares were found for this date. Try a nearby date or major airport.', 'Доступных тарифов на выбранную дату не найдено. Попробуйте соседнюю дату или ближайший крупный аэропорт.')}
+                      {emptySearchMessage(outboundStatus, l)}
                     </div>
                   )}
                 </div>
+                {flights.length === 0 && alternativeFlights.length === 0 && outboundRoutes.length > 0 && (
+                  <section className={styles.routeOnlySection}>
+                    <div className={styles.altHeader}>
+                      <span className={styles.altTitle}>{l('Possible routes without a confirmed fare', 'Возможные маршруты без подтверждённой цены')}</span>
+                    </div>
+                    <div className={styles.cards}>{outboundRoutes.map(option => <RouteOnlyCard key={option.id} option={option} l={l} />)}</div>
+                  </section>
+                )}
                 {alternativeFlights.length > 0 && (
                   <section className={styles.altSection}>
                     <div className={styles.altHeader}>
@@ -713,10 +773,18 @@ export default function FlightsPage() {
                     ))}
                     {returnFlights.length === 0 && alternativeReturnFlights.length === 0 && (
                       <div className={styles.noResults}>
-                        {l('No available return fares were found for this date. Try a nearby date or major airport.', 'Доступных обратных тарифов на выбранную дату не найдено. Попробуйте соседнюю дату или ближайший крупный аэропорт.')}
+                        {emptySearchMessage(returnStatus, l)}
                       </div>
                     )}
                   </div>
+                  {returnFlights.length === 0 && alternativeReturnFlights.length === 0 && returnRoutes.length > 0 && (
+                    <section className={styles.routeOnlySection}>
+                      <div className={styles.altHeader}>
+                        <span className={styles.altTitle}>{l('Possible return routes without a confirmed fare', 'Возможные обратные маршруты без подтверждённой цены')}</span>
+                      </div>
+                      <div className={styles.cards}>{returnRoutes.map(option => <RouteOnlyCard key={`return-route-${option.id}`} option={option} l={l} />)}</div>
+                    </section>
+                  )}
                   {alternativeReturnFlights.length > 0 && (
                     <section className={styles.altSection}>
                       <div className={styles.altHeader}>

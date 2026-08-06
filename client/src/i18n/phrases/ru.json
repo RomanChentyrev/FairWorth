@@ -570,6 +570,15 @@
   "Your travel story": "Ваша история путешествий",
   "Your trip": "Ваша поездка",
   "Your trip is not ready": "Поездка ещё не собрана",
+  "Possible direct route": "Возможный прямой маршрут",
+  "connection route": "маршрут с пересадками",
+  "Route found": "Маршрут найден",
+  "Fare unavailable": "Цена не найдена",
+  "Flight providers did not respond. Possible routes are shown below while fares are unavailable.": "Поставщики перелётов не ответили. Ниже показаны возможные маршруты без тарифов.",
+  "No confirmed fare was found, but possible routes are shown below.": "Подтверждённый тариф не найден, но ниже показаны возможные маршруты.",
+  "Providers responded, but no available fares were found for this date or within three nearby days.": "Поставщики ответили, но тарифы не найдены ни на выбранную дату, ни в пределах трёх соседних дней.",
+  "Possible routes without a confirmed fare": "Возможные маршруты без подтверждённой цены",
+  "Possible return routes without a confirmed fare": "Возможные обратные маршруты без подтверждённой цены",
   "Zoom in": "Приблизить",
   "Zoom out": "Отдалить"
 }

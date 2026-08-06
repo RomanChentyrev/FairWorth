@@ -570,6 +570,15 @@
   "Your travel story": "Votre récit de voyage",
   "Your trip": "Votre voyage",
   "Your trip is not ready": "Votre voyage n'est pas prêt",
+  "Possible direct route": "Trajet direct possible",
+  "connection route": "trajet avec correspondance",
+  "Route found": "Itinéraire trouvé",
+  "Fare unavailable": "Tarif indisponible",
+  "Flight providers did not respond. Possible routes are shown below while fares are unavailable.": "Les fournisseurs de vols n'ont pas répondu. Les itinéraires possibles sont affichés ci-dessous sans tarif.",
+  "No confirmed fare was found, but possible routes are shown below.": "Aucun tarif confirmé n'a été trouvé, mais les itinéraires possibles sont affichés ci-dessous.",
+  "Providers responded, but no available fares were found for this date or within three nearby days.": "Les fournisseurs ont répondu, mais aucun tarif disponible n'a été trouvé pour cette date ni dans les trois jours voisins.",
+  "Possible routes without a confirmed fare": "Itinéraires possibles sans tarif confirmé",
+  "Possible return routes without a confirmed fare": "Itinéraires retour possibles sans tarif confirmé",
   "Zoom in": "Zoom avant",
   "Zoom out": "Zoom arrière"
 }

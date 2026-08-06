@@ -8,6 +8,7 @@ test('provider capabilities are unavailable without live keys', () => {
     liteapi: process.env.LITEAPI_KEY,
     travelpayouts: process.env.TRAVELPAYOUTS_TOKEN,
     searchapi: process.env.SEARCHAPI_KEY,
+    duffel: process.env.DUFFEL_ACCESS_TOKEN,
     openrouter: process.env.OPENROUTER_API_KEY,
     hotelRateProviders: process.env.HOTEL_RATE_PROVIDERS,
     partnerBooking: process.env.PARTNER_BOOKING_ENABLED,
@@ -16,14 +17,14 @@ test('provider capabilities are unavailable without live keys', () => {
   process.env.HOTEL_RATE_PROVIDERS = 'none';
   process.env.PARTNER_BOOKING_ENABLED = 'false';
   delete process.env.LITEAPI_KEY; delete process.env.TRAVELPAYOUTS_TOKEN; delete process.env.OPENROUTER_API_KEY;
-  delete process.env.SEARCHAPI_KEY;
+  delete process.env.SEARCHAPI_KEY; delete process.env.DUFFEL_ACCESS_TOKEN;
   const result = capabilities();
   assert.equal(result.hotels.status, 'unavailable');
   assert.equal(result.flights.status, 'unavailable');
   assert.equal(result.ai.status, 'unavailable');
   assert.equal(result.partner_booking.stage, 'post_company_registration');
   for (const [key, value] of Object.entries(previous)) {
-    const envKey = { fixture: 'PROVIDER_FIXTURES_ENABLED', liteapi: 'LITEAPI_KEY', travelpayouts: 'TRAVELPAYOUTS_TOKEN', searchapi: 'SEARCHAPI_KEY', openrouter: 'OPENROUTER_API_KEY', hotelRateProviders: 'HOTEL_RATE_PROVIDERS', partnerBooking: 'PARTNER_BOOKING_ENABLED' }[key];
+    const envKey = { fixture: 'PROVIDER_FIXTURES_ENABLED', liteapi: 'LITEAPI_KEY', travelpayouts: 'TRAVELPAYOUTS_TOKEN', searchapi: 'SEARCHAPI_KEY', duffel: 'DUFFEL_ACCESS_TOKEN', openrouter: 'OPENROUTER_API_KEY', hotelRateProviders: 'HOTEL_RATE_PROVIDERS', partnerBooking: 'PARTNER_BOOKING_ENABLED' }[key];
     if (value === undefined) delete process.env[envKey]; else process.env[envKey] = value;
   }
 });
@@ -87,11 +88,12 @@ test('fixtures do not replace real provider credentials', () => {
 });
 
 test('SearchAPI enables current connecting flight fares without Travelpayouts', () => {
-  const keys = ['SEARCHAPI_KEY', 'TRAVELPAYOUTS_TOKEN'];
+  const keys = ['SEARCHAPI_KEY', 'TRAVELPAYOUTS_TOKEN', 'DUFFEL_ACCESS_TOKEN'];
   const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   try {
     process.env.SEARCHAPI_KEY = 'test-searchapi-key';
     delete process.env.TRAVELPAYOUTS_TOKEN;
+    delete process.env.DUFFEL_ACCESS_TOKEN;
     const flights = capabilities().flights;
     assert.equal(flights.status, 'ready');
     assert.equal(flights.provider, 'SearchAPI');
@@ -99,6 +101,25 @@ test('SearchAPI enables current connecting flight fares without Travelpayouts', 
     assert.equal(flights.features.current_metasearch_fares, true);
     assert.equal(flights.features.connecting_itineraries, true);
     assert.equal(flights.features.indicative_fares, false);
+  } finally {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
+    }
+  }
+});
+
+test('Duffel enables live offers and connecting itineraries', () => {
+  const keys = ['SEARCHAPI_KEY', 'TRAVELPAYOUTS_TOKEN', 'DUFFEL_ACCESS_TOKEN'];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    delete process.env.SEARCHAPI_KEY;
+    delete process.env.TRAVELPAYOUTS_TOKEN;
+    process.env.DUFFEL_ACCESS_TOKEN = 'duffel_test_example';
+    const flights = capabilities().flights;
+    assert.equal(flights.status, 'ready');
+    assert.equal(flights.provider, 'Duffel');
+    assert.equal(flights.features.live_offers, true);
+    assert.equal(flights.features.connecting_itineraries, true);
   } finally {
     for (const key of keys) {
       if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];

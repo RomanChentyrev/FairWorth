@@ -466,6 +466,7 @@ test('flight API distinguishes provider timeout, provider error and a successful
   const methods = ['pricesForDates', 'cheapestTickets', 'priceCalendar', 'getAirports'];
   const originals = Object.fromEntries(methods.map(method => [method, travelpayouts[method]]));
   const originalSearchApiKey = process.env.SEARCHAPI_KEY;
+  const originalDuffelToken = process.env.DUFFEL_ACCESS_TOKEN;
   const setSearchProviders = implementation => {
     travelpayouts.pricesForDates = implementation;
     travelpayouts.cheapestTickets = implementation;
@@ -473,18 +474,23 @@ test('flight API distinguishes provider timeout, provider error and a successful
   };
   try {
     delete process.env.SEARCHAPI_KEY;
+    delete process.env.DUFFEL_ACCESS_TOKEN;
     const timeout = new Error('upstream socket timed out with private diagnostics');
     timeout.name = 'TimeoutError'; timeout.code = 'ETIMEDOUT';
     setSearchProviders(async () => { throw timeout; });
     const timedOut = await request(app).get(url).set(auth);
-    assert.equal(timedOut.status, 504, timedOut.text);
-    assert.deepEqual(timedOut.body, { success: false, error: 'Travelpayouts did not respond in time', code: 'PROVIDER_TIMEOUT', provider: 'Travelpayouts', retryable: true });
+    assert.equal(timedOut.status, 200, timedOut.text);
+    assert.equal(timedOut.body.search_status, 'provider_unavailable');
+    assert.equal(timedOut.body.provider_statuses.travelpayouts.status, 'timeout');
+    assert.ok(timedOut.body.route_options.length > 0);
     assert.equal(timedOut.text.includes('private diagnostics'), false);
 
     setSearchProviders(async () => { throw new Error('upstream rejected the request with private diagnostics'); });
     const failed = await request(app).get(url).set(auth);
-    assert.equal(failed.status, 502, failed.text);
-    assert.deepEqual(failed.body, { success: false, error: 'Travelpayouts request failed', code: 'PROVIDER_ERROR', provider: 'Travelpayouts', retryable: true });
+    assert.equal(failed.status, 200, failed.text);
+    assert.equal(failed.body.search_status, 'provider_unavailable');
+    assert.equal(failed.body.provider_statuses.travelpayouts.status, 'error');
+    assert.ok(failed.body.route_options.length > 0);
     assert.equal(failed.text.includes('private diagnostics'), false);
 
     setSearchProviders(async () => []);
@@ -492,6 +498,8 @@ test('flight API distinguishes provider timeout, provider error and a successful
     const empty = await request(app).get(url).set(auth);
     assert.equal(empty.status, 200, empty.text);
     assert.equal(empty.body.success, true); assert.equal(empty.body.count, 0); assert.deepEqual(empty.body.data, []);
+    assert.equal(empty.body.search_status, 'route_only');
+    assert.equal(empty.body.provider_statuses.travelpayouts.status, 'empty');
     assert.equal(empty.body.fare_positioning.fare_type, 'indicative');
     assert.equal(empty.body.fare_positioning.availability_confirmed, false);
     assert.equal(empty.body.fare_positioning.seat_availability_confirmed, false);
@@ -500,6 +508,8 @@ test('flight API distinguishes provider timeout, provider error and a successful
     for (const method of methods) travelpayouts[method] = originals[method];
     if (originalSearchApiKey === undefined) delete process.env.SEARCHAPI_KEY;
     else process.env.SEARCHAPI_KEY = originalSearchApiKey;
+    if (originalDuffelToken === undefined) delete process.env.DUFFEL_ACCESS_TOKEN;
+    else process.env.DUFFEL_ACCESS_TOKEN = originalDuffelToken;
   }
 });
 

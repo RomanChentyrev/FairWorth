@@ -365,6 +365,35 @@
   margin-top: 22px;
 }
 
+.routeOnlySection { margin-top: 18px; }
+.routeOnlyCard {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius-md);
+}
+.routeOnlyIcon {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--navy);
+  background: var(--bg-subtle);
+  border-radius: 50%;
+}
+.routeOnlyBody { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.routeOnlyBody strong { color: var(--navy); overflow-wrap: anywhere; }
+.routeOnlyBody span { color: var(--text-muted); font-size: 12px; }
+.routeOnlyMeta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; text-align: right; }
+.routeOnlyMeta span { color: var(--green); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.routeOnlyMeta strong { color: var(--text-secondary); font-size: 12px; }
+
 .altHeader {
   display: flex;
   align-items: baseline;
@@ -434,6 +463,8 @@
 @media (max-width: 720px) {
   .pendingRateCard { grid-template-columns: 92px minmax(0, 1fr); }
   .pendingRateBody { padding: 14px; }
+  .routeOnlyCard { grid-template-columns: 38px minmax(0, 1fr); }
+  .routeOnlyMeta { grid-column: 2; align-items: flex-start; text-align: left; }
 }
 .skeletonLine { height: 14px; border-radius: 4px; }
 

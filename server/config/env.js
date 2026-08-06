@@ -31,6 +31,8 @@ const schema = z.object({
   TRAVELPAYOUTS_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(25000),
   SEARCHAPI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
   SEARCHAPI_MARKET: z.string().regex(/^[a-z]{2}$/).default('us'),
+  DUFFEL_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(25000),
+  DUFFEL_SUPPLIER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(20000).default(15000),
   WORKER_INTERVAL_MS: z.coerce.number().int().min(1000).default(60000),
   WORKER_PRICE_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(20),
   WORKER_EMAIL_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(25),

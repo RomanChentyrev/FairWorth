@@ -14,22 +14,7 @@ const DEFAULT_HUBS = [
   { code: 'JFK', name: 'New York', airline: 'Multiple airlines', region: 'north_america', score: 72 },
 ];
 
-const CITY_AIRPORTS = {
-  MOW: ['SVO', 'DME', 'VKO'],
-  NYC: ['JFK', 'EWR', 'LGA'],
-  PAR: ['CDG', 'ORY'],
-  LON: ['LHR', 'LGW', 'STN'],
-  TYO: ['HND', 'NRT'],
-  BJS: ['PEK', 'PKX'],
-  SHA: ['PVG', 'SHA'],
-  KUL: ['KUL', 'SZB'],
-  SIN: ['SIN'],
-  DXB: ['DXB'],
-  AUH: ['AUH'],
-  DAD: ['DAD'],
-  CXR: ['CXR'],
-  NHA: ['CXR'],
-};
+const { airportCodes } = require('./flightAirportResolver');
 
 const DIRECT_PAIRS = new Set([
   'SVO:IST', 'SVO:DXB', 'SVO:DOH', 'SVO:AUH', 'SVO:PEK', 'SVO:PVG', 'SVO:CDG',
@@ -44,8 +29,7 @@ function normalizeCode(value) {
 }
 
 function possibleAirports(code) {
-  const normalized = normalizeCode(code);
-  return CITY_AIRPORTS[normalized] || [normalized];
+  return airportCodes(normalizeCode(code));
 }
 
 function routeKey(left, right) {
@@ -107,6 +91,28 @@ function connectionOption(origin, destination, hub) {
   };
 }
 
+function twoConnectionOption(origin, destination, firstHub, secondHub) {
+  const directEdgeCount = Number(hasDirectEdge(origin, firstHub.code))
+    + Number(hasDirectEdge(firstHub.code, secondHub.code))
+    + Number(hasDirectEdge(secondHub.code, destination));
+  return {
+    type: 'connection',
+    stops: 2,
+    airports: [normalizeCode(origin), firstHub.code, secondHub.code, normalizeCode(destination)],
+    connection_airports: [
+      { code: firstHub.code, name: firstHub.name },
+      { code: secondHub.code, name: secondHub.name },
+    ],
+    label: `${normalizeCode(origin)} → ${firstHub.code} → ${secondHub.code} → ${normalizeCode(destination)}`,
+    suggested_airlines: [...new Set([firstHub.airline, secondHub.airline])],
+    route_confidence: optionConfidence(2, (firstHub.score + secondHub.score) / 2, directEdgeCount),
+    schedule_confirmed: false,
+    fare_available: false,
+    provider_verification_required: true,
+    missing_live_fare_reason: 'No confirmed fare was returned for the selected date.',
+  };
+}
+
 function routeRank(origin, destination, hub) {
   if ([origin, destination].includes(hub.code)) return -Infinity;
   const firstLeg = hasDirectEdge(origin, hub.code);
@@ -128,14 +134,30 @@ function buildRouteGraph({ origin, destination, maxStops = 2, limit = 5 } = {}) 
 
   const direct = directOption(normalizedOrigin, normalizedDestination);
   const connectionLimit = Math.max(0, Number(limit || 5) - (direct ? 1 : 0));
+  const singleLimit = maxStops >= 2 ? Math.ceil(connectionLimit * 0.6) : connectionLimit;
   const connections = maxStops === 0 ? [] : DEFAULT_HUBS
     .map(hub => ({ hub, rank: routeRank(normalizedOrigin, normalizedDestination, hub) }))
     .filter(item => item.rank > 0)
     .sort((a, b) => b.rank - a.rank)
-    .slice(0, connectionLimit)
+    .slice(0, singleLimit)
     .map(item => connectionOption(normalizedOrigin, normalizedDestination, item.hub));
 
-  const options = [direct, ...connections].filter(Boolean);
+  const twoStopConnections = maxStops < 2 ? [] : DEFAULT_HUBS
+    .flatMap(firstHub => DEFAULT_HUBS
+      .filter(secondHub => secondHub.code !== firstHub.code)
+      .map(secondHub => ({
+        firstHub,
+        secondHub,
+        rank: routeRank(normalizedOrigin, normalizedDestination, firstHub)
+          + routeRank(firstHub.code, normalizedDestination, secondHub),
+      })))
+    .filter(item => item.rank > 0 && ![normalizedOrigin, normalizedDestination].includes(item.firstHub.code)
+      && ![normalizedOrigin, normalizedDestination].includes(item.secondHub.code))
+    .sort((left, right) => right.rank - left.rank)
+    .slice(0, Math.max(0, connectionLimit - connections.length))
+    .map(item => twoConnectionOption(normalizedOrigin, normalizedDestination, item.firstHub, item.secondHub));
+
+  const options = [direct, ...connections, ...twoStopConnections].filter(Boolean);
   return {
     status: options.length ? 'estimated' : 'unavailable',
     source: 'fairworth_route_graph',

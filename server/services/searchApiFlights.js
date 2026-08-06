@@ -162,6 +162,10 @@ function travelClass(value) {
 }
 
 function searchAirportIds(value) {
+  if (Array.isArray(value)) return value.map(item => String(item).trim().toUpperCase()).filter(Boolean).join(',');
+  if (String(value || '').includes(',')) {
+    return String(value).split(',').map(item => item.trim().toUpperCase()).filter(Boolean).join(',');
+  }
   return possibleAirports(value).filter(Boolean).join(',');
 }
 
