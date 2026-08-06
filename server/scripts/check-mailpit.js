@@ -33,7 +33,7 @@ async function main() {
     const messages = Array.isArray(payload.messages) ? payload.messages : [];
     const captured = messages.filter(message => JSON.stringify(message).includes(email));
     const serialized = JSON.stringify(captured);
-    if (captured.length < 3 || !serialized.includes('Подтвердите email Fairworth') || !serialized.includes('Сброс пароля Fairworth')) throw new Error(`Mailpit captured only ${captured.length} matching auth messages`);
+    if (captured.length < 3 || !serialized.includes('Подтвердите email Tripalora') || !serialized.includes('Сброс пароля Tripalora')) throw new Error(`Mailpit did not capture the expected Tripalora authentication messages (captured: ${captured.length})`);
     console.log(`OK API registration, resend and password recovery delivered ${captured.length} messages to Mailpit.`);
     console.log('OK RU HTML templates and escaped user input were sent through SMTP.');
     console.log('Open http://localhost:8025 to inspect the inbox.');

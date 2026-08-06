@@ -1,8 +1,19 @@
-const airportsPayload = require('../data/airports.json');
-const citiesPayload = require('../data/cities.json');
+const flightIndex = require('../resources/flight-airport-index.json');
 
-const airports = Array.isArray(airportsPayload) ? airportsPayload : Object.values(airportsPayload);
-const cities = Array.isArray(citiesPayload) ? citiesPayload : Object.values(citiesPayload);
+const airports = flightIndex.airports.map(item => ({
+  code: item.c,
+  city_code: item.cc,
+  name: item.n,
+  country_code: item.k,
+  coordinates: item.p,
+  iata_type: 'airport',
+  flightable: true,
+}));
+const cities = flightIndex.cities.map(item => ({
+  code: item.c,
+  name: item.n,
+  coordinates: item.p,
+}));
 
 const airportByCode = new Map(airports.filter(item => item?.code).map(item => [item.code.toUpperCase(), item]));
 const cityByCode = new Map(cities.filter(item => item?.code).map(item => [item.code.toUpperCase(), item]));
