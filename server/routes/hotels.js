@@ -10,10 +10,11 @@ const { selectComparableRate, rateAvailability, marketBenchmark } = require('../
 const { requireAuth, requireOnboarding, requireEmailVerified } = require('../middleware/auth');
 const { validateDateRange, defaultTravelDates } = require('../utils/dates');
 const { canonicalHotelCity } = require('../utils/cities');
+const { hotelDestinationFilter } = require('../utils/hotelDestinations');
 const { aiLimiter } = require('../middleware/security');
 const { requireCapability, configured } = require('../config/capabilities');
 const travelpayouts = require('../services/travelpayouts');
-const { ensureCatalogForCity } = require('../services/hotelCatalog');
+const { ensureCatalogForCity, resolveCatalogDestination } = require('../services/hotelCatalog');
 const { refreshLiteApiRates } = require('../services/hotelRates');
 const googlePlaces = require('../services/googlePlaces');
 const cache = require('../services/cache');
@@ -631,6 +632,7 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
       limit = 30, offset = 0
     } = req.query;
     const city = canonicalHotelCity(requestedCity);
+    const destinationCode = city ? await resolveCatalogDestination(city, { providerLookup: false }) : null;
     const pageSize = Math.min(Math.max(Number(limit) || 30, 1), 30);
     const pageOffset = Math.max(Number(offset) || 0, 0);
     const userId = req.user.id;
@@ -639,7 +641,7 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
       db.prepare(`SELECT COUNT(*) AS count, MAX(created_at) AS latest FROM user_hotel_feedback WHERE user_id = ?`).get(userId),
       db.prepare(`SELECT COUNT(*) AS count, MAX(created_at) AS latest FROM user_interactions WHERE user_id = ?`).get(userId),
     ]);
-    const searchCacheKey = cache.cacheKey('hotel-search-v2', {
+    const searchCacheKey = cache.cacheKey('hotel-search-v3', {
       userId,
       preferences: userPrefs,
       feedbackVersion,
@@ -668,8 +670,9 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
     const feedbackContextKey = tripContextKey({ destination: city, check_in: liveCheckIn, check_out: liveCheckOut, guests, trip_purpose }, userPrefs || {});
 
     if (city) {
-      const existingCatalog = await db.prepare(`SELECT id FROM hotels WHERE active = 1 AND (LOWER(city) LIKE ? OR LOWER(location) LIKE ? OR LOWER(country) LIKE ?) LIMIT 1`)
-        .get(...Array(3).fill(`%${city.toLowerCase()}%`));
+      const destination = hotelDestinationFilter('hotels', city, destinationCode);
+      const existingCatalog = await db.prepare(`SELECT id FROM hotels WHERE active = 1 AND ${destination.sql} LIMIT 1`)
+        .get(...destination.params);
       if (existingCatalog) setImmediate(() => ensureCatalogForCity(city).catch(error => console.warn(`[liteapi] catalog refresh: ${error.message}`)));
       else await ensureCatalogForCity(city);
     }
@@ -708,9 +711,9 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
     const params = [liveCheckIn, liveCheckOut, Math.max(1, Number(guests) || 2), userId, feedbackContextKey];
 
     if (city) {
-      query += ` AND (LOWER(h.city) LIKE ? OR LOWER(h.location) LIKE ? OR LOWER(h.country) LIKE ?)`;
-      const c = `%${city.toLowerCase()}%`;
-      params.push(c, c, c);
+      const destination = hotelDestinationFilter('h', city, destinationCode);
+      query += ` AND ${destination.sql}`;
+      params.push(...destination.params);
     }
     if (stars) {
       const starsArr = stars.split(',');
@@ -871,7 +874,10 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
 
     const warmed = city ? await warmedDestination(city) : null;
     const locationFacets = warmed?.locations || (city
-      ? (await db.prepare(`SELECT DISTINCT location FROM hotels WHERE LOWER(city) LIKE ? OR LOWER(country) LIKE ? ORDER BY location`).all(`%${city.toLowerCase()}%`, `%${city.toLowerCase()}%`)).map(row => row.location)
+      ? (await (() => {
+        const destination = hotelDestinationFilter('hotels', city, destinationCode);
+        return db.prepare(`SELECT DISTINCT location FROM hotels WHERE active = 1 AND ${destination.sql} ORDER BY location`).all(...destination.params);
+      })()).map(row => row.location)
       : []);
     const responseHotels = pageResults.map(hotel => {
       const result = { ...hotel };

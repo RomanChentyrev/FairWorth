@@ -36,7 +36,8 @@ test.before(async () => {
   const dates = defaultTravelDates();
   await db.prepare(`INSERT INTO hotels (id, name, location, city, country, stars, amenities) VALUES ('test-live-hotel', 'Test Live Hotel', 'Marina Bay', 'Singapore', 'Singapore', 5, '["pool"]') ON CONFLICT (id) DO NOTHING`).run();
   await db.prepare(`INSERT INTO hotel_prices (id, hotel_id, operator, price_per_night, check_in, check_out, currency, source, url) VALUES ('test-live-price', 'test-live-hotel', 'Test Partner', 500, ?, ?, 'USD', 'xotelo', 'https://partner.example/hotel') ON CONFLICT (id) DO UPDATE SET check_in = EXCLUDED.check_in, check_out = EXCLUDED.check_out`).run(dates.checkIn, dates.checkOut);
-  await db.prepare(`INSERT INTO hotel_reviews (id, hotel_id, rating, count) VALUES ('test-live-review', 'test-live-hotel', 4.8, 500) ON CONFLICT (hotel_id) DO NOTHING`).run();
+  await db.prepare(`INSERT INTO hotel_reviews (id, hotel_id, rating, count) VALUES ('test-live-review', 'test-live-hotel', 5, 1000000)
+    ON CONFLICT (hotel_id) DO UPDATE SET rating = EXCLUDED.rating, count = EXCLUDED.count`).run();
   await db.prepare(`UPDATE hotels SET amenities = '["pool","wifi","tennis"]' WHERE id = 'test-live-hotel'`).run();
   await db.prepare(`INSERT INTO hotel_rooms (id, hotel_id, name, amenities, base_price_per_night) VALUES ('test-live-room', 'test-live-hotel', 'Deluxe', '["Private bath tub"]', 500) ON CONFLICT (id) DO UPDATE SET amenities = EXCLUDED.amenities`).run();
 });
@@ -171,6 +172,29 @@ test('hotel filters are applied and filter refresh is not logged as a search', a
   await request(app).get('/api/hotels/search?city=Singapore&search_event=1&search_session_id=test-session').set('Authorization', `Bearer ${user.token}`);
   const afterExplicit = Number((await db.prepare('SELECT COUNT(*) count FROM searches WHERE user_id = ?').get(user.user.id)).count);
   assert.equal(afterExplicit, before + 1);
+});
+
+test('hotel search includes provider-mapped properties outside the exact city text', async () => {
+  const user = await register('mapped-destination');
+  const hotelId = `mapped-kul-${crypto.randomUUID()}`;
+  const mappingId = crypto.randomUUID();
+  try {
+    await db.prepare(`INSERT INTO hotels (id, name, location, city, country, stars, amenities)
+      VALUES (?, 'Mapped Kuala Lumpur Hotel', 'Bukit Bintang', 'Ampang', 'MY', 5, '["pool"]')`).run(hotelId);
+    await db.prepare(`INSERT INTO hotel_provider_mappings
+      (id, hotel_id, provider, provider_hotel_id, match_confidence, verified, match_method, metadata)
+      VALUES (?, ?, 'liteapi', ?, 1, 1, 'provider_import', '{"iata_code":"KUL"}')`)
+      .run(mappingId, hotelId, `provider-${hotelId}`);
+    await db.prepare(`INSERT INTO hotel_reviews (id, hotel_id, rating, count) VALUES (?, ?, 5, 2000000)`)
+      .run(crypto.randomUUID(), hotelId);
+
+    const response = await request(app).get('/api/hotels/search?city=Kuala%20Lumpur').set('Authorization', `Bearer ${user.token}`);
+    assert.equal(response.status, 200, response.text);
+    assert.ok(response.body.hotels.some(hotel => hotel.id === hotelId));
+    assert.ok(response.body.facets.locations.includes('Bukit Bintang'));
+  } finally {
+    await db.prepare('DELETE FROM hotels WHERE id = ?').run(hotelId);
+  }
 });
 
 test('required beach amenity rejects beach accessories without confirmed beach access', async () => {

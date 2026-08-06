@@ -1,5 +1,6 @@
 const { db } = require('../db/database');
 const cache = require('./cache');
+const { hotelDestinationCode, hotelDestinationFilter } = require('../utils/hotelDestinations');
 
 const POPULAR_DESTINATIONS = [
   'Singapore', 'Dubai', 'Abu Dhabi', 'Paris', 'New York', 'Moscow',
@@ -7,25 +8,26 @@ const POPULAR_DESTINATIONS = [
 ];
 
 function destinationKey(city) {
-  return cache.cacheKey('hotel-destination-warm-v1', String(city || '').trim().toLowerCase());
+  return cache.cacheKey('hotel-destination-warm-v2', String(city || '').trim().toLowerCase());
 }
 
 async function warmDestination(city) {
-  const pattern = `%${city.toLowerCase()}%`;
+  const destination = hotelDestinationFilter('h', city, hotelDestinationCode(city));
+  const locationsDestination = hotelDestinationFilter('hotels', city, hotelDestinationCode(city));
   const [rows, locations] = await Promise.all([
     db.prepare(`
       SELECT h.id
       FROM hotels h
       LEFT JOIN hotel_reviews hr ON hr.hotel_id = h.id
-      WHERE h.active = 1 AND (LOWER(h.city) LIKE ? OR LOWER(h.country) LIKE ?)
+      WHERE h.active = 1 AND ${destination.sql}
       ORDER BY hr.rating DESC NULLS LAST, hr.count DESC NULLS LAST, h.stars DESC NULLS LAST
       LIMIT 300
-    `).all(pattern, pattern),
+    `).all(...destination.params),
     db.prepare(`
       SELECT DISTINCT location FROM hotels
-      WHERE active = 1 AND (LOWER(city) LIKE ? OR LOWER(country) LIKE ?)
+      WHERE active = 1 AND ${locationsDestination.sql}
       ORDER BY location
-    `).all(pattern, pattern),
+    `).all(...locationsDestination.params),
   ]);
   const value = { city, hotel_ids: rows.map(row => row.id), locations: locations.map(row => row.location), warmed_at: new Date().toISOString() };
   await cache.setJson(destinationKey(city), value, Math.max(300, Number(process.env.HOTEL_DESTINATION_WARM_TTL_SECONDS || 3600)));

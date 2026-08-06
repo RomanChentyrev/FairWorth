@@ -3,6 +3,11 @@ const { db } = require('../db/database');
 const liteapi = require('./liteapi');
 const travelpayouts = require('./travelpayouts');
 const { normalizedAmenity } = require('../config/hotelAmenities');
+const {
+  INVALID_HOTEL_DESTINATION_CODES,
+  hotelDestinationCode,
+  validHotelDestinationCode,
+} = require('../utils/hotelDestinations');
 
 const activeSyncs = new Map();
 
@@ -62,16 +67,26 @@ function matchConfidence(source, candidate) {
 }
 
 async function resolveIata(city) {
+  const knownCode = hotelDestinationCode(city);
+  if (knownCode) return knownCode;
   const query = normalize(city);
-  if (/^[a-z]{3}$/.test(query)) return query.toUpperCase();
+  if (/^[a-z]{3}$/.test(query)) return validHotelDestinationCode(query);
   const cities = await travelpayouts.getCities();
   const list = Array.isArray(cities) ? cities : Object.values(cities || {});
   const exact = list.find(item => [item.name, item.city_name, item.name_translations?.en, item.name_translations?.ru]
     .some(value => normalize(value) === query));
-  if (exact?.code) return exact.code;
-  const partial = list.find(item => [item.name, item.city_name, item.name_translations?.en, item.name_translations?.ru]
-    .some(value => normalize(value).includes(query) || query.includes(normalize(value))));
-  return partial?.code || null;
+  return validHotelDestinationCode(exact?.code);
+}
+
+async function resolveCatalogDestination(city, { providerLookup = true } = {}) {
+  const knownCode = hotelDestinationCode(city);
+  if (knownCode) return knownCode;
+  const cursor = await db.prepare(`SELECT iata_code FROM hotel_catalog_cursors
+    WHERE provider = 'liteapi' AND LOWER(city) = LOWER(?)
+    ORDER BY updated_at DESC LIMIT 1`).get(city);
+  const cursorCode = validHotelDestinationCode(cursor?.iata_code);
+  if (cursorCode || !providerLookup) return cursorCode;
+  return resolveIata(city);
 }
 
 async function findCandidate(source) {
@@ -190,7 +205,7 @@ function positiveInteger(value, fallback) {
 
 async function enqueueCatalogSync({ city, iataCode, reset = false } = {}) {
   if (!liteapi.configured()) throw new Error('LiteAPI is not configured');
-  const code = String(iataCode || await resolveIata(city) || '').toUpperCase();
+  const code = validHotelDestinationCode(iataCode || await resolveIata(city));
   if (!code) throw new Error(`Could not resolve an IATA code for ${city}`);
   const label = city || code;
   await db.prepare(`INSERT INTO hotel_catalog_cursors (provider, iata_code, city, status, requested_at)
@@ -226,7 +241,7 @@ async function claimCatalogCursor(code, syncId) {
 
 async function syncCatalog({ city, iataCode, limit, reset = false } = {}) {
   if (!liteapi.configured()) throw new Error('LiteAPI is not configured');
-  const code = String(iataCode || await resolveIata(city) || '').toUpperCase();
+  const code = validHotelDestinationCode(iataCode || await resolveIata(city));
   if (!code) throw new Error(`Could not resolve an IATA code for ${city}`);
   const batchLimit = positiveInteger(limit || process.env.CATALOG_SYNC_BATCH_HOTELS, 500);
   const key = code;
@@ -319,8 +334,9 @@ async function processCatalogQueue(limit = 1) {
     WHERE provider = 'liteapi' AND status = 'completed' AND completed_at < CURRENT_TIMESTAMP - (? * INTERVAL '1 hour')`).run(intervalHours);
   const queued = await db.prepare(`SELECT city, iata_code FROM hotel_catalog_cursors
     WHERE provider = 'liteapi'
+      AND UPPER(iata_code) != ALL(?)
       AND (status = 'pending' OR (status = 'failed' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '10 minutes') OR (status = 'running' AND lease_until < CURRENT_TIMESTAMP))
-    ORDER BY requested_at DESC, updated_at ASC LIMIT ?`).all(positiveInteger(limit, 1));
+    ORDER BY requested_at DESC, updated_at ASC LIMIT ?`).all([...INVALID_HOTEL_DESTINATION_CODES], positiveInteger(limit, 1));
   const results = [];
   for (const item of queued) {
     try { results.push(await syncCatalog({ city: item.city, iataCode: item.iata_code })); }
@@ -337,6 +353,6 @@ function startCatalogScheduler() {
 }
 
 module.exports = {
-  resolveIata, syncCatalog, enqueueCatalogSync, ensureCatalogForCity, processCatalogQueue, startCatalogScheduler,
+  resolveIata, resolveCatalogDestination, syncCatalog, enqueueCatalogSync, ensureCatalogForCity, processCatalogQueue, startCatalogScheduler,
   normalizedAmenity, normalize, hotelIdentityKey, similarity, matchConfidence,
 };
