@@ -48,6 +48,9 @@ if test "$S3_ENABLED" = true; then
   S3_PROVIDER=$(config_value BACKUP_S3_PROVIDER)
   S3_ACCESS_KEY_ID=$(config_value BACKUP_S3_ACCESS_KEY_ID)
   S3_SECRET_ACCESS_KEY=$(config_value BACKUP_S3_SECRET_ACCESS_KEY)
+  CRYPT_ENABLED=$(config_value BACKUP_RCLONE_CRYPT_ENABLED)
+  CRYPT_PASSWORD=$(config_value BACKUP_RCLONE_CRYPT_PASSWORD)
+  CRYPT_PASSWORD2=$(config_value BACKUP_RCLONE_CRYPT_PASSWORD2)
   REMOTE_RETENTION_DAYS=$(config_value BACKUP_REMOTE_RETENTION_DAYS)
   S3_PROVIDER=${S3_PROVIDER:-Other}
   S3_REGION=${S3_REGION:-auto}
@@ -59,6 +62,9 @@ if test "$S3_ENABLED" = true; then
   test -n "$S3_PREFIX" || { echo 'BACKUP_S3_PREFIX is required' >&2; exit 1; }
   test -n "$S3_ACCESS_KEY_ID" || { echo 'BACKUP_S3_ACCESS_KEY_ID is required' >&2; exit 1; }
   test -n "$S3_SECRET_ACCESS_KEY" || { echo 'BACKUP_S3_SECRET_ACCESS_KEY is required' >&2; exit 1; }
+  if test "$CRYPT_ENABLED" = true; then
+    test -n "$CRYPT_PASSWORD" || { echo 'BACKUP_RCLONE_CRYPT_PASSWORD is required when encryption is enabled' >&2; exit 1; }
+  fi
   positive_days "$REMOTE_RETENTION_DAYS" || { echo 'BACKUP_REMOTE_RETENTION_DAYS must be a positive integer' >&2; exit 1; }
 
   export RCLONE_CONFIG_TRIPALORABACKUPS_TYPE=s3
@@ -71,12 +77,26 @@ if test "$S3_ENABLED" = true; then
     export RCLONE_CONFIG_TRIPALORABACKUPS_ENDPOINT="$S3_ENDPOINT"
   fi
 
-  REMOTE_DIR="tripalorabackups:$S3_BUCKET/$S3_PREFIX"
+  STORAGE_REMOTE="tripalorabackups:$S3_BUCKET/$S3_PREFIX"
+  REMOTE_DIR="$STORAGE_REMOTE"
+  if test "$CRYPT_ENABLED" = true; then
+    export RCLONE_CONFIG_TRIPALORABACKUPSCRYPT_TYPE=crypt
+    export RCLONE_CONFIG_TRIPALORABACKUPSCRYPT_REMOTE="$STORAGE_REMOTE"
+    export RCLONE_CONFIG_TRIPALORABACKUPSCRYPT_PASSWORD="$CRYPT_PASSWORD"
+    export RCLONE_CONFIG_TRIPALORABACKUPSCRYPT_FILENAME_ENCRYPTION=standard
+    export RCLONE_CONFIG_TRIPALORABACKUPSCRYPT_DIRECTORY_NAME_ENCRYPTION=true
+    if test -n "$CRYPT_PASSWORD2"; then
+      export RCLONE_CONFIG_TRIPALORABACKUPSCRYPT_PASSWORD2="$CRYPT_PASSWORD2"
+    fi
+    REMOTE_DIR='tripalorabackupscrypt:'
+  fi
+
   rclone copyto "$FINAL_FILE" "$REMOTE_DIR/$FILENAME" \
     --transfers 1 --checkers 4 --s3-no-check-bucket
+  rclone cat "$REMOTE_DIR/$FILENAME" --s3-no-check-bucket | cmp - "$FINAL_FILE"
   rclone delete "$REMOTE_DIR" --include 'fairworth-*.dump' \
     --min-age "${REMOTE_RETENTION_DAYS}d" --s3-no-check-bucket
-  echo "Backup uploaded: $REMOTE_DIR/$FILENAME"
+  echo "Backup uploaded and round-trip verified: $REMOTE_DIR/$FILENAME"
 fi
 
 find "$BACKUP_DIR" -type f -name 'fairworth-*.dump' -mtime "+$RETENTION_DAYS" -delete

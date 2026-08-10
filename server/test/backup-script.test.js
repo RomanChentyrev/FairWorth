@@ -18,6 +18,7 @@ test('backup script verifies a dump, uploads it and rotates both copies', () => 
   const serverEnv = path.join(root, 'server.env');
   const backupEnv = path.join(root, 'backup.env');
   const rcloneLog = path.join(root, 'rclone.log');
+  const rcloneRemoteFile = path.join(root, 'remote.dump');
   fs.mkdirSync(bin);
   fs.mkdirSync(backups);
   fs.writeFileSync(serverEnv, 'DATABASE_URL=postgresql://example.invalid/tripalora\n');
@@ -32,6 +33,9 @@ test('backup script verifies a dump, uploads it and rotates both copies', () => 
     'BACKUP_S3_PREFIX=production/postgres',
     'BACKUP_S3_ACCESS_KEY_ID=test-access-key',
     'BACKUP_S3_SECRET_ACCESS_KEY=test-secret-key',
+    'BACKUP_RCLONE_CRYPT_ENABLED=true',
+    'BACKUP_RCLONE_CRYPT_PASSWORD=obscured-password',
+    'BACKUP_RCLONE_CRYPT_PASSWORD2=obscured-salt',
     '',
   ].join('\n'));
   executable(path.join(bin, 'docker'), `#!/bin/sh
@@ -43,17 +47,30 @@ esac
 `);
   executable(path.join(bin, 'rclone'), `#!/bin/sh
 printf '%s\\n' "$*" >> "$RCLONE_LOG"
+case "$1" in
+  copyto) cp "$2" "$RCLONE_REMOTE_FILE" ;;
+  cat) cat "$RCLONE_REMOTE_FILE" ;;
+  delete) ;;
+  *) exit 1 ;;
+esac
 `);
 
   const result = spawnSync('sh', [backupScript, serverEnv, backups, backupEnv], {
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RCLONE_LOG: rcloneLog },
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      RCLONE_LOG: rcloneLog,
+      RCLONE_REMOTE_FILE: rcloneRemoteFile,
+    },
   });
 
   assert.equal(result.status, 0, result.stderr);
   const files = fs.readdirSync(backups);
   assert.equal(files.filter(file => /^fairworth-.*\.dump$/.test(file)).length, 1);
   assert.equal(files.some(file => file.endsWith('.tmp')), false);
-  assert.match(fs.readFileSync(rcloneLog, 'utf8'), /copyto .*tripalorabackups:tripalora-backups\/production\/postgres\/fairworth-/);
-  assert.match(fs.readFileSync(rcloneLog, 'utf8'), /delete tripalorabackups:tripalora-backups\/production\/postgres .*--min-age 90d/);
+  assert.match(result.stdout, /Backup uploaded and round-trip verified/);
+  assert.match(fs.readFileSync(rcloneLog, 'utf8'), /copyto .*tripalorabackupscrypt:\/fairworth-/);
+  assert.match(fs.readFileSync(rcloneLog, 'utf8'), /cat tripalorabackupscrypt:\/fairworth-/);
+  assert.match(fs.readFileSync(rcloneLog, 'utf8'), /delete tripalorabackupscrypt: .*--min-age 90d/);
 });

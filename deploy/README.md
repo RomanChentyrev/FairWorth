@@ -112,6 +112,13 @@ Set the S3 endpoint, region, bucket, prefix, and dedicated access-key pair. Keep
 remote dumps for 90 days. Configure the bucket lifecycle to expire objects after
 the same or a longer remote retention period as a second enforcement layer.
 
+Keep `BACKUP_RCLONE_CRYPT_ENABLED=true` so database contents and object names
+are encrypted before leaving the server. Generate two independent recovery
+secrets, store their original values in the password manager, and put the output
+of `rclone obscure` in `BACKUP_RCLONE_CRYPT_PASSWORD` and
+`BACKUP_RCLONE_CRYPT_PASSWORD2`. Each upload is downloaded through the crypt
+remote and compared byte-for-byte with the local dump before success is reported.
+
 Test one complete backup and remote upload before enabling the schedule:
 
 ```bash
@@ -137,6 +144,13 @@ Both paths apply local and remote rotation from the protected backup config.
 At least monthly, download the latest remote object, restore it into a disposable
 database, and verify row counts and application readiness. A successful upload is
 not proof that the dump can be restored.
+
+The local restore drill never connects to production PostgreSQL:
+
+```bash
+/opt/fairworth/deploy/scripts/verify-backup-restore.sh \
+  /opt/fairworth/backups/production/fairworth-TIMESTAMP.dump
+```
 
 ## 5. Rollback
 
