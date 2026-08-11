@@ -3,7 +3,10 @@ const fs = require('fs');
 const path = require('path');
 
 const source = require('../i18n/messages.en.json');
-const languages = { de: 'German', fr: 'French', it: 'Italian', es: 'Spanish' };
+const languages = { de: 'German', fr: 'French', it: 'Italian', es: 'Spanish', 'zh-CN': 'Simplified Chinese', ar: 'Modern Standard Arabic' };
+const requestedLocales = new Set(
+  String(process.env.LOCALES || '').split(',').map(locale => locale.trim()).filter(Boolean),
+);
 
 function restorePlaceholders(sourceText, translatedText) {
   const expected = [...sourceText.matchAll(/\{[^}]+\}/g)].map(match => match[0]);
@@ -119,7 +122,9 @@ async function request(locale, language) {
 }
 
 (async () => {
-  for (const [locale, language] of Object.entries(languages)) await request(locale, language);
+  for (const [locale, language] of Object.entries(languages)) {
+    if (!requestedLocales.size || requestedLocales.has(locale)) await request(locale, language);
+  }
 })().catch(error => {
   console.error(error.message);
   process.exitCode = 1;

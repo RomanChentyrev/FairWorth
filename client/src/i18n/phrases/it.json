@@ -581,5 +581,7 @@
   "Possible routes without a confirmed fare": "Possibili rotte senza tariffa confermata",
   "Possible return routes without a confirmed fare": "Possibili rotte di ritorno senza tariffa confermata",
   "Zoom in": "Ingrandisci",
-  "Zoom out": "Rimpicciolisci"
+  "Zoom out": "Rimpicciolisci",
+  "Checking availability and final price…": "Verifica della disponibilità e del prezzo finale…",
+  "Preparing hotel data and your preferences…": "Preparazione dei dati dell’hotel e delle tue preferenze…"
 }

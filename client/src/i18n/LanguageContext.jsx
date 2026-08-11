@@ -6,6 +6,8 @@ import esPhrases from './phrases/es.json';
 import frPhrases from './phrases/fr.json';
 import itPhrases from './phrases/it.json';
 import ruPhrases from './phrases/ru.json';
+import zhCNPhrases from './phrases/zh-CN.json';
+import arPhrases from './phrases/ar.json';
 import { usersApi } from '../api';
 
 export const LanguageContext = createContext();
@@ -15,6 +17,8 @@ const phraseCatalogues = {
   fr: frPhrases,
   it: itPhrases,
   ru: ruPhrases,
+  'zh-CN': zhCNPhrases,
+  ar: arPhrases,
 };
 const phraseEntries = Object.fromEntries(
   Object.entries(phraseCatalogues).map(([locale, catalogue]) => [
@@ -75,6 +79,7 @@ export function LanguageProvider({ children }) {
 
   useEffect(() => {
     document.documentElement.lang = lang;
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
   }, [lang]);
 
   const setLanguage = (next) => {

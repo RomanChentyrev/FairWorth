@@ -24,6 +24,8 @@ const languageNames = {
   fr: 'French',
   it: 'Italian',
   es: 'Spanish',
+  'zh-CN': 'Simplified Chinese',
+  ar: 'Modern Standard Arabic',
 };
 const catalogueOverrides = {
   de: { reg_accept_prefix: 'Ich akzeptiere die', reg_accept_connector: 'und die' },
@@ -35,9 +37,12 @@ const catalogueOverrides = {
     login_no_account: 'Nessun account?',
   },
   es: { reg_accept_prefix: 'Acepto los', reg_accept_connector: 'y la' },
+  'zh-CN': { reg_accept_prefix: '我接受', reg_accept_connector: '和' },
+  ar: { reg_accept_prefix: 'أوافق على', reg_accept_connector: 'و' },
 };
 const phraseOverrides = {
   fr: { 'Something went wrong': 'Un problème est survenu' },
+  ar: { data: 'بيانات' },
 };
 
 function restorePlaceholders(source, translated) {
@@ -216,18 +221,34 @@ for (const file of files) {
   });
 }
 
+const historicalPhraseCatalogue = await fs.readFile(path.join(phraseRoot, 'ru.json'), 'utf8')
+  .then(JSON.parse)
+  .catch(() => ({}));
+for (const phrase of Object.keys(historicalPhraseCatalogue)) phrases.add(phrase);
+
 const phraseList = [...phrases].sort((a, b) => a.localeCompare(b));
 const phraseIds = new Map(phraseList.map(value => [value, `p_${crypto.createHash('sha1').update(value).digest('hex').slice(0, 12)}`]));
 const baseItems = Object.entries(englishCatalogue).map(([key, text]) => ({ id: `b_${key}`, text }));
 const phraseItems = phraseList.map(text => ({ id: phraseIds.get(text), text }));
 
-for (const locale of ['de', 'fr', 'it', 'es', 'ru']) {
+const generatedLocales = ['de', 'fr', 'it', 'es', 'zh-CN', 'ar'];
+const cachedLocales = [...generatedLocales, 'ru'];
+const requestedLocales = new Set(
+  String(process.env.LOCALES || '').split(',').map(locale => locale.trim()).filter(Boolean),
+);
+const selectedLocales = requestedLocales.size
+  ? generatedLocales.filter(locale => requestedLocales.has(locale))
+  : generatedLocales;
+const existingPhraseCatalogues = {};
+
+for (const locale of cachedLocales) {
   const catalogue = await fs.readFile(path.join(localeRoot, `${locale}.json`), 'utf8')
     .then(JSON.parse)
     .catch(() => ({}));
   const phraseCatalogue = await fs.readFile(path.join(phraseRoot, `${locale}.json`), 'utf8')
     .then(JSON.parse)
     .catch(() => ({}));
+  existingPhraseCatalogues[locale] = phraseCatalogue;
   translationCache[locale] ||= {};
   for (const item of baseItems) {
     const translation = catalogue[item.id.slice(2)];
@@ -250,7 +271,12 @@ async function translateBatch(locale, items) {
     const pending = items.filter(item => !translated[item.id]);
     if (!pending.length) return translated;
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const controller = new AbortController();
+      const timeout = globalThis.setTimeout(() => controller.abort(), 45000);
+      let response;
+      let body;
+      try {
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
@@ -273,9 +299,13 @@ async function translateBatch(locale, items) {
               ...pending.map(item => `${item.id}|||${item.text.replace(/\s+/g, ' ')}`),
             ].join('\n'),
           }],
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
+          }),
+          signal: controller.signal,
+        });
+        body = await response.json().catch(() => ({}));
+      } finally {
+        globalThis.clearTimeout(timeout);
+      }
       if (!response.ok) throw new Error(body?.error?.message || `OpenRouter HTTP ${response.status}`);
       const content = String(body?.choices?.[0]?.message?.content || '')
         .replace(/^```(?:text)?\s*/i, '')
@@ -295,8 +325,8 @@ async function translateBatch(locale, items) {
       throw new Error(`${locale}: missing ${missing.map(item => item.id).join(', ')}`);
     } catch (error) {
       lastError = error;
-      if (/free-models-per-day|rate limit exceeded/i.test(error.message)) {
-        process.stderr.write(`${locale}: OpenRouter free quota reached, using static-build translation fallback\n`);
+      if (/free-models-per-day|rate limit exceeded/i.test(error.message) || attempt >= 2) {
+        process.stderr.write(`${locale}: OpenRouter unavailable, using static-build translation fallback\n`);
         Object.assign(translated, await translateWithGoogle(locale, pending));
         return translated;
       }
@@ -327,13 +357,14 @@ async function translate(locale, items) {
 }
 
 await fs.mkdir(phraseRoot, { recursive: true });
-for (const locale of ['de', 'fr', 'it', 'es']) {
+for (const locale of selectedLocales) {
   const translated = await translate(locale, [...baseItems, ...phraseItems]);
   const catalogue = {
     ...Object.fromEntries(baseItems.map(item => [item.id.slice(2), translated[item.id]])),
     ...catalogueOverrides[locale],
   };
   const phraseCatalogue = {
+    ...existingPhraseCatalogues[locale],
     ...Object.fromEntries(phraseItems.map(item => [item.text, translated[item.id]])),
     ...phraseOverrides[locale],
   };
@@ -341,13 +372,15 @@ for (const locale of ['de', 'fr', 'it', 'es']) {
   await fs.writeFile(path.join(phraseRoot, `${locale}.json`), `${JSON.stringify(phraseCatalogue, null, 2)}\n`);
 }
 
-const missingRussian = phraseItems.filter(item => !directRussian.has(item.text));
-const russianGenerated = missingRussian.length ? await translate('ru', missingRussian) : {};
-const russianPhrases = Object.fromEntries(phraseItems.map(item => [
-  item.text,
-  directRussian.get(item.text) || russianGenerated[item.id] || item.text,
-]));
-await fs.writeFile(path.join(phraseRoot, 'ru.json'), `${JSON.stringify(russianPhrases, null, 2)}\n`);
+if (!requestedLocales.size || requestedLocales.has('ru')) {
+  const missingRussian = phraseItems.filter(item => !directRussian.has(item.text));
+  const russianGenerated = missingRussian.length ? await translate('ru', missingRussian) : {};
+  const russianPhrases = Object.fromEntries(phraseItems.map(item => [
+    item.text,
+    directRussian.get(item.text) || russianGenerated[item.id] || item.text,
+  ]));
+  await fs.writeFile(path.join(phraseRoot, 'ru.json'), `${JSON.stringify(russianPhrases, null, 2)}\n`);
+}
 
 for (const file of files) {
   let source = sources.get(file);

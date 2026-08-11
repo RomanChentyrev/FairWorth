@@ -49,6 +49,8 @@ const LANGUAGE_NAMES = {
   fr: 'French',
   it: 'Italian',
   es: 'Spanish',
+  'zh-CN': 'Simplified Chinese',
+  ar: 'Modern Standard Arabic',
 };
 
 function supportedLanguage(language) {

@@ -5,18 +5,21 @@ import esPhrases from './phrases/es.json';
 import frPhrases from './phrases/fr.json';
 import itPhrases from './phrases/it.json';
 import ruPhrases from './phrases/ru.json';
+import zhCNPhrases from './phrases/zh-CN.json';
+import arPhrases from './phrases/ar.json';
 
-const phraseCatalogues = { ru: ruPhrases, de: dePhrases, fr: frPhrases, it: itPhrases, es: esPhrases };
+const phraseCatalogues = { ru: ruPhrases, de: dePhrases, fr: frPhrases, it: itPhrases, es: esPhrases, 'zh-CN': zhCNPhrases, ar: arPhrases };
+const supportedLocales = ['ru', 'de', 'fr', 'it', 'es', 'zh-CN', 'ar'];
 const placeholders = value => [...String(value).matchAll(/\{([^}]+)\}/g)].map(match => match[1]).sort();
 
 describe('interface translation catalogues', () => {
   it('contains the same keys in every supported language', () => {
-    for (const locale of ['ru', 'de', 'fr', 'it', 'es']) {
+    for (const locale of supportedLocales) {
       expect(Object.keys(translations[locale]).sort()).toEqual(Object.keys(translations.en).sort());
     }
   });
   it('has no blank interface strings', () => {
-    for (const locale of ['en', 'ru', 'de', 'fr', 'it', 'es']) {
+    for (const locale of ['en', ...supportedLocales]) {
       for (const value of Object.values(translations[locale])) expect(String(value).trim()).not.toBe('');
     }
   });
@@ -28,7 +31,7 @@ describe('interface translation catalogues', () => {
     }
   });
   it('preserves interpolation placeholders', () => {
-    for (const locale of ['ru', 'de', 'fr', 'it', 'es']) {
+    for (const locale of supportedLocales) {
       for (const key of Object.keys(translations.en)) {
         expect(placeholders(translations[locale][key])).toEqual(placeholders(translations.en[key]));
       }

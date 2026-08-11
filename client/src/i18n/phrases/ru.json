@@ -581,5 +581,7 @@
   "Possible routes without a confirmed fare": "Возможные маршруты без подтверждённой цены",
   "Possible return routes without a confirmed fare": "Возможные обратные маршруты без подтверждённой цены",
   "Zoom in": "Приблизить",
-  "Zoom out": "Отдалить"
+  "Zoom out": "Отдалить",
+  "Checking availability and final price…": "Проверяем доступность и итоговую цену…",
+  "Preparing hotel data and your preferences…": "Подготавливаем данные отеля и ваши предпочтения…"
 }

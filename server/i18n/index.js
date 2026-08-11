@@ -7,6 +7,8 @@ const catalogues = {
   fr: require('./messages.fr.json'),
   it: require('./messages.it.json'),
   es: require('./messages.es.json'),
+  'zh-CN': require('./messages.zh-CN.json'),
+  ar: require('./messages.ar.json'),
 };
 
 function t(locale, key, replacements = {}) {

@@ -17,6 +17,12 @@ describe('home search place normalization', () => {
     expect(localizedPlace('Moscow', 'it')).toBe('Mosca');
     expect(localizedPlace('Singapore', 'de')).toBe('Singapur');
     expect(localizedPlace('New York', 'es')).toBe('Nueva York');
+    expect(localizedPlace('Paris', 'zh-CN')).toBe('巴黎');
+    expect(localizedPlace('Beijing', 'zh-CN')).toBe('北京');
+    expect(canonicalPlace('巴黎 (PAR)')).toBe('Paris');
+    expect(localizedPlace('Dubai', 'ar')).toBe('دبي');
+    expect(localizedPlace('Kuala Lumpur', 'ar')).toBe('كوالالمبور');
+    expect(canonicalPlace('باريس (PAR)')).toBe('Paris');
     expect(canonicalPlace('Parigi (PAR)')).toBe('Paris');
   });
 });
