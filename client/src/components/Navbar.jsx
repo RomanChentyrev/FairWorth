@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { SlidersHorizontal, GitCompare, LogOut, Map } from 'lucide-react';
+import { SlidersHorizontal, GitCompare, LogOut, Map, Sparkles } from 'lucide-react';
 import { useLang } from '../i18n/LanguageContext';
 import styles from './Navbar.module.css';
 import { validFutureDates } from '../utils/dates';
@@ -59,6 +59,10 @@ export default function Navbar({ compareCount, user, onLogout }) {
         </div>
 
         <div className={styles.actions}>
+          {user && <Link to="/ai" className={`${styles.aiModeBtn} ${location.pathname === '/ai' ? styles.aiModeActive : ''}`}>
+            <Sparkles size={15} />
+            {t('nav_ai_mode')}
+          </Link>}
           {compareCount > 0 && (
             <Link to="/compare" className={styles.compareBtn}>
               <GitCompare size={15} />

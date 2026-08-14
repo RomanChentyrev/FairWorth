@@ -1,6 +1,6 @@
-async function callAI(prompt) {
+async function callAIChat(messages, options = {}) {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_MODEL || 'openrouter/auto';
+  const model = options.model || process.env.OPENROUTER_MODEL || 'openrouter/auto';
 
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is not configured on the server');
@@ -21,9 +21,10 @@ async function callAI(prompt) {
     signal: controller.signal,
     body: JSON.stringify({
       model,
-      max_tokens: 1024,
-      temperature: 0.2,
-      messages: [{ role: 'user', content: prompt }],
+      max_tokens: options.maxTokens || 1024,
+      temperature: options.temperature ?? 0.2,
+      messages,
+      ...(options.responseFormat ? { response_format: options.responseFormat } : {}),
     }),
   }); } finally { clearTimeout(timeout); }
 
@@ -40,6 +41,10 @@ async function callAI(prompt) {
   }
 
   return text.trim();
+}
+
+async function callAI(prompt) {
+  return callAIChat([{ role: 'user', content: prompt }]);
 }
 
 const LANGUAGE_NAMES = {
@@ -218,4 +223,4 @@ Return ONLY valid JSON:
   return parseAIJson(text);
 }
 
-module.exports = { analyzeHotel, compareHotels, updateUserProfile, callAI, languageName, supportedLanguage };
+module.exports = { analyzeHotel, compareHotels, updateUserProfile, callAI, callAIChat, languageName, supportedLanguage, parseAIJson };

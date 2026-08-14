@@ -56,7 +56,7 @@ function capabilities() {
     ai: {
       status: aiReady ? 'ready' : 'unavailable', stage: 'beta', provider: 'OpenRouter', optional: true,
       reason: aiReady ? null : 'OPENROUTER_API_KEY is not configured',
-      features: { hotel_analysis: aiReady },
+      features: { hotel_analysis: aiReady, conversational_search: aiReady, trip_context: aiReady },
     },
     hotel_photos: {
       status: hotelPhotosReady ? 'ready' : 'unavailable', stage: 'optional_mvp_enrichment', provider: 'Google Places Photos', optional: true,

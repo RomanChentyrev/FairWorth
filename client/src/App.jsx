@@ -23,6 +23,7 @@ import { authApi, interactionsApi } from './api';
 import { useLang } from './i18n/LanguageContext';
 
 const AchievementsPage = React.lazy(() => import('./pages/AchievementsPage'));
+const AiModePage = React.lazy(() => import('./pages/AiModePage'));
 
 function RequireAuth({ user, children }) {
   if (!user) return <Navigate to="/register" replace />;
@@ -138,6 +139,15 @@ export default function App() {
                 <Suspense fallback={<main className="system-page"><p>{l('Loading your map...', 'Загружаем карту...')}</p></main>}>
                   <AchievementsPage />
                 </Suspense>
+              </RequireAuth>
+            } />
+            <Route path="/ai" element={
+              <RequireAuth user={user}>
+                <RequireVerified user={user}><RequireOnboarding user={user}>
+                  <Suspense fallback={<main className="system-page"><p>{l('Opening AI Mode...', 'Открываем AI Mode...')}</p></main>}>
+                    <AiModePage />
+                  </Suspense>
+                </RequireOnboarding></RequireVerified>
               </RequireAuth>
             } />
             <Route path="/hotel/:id" element={

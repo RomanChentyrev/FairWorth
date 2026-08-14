@@ -151,4 +151,29 @@ const demoBookingSchema = z.object({
   });
 });
 
-module.exports = { profileSchema, preferencesSchema, interactionSchema, tripCreateSchema, tripUpdateSchema, partnerClickSchema, partnerPostbackSchema, travelVisitSchema, demoBookingSchema };
+const aiConversationSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+  language: z.enum(['en', 'ru', 'de', 'fr', 'it', 'es', 'zh-CN', 'ar']).default('en'),
+}).strict();
+
+const aiMessageSchema = z.object({
+  content: z.string().trim().min(1).max(4000),
+  language: z.enum(['en', 'ru', 'de', 'fr', 'it', 'es', 'zh-CN', 'ar']).default('en'),
+}).strict();
+
+const aiToolResultSchema = z.object({
+  tool: z.enum(['hotel_search', 'flight_search', 'compare', 'itinerary']),
+  status: z.enum(['success', 'no_results', 'error']),
+  summary: z.string().trim().max(1200).default(''),
+  request: boundedObject.default({}),
+  results: z.array(boundedObject).max(12).default([]),
+  error_code: optionalText(80),
+}).strict();
+
+const aiEventSchema = z.object({
+  event_type: z.enum(['ai_mode_open', 'ai_result_clicked', 'ai_compare_opened', 'ai_trip_created', 'booking_started_from_ai', 'ai_fallback']),
+  conversation_id: identifier.nullish(),
+  properties: boundedObject.default({}),
+}).strict();
+
+module.exports = { profileSchema, preferencesSchema, interactionSchema, tripCreateSchema, tripUpdateSchema, partnerClickSchema, partnerPostbackSchema, travelVisitSchema, demoBookingSchema, aiConversationSchema, aiMessageSchema, aiToolResultSchema, aiEventSchema };

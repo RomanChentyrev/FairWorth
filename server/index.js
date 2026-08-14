@@ -9,7 +9,7 @@ const { init } = require('./db/database');
 const { ensurePersonalizationSchema } = require('./services/personalization');
 const { ensureDatabaseSchema } = require('./db/schema');
 const { requireAuth, requireOnboarding, requireEmailVerified } = require('./middleware/auth');
-const { authLimiter, apiLimiter, aiLimiter, csrfProtection } = require('./middleware/security');
+const { authLimiter, apiLimiter, csrfProtection } = require('./middleware/security');
 const logger = require('./services/logger');
 const monitoring = require('./services/monitoring');
 const { capabilities, requireCapability } = require('./config/capabilities');
@@ -132,6 +132,7 @@ const ready = init().then(async () => {
   app.use('/api/transfers', requireAuth, requireEmailVerified, requireOnboarding, require('./routes/transfers'));
   app.use('/api/users', requireAuth, require('./routes/users'));
   app.use('/api/achievements', requireAuth, require('./routes/achievements'));
+  app.use('/api/ai-mode', requireAuth, requireEmailVerified, requireOnboarding, requireCapability('ai'), require('./routes/aiMode'));
   app.use('/api/bookings', requireAuth, requireEmailVerified, requireOnboarding, require('./routes/bookings'));
   app.post('/api/notifications/unsubscribe', async (req, res) => {
     const ok = await require('./services/notificationQueue').unsubscribe(String(req.body.token || req.query.token || ''));

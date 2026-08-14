@@ -131,6 +131,116 @@ test('achievements map saves a city and places its pin', async ({ page, request 
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
 });
 
+test('AI Mode opens as a separate conversational workspace', async ({ page, request }) => {
+  const account = await registerAccount(request, { label: 'ai-mode', verify: true, onboard: true });
+  const conversation = {
+    id: 'ai-e2e-conversation', title: 'Paris trip', intent: 'inspiration',
+    search_context: {}, selected_entities: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  };
+  const longReply = `Tell me your destination and dates. ${'I will keep the current trip context visible while we continue planning. '.repeat(45)}`;
+  let messageRequestCount = 0;
+  let hotelSearchCount = 0;
+  await page.context().addCookies([
+    { name: 'fw_access', value: account.token, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' },
+    { name: 'fw_csrf', value: 'e2e-ai-csrf', domain: '127.0.0.1', path: '/', httpOnly: false, sameSite: 'Lax' },
+  ]);
+  await page.addInitScript(user => localStorage.setItem('fw_user', JSON.stringify({ ...user, onboarding_completed: true, email_verified: true })), account.user);
+  await page.route('**/api/ai-mode/conversations**', async route => {
+    const requestUrl = new URL(route.request().url());
+    if (route.request().method() === 'GET' && requestUrl.pathname.endsWith('/conversations')) {
+      return route.fulfill({ json: { conversations: [conversation] } });
+    }
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ json: { conversation, messages: [] } });
+    }
+    if (requestUrl.pathname.endsWith('/messages')) {
+      const body = route.request().postDataJSON();
+      messageRequestCount += 1;
+      const comparing = /compare/i.test(body.content);
+      const planning = /itinerary|plan/i.test(body.content);
+      const searchingHotels = messageRequestCount > 1 && !comparing && !planning;
+      const action = comparing ? { type: 'compare', result_indexes: [1] }
+        : planning ? { type: 'itinerary' }
+          : { type: searchingHotels ? 'hotel_search' : 'none' };
+      return route.fulfill({ json: {
+        user_message: { id: 'ai-user-message', role: 'user', content: body.content },
+        assistant_message: { id: `ai-assistant-message-${messageRequestCount}`, role: 'assistant', content: comparing ? 'I will compare it.' : planning ? 'I will build an itinerary.' : searchingHotels ? 'I will check live hotel rates now.' : longReply, metadata: { intent: planning ? 'itinerary' : comparing ? 'compare' : 'hotel_search', action, missing_fields: [] } },
+        conversation: {
+          ...conversation, title: body.content, intent: planning ? 'itinerary' : comparing ? 'compare' : 'hotel_search',
+          search_context: { origin: 'Moscow', destination: messageRequestCount > 1 ? 'Nha Trang' : 'Southeast Asia', date_start: '2026-09-01', date_end: '2026-09-14', travelers: 2, budget_amount: 4000, currency: 'USD' },
+        },
+        action,
+      } });
+    }
+    if (requestUrl.pathname.endsWith('/tool-results')) {
+      const body = route.request().postDataJSON();
+      return route.fulfill({ status: 201, json: { message: {
+        id: `ai-tool-${Date.now()}`, role: 'tool', message_type: 'results', content: body.summary,
+        metadata: { tool: body.tool, status: body.status, request: body.request, results: body.results, result_timestamp: new Date().toISOString() },
+      } } });
+    }
+    return route.fulfill({ status: 201, json: { recorded: true } });
+  });
+  await page.route('**/api/hotels/search**', route => {
+    hotelSearchCount += 1;
+    const firstPage = hotelSearchCount === 1;
+    return route.fulfill({ json: {
+      hotels: [{ id: firstPage ? 'pending-hotel' : 'available-hotel', name: firstPage ? 'Pending Hotel' : 'Nha Trang Beach Hotel', city: 'Nha Trang', location: 'Beachfront', stars: 5 }],
+      has_more: firstPage, next_offset: firstPage ? 1 : 2,
+    } });
+  });
+  await page.route('**/api/hotels/rates/batch', route => {
+    const body = route.request().postDataJSON();
+    const available = body.hotel_ids.includes('available-hotel');
+    return route.fulfill({ json: { hotels: available ? [{
+      id: 'available-hotel', name: 'Nha Trang Beach Hotel', city: 'Nha Trang', location: 'Beachfront', stars: 5,
+      min_price: 210, availability_status: 'available', fairworth_score: 88, adjusted_score: 84,
+      price_details: { currency: 'USD' },
+    }] : [{ id: 'pending-hotel', name: 'Pending Hotel', min_price: null, availability_status: 'unavailable' }] } });
+  });
+
+  await page.goto('/ai');
+  await expect(page.getByText('AI Travel Assistant')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Where should we take you next?' })).toBeVisible();
+  await page.getByPlaceholder(/ask about a destination/i).fill('Find a hotel for my trip');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByText(/Tell me your destination and dates/)).toBeVisible();
+  const desktopConversation = await page.evaluate(() => {
+    const composer = document.querySelector('textarea[placeholder*="Ask about"]')?.closest('div');
+    const scrollable = [...document.querySelectorAll('div')].find(element => element.scrollHeight > element.clientHeight + 100 && getComputedStyle(element).overflowY === 'auto');
+    const rect = composer?.getBoundingClientRect();
+    return {
+      composerBottom: rect?.bottom || 0,
+      viewportHeight: window.innerHeight,
+      pageScroll: window.scrollY,
+      timelineScrollable: Boolean(scrollable),
+    };
+  });
+  expect(desktopConversation.composerBottom).toBeLessThanOrEqual(desktopConversation.viewportHeight);
+  expect(desktopConversation.pageScroll).toBe(0);
+  expect(desktopConversation.timelineScrollable).toBe(true);
+
+  await page.getByPlaceholder(/ask about a destination/i).fill('Show me available hotels');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByText('Nha Trang Beach Hotel')).toBeVisible();
+  expect(hotelSearchCount).toBeGreaterThan(1);
+
+  await page.getByPlaceholder(/ask about a destination/i).fill('Compare option 1');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByText('I will compare it.')).toBeVisible();
+  await expect(page.getByText('Nha Trang Beach Hotel')).toHaveCount(2);
+
+  await page.getByPlaceholder(/ask about a destination/i).fill('Build an itinerary');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByText('I will build an itinerary.')).toBeVisible();
+  await expect(page.getByText('Day 1', { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.getByText('AI Travel Assistant')).toBeVisible();
+  const dimensions = await page.evaluate(() => ({ viewport: window.innerWidth, content: document.documentElement.scrollWidth }));
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+});
+
 test('demo checkout shows the cost breakdown and confirms a booking', async ({ page, request }) => {
   const account = await registerAccount(request, { label: 'demo-checkout', verify: true, onboard: true });
   const checkIn = new Date(Date.now() + 35 * 86400000).toISOString().slice(0, 10);

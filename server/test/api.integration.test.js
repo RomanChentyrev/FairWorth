@@ -8,6 +8,7 @@ process.env.PARTNER_BOOKING_ENABLED = 'true';
 process.env.ADMIN_EMAILS = 'admin-test@example.com';
 process.env.PROVIDER_FIXTURES_ENABLED = 'true';
 process.env.TRAVELPAYOUTS_TOKEN = 'integration-travelpayouts-token';
+process.env.OPENROUTER_API_KEY = 'integration-openrouter-key';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
@@ -101,6 +102,33 @@ test('travel achievements persist visits and remain private to each user', async
 
   const removed = await request(app).delete(`/api/achievements/visits/${city.body.visit.id}`).set(ownerAuth);
   assert.equal(removed.status, 204);
+});
+
+test('AI Mode conversations and grounded tool results remain private to each user', async () => {
+  const owner = await register('ai-owner');
+  const stranger = await register('ai-stranger');
+  const created = await request(app).post('/api/ai-mode/conversations')
+    .set('Authorization', `Bearer ${owner.token}`).send({ title: 'Paris plan', language: 'en' });
+  assert.equal(created.status, 201, created.text);
+  const conversationId = created.body.conversation.id;
+
+  const toolResult = await request(app).post(`/api/ai-mode/conversations/${conversationId}/tool-results`)
+    .set('Authorization', `Bearer ${owner.token}`).send({
+      tool: 'hotel_search', status: 'success', summary: 'One verified hotel found.',
+      request: { destination: 'Paris' },
+      results: [{ id: 'test-live-hotel', type: 'hotel', name: 'Test Live Hotel', price: 500, score: 88 }],
+    });
+  assert.equal(toolResult.status, 201, toolResult.text);
+  assert.equal(toolResult.body.message.metadata.results[0].score, 88);
+
+  const ownConversation = await request(app).get(`/api/ai-mode/conversations/${conversationId}`)
+    .set('Authorization', `Bearer ${owner.token}`);
+  assert.equal(ownConversation.status, 200, ownConversation.text);
+  assert.equal(ownConversation.body.messages.length, 1);
+
+  const privateConversation = await request(app).get(`/api/ai-mode/conversations/${conversationId}`)
+    .set('Authorization', `Bearer ${stranger.token}`);
+  assert.equal(privateConversation.status, 404, privateConversation.text);
 });
 
 test('demo checkout confirms a trip, calculates totals and protects document data', async () => {

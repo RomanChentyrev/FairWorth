@@ -133,6 +133,16 @@ export const achievementsApi = {
   removeVisit: id => api.delete(`/achievements/visits/${id}`),
 };
 
+export const aiModeApi = {
+  conversations: () => api.get('/ai-mode/conversations'),
+  createConversation: (data = {}) => api.post('/ai-mode/conversations', data),
+  getConversation: id => api.get(`/ai-mode/conversations/${encodeURIComponent(id)}`),
+  deleteConversation: id => api.delete(`/ai-mode/conversations/${encodeURIComponent(id)}`),
+  sendMessage: (id, data) => api.post(`/ai-mode/conversations/${encodeURIComponent(id)}/messages`, data),
+  recordToolResults: (id, data) => api.post(`/ai-mode/conversations/${encodeURIComponent(id)}/tool-results`, data),
+  track: data => api.post('/ai-mode/events', data),
+};
+
 export const bookingsApi = {
   createDemo: data => api.post('/bookings', data),
   get: reference => api.get(`/bookings/${encodeURIComponent(reference)}`),
