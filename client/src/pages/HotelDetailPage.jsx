@@ -555,10 +555,10 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
           <div className={styles.roomsSection}>
             <h2 className={styles.sectionTitle}>{l('Rooms and prices', 'Номера и цены')}</h2>
             <div className={styles.roomsGrid}>
-              {rooms?.map(room => {
+              {rooms?.map((room, roomIndex) => {
                 const isRecommended = analysis?.best_room?.name === room.name;
                 return (
-                  <div key={room.id} className={`${styles.roomCard} ${isRecommended ? styles.roomCardBest : ''}`}>
+                  <div key={room.id || `${room.name || 'room'}-${roomIndex}`} className={`${styles.roomCard} ${isRecommended ? styles.roomCardBest : ''}`}>
                     {isRecommended && <div className={styles.roomBestBadge}>✦ {l('AI recommendation', 'Рекомендация ИИ')}</div>}
                     <div className={styles.roomName}>{room.name}</div>
                     <div className={styles.roomFeatures}>
@@ -761,8 +761,8 @@ export default function HotelDetailPage({ compareList, toggleCompare, isInCompar
                 {l('Where to book', 'Где бронировать')}
                 {livePrices.length > 0 && <span className={styles.livePriceBadge}>{l('Xotelo live', 'Актуальная цена Xotelo')}</span>}
               </div>
-              {prices?.map(p => (
-                <div key={p.id} className={`${styles.opRow} ${p.id === officialPrice?.id ? styles.opRowBest : ''}`}>
+              {prices?.map((p, priceIndex) => (
+                <div key={p.id || `${p.operator || p.provider || 'price'}-${priceIndex}`} className={`${styles.opRow} ${p.id === officialPrice?.id ? styles.opRowBest : ''}`}>
                   <div>
                     <div className={styles.opName}>{p.operator}</div>
                     <div className={styles.opMeta}>

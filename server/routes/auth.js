@@ -13,6 +13,7 @@ const { accountEmail } = require('../services/emailTemplates');
 const { TERMS_VERSION, PRIVACY_VERSION } = require('../config/legal');
 const { effectiveRole } = require('../config/admin');
 const { isEmailVerificationRequired } = require('../config/auth');
+const logger = require('../services/logger');
 const {
   REFRESH_COOKIE, REFRESH_TTL_SECONDS, parseCookies, hashToken, createRefreshToken,
   signAccessToken, setSessionCookies, clearSessionCookies,
@@ -29,6 +30,14 @@ function publicUser(user) {
     onboarding_completed: Boolean(user.onboarding_completed), email_verified: !isEmailVerificationRequired() || Boolean(user.email_verified), role: effectiveRole(user.email),
     behavioural_tracking_consent: Boolean(user.behavioural_tracking_consent),
   };
+}
+
+function internalAuthError(res, operation, error) {
+  logger.error('auth_operation_failed', { operation, error: error?.message || 'Unknown error' });
+  if (error?.status === 429) {
+    return res.status(429).json({ error: 'Please wait before requesting another email', code: 'AUTH_EMAIL_RATE_LIMITED' });
+  }
+  return res.status(500).json({ error: 'Authentication service is temporarily unavailable', code: 'AUTH_SERVICE_ERROR' });
 }
 
 router.post('/register', async (req, res) => {
@@ -79,8 +88,7 @@ router.post('/register', async (req, res) => {
     setSessionCookies(res, token, refreshToken);
     res.status(201).json({ ...(process.env.NODE_ENV !== 'production' ? { token } : {}), user: publicUser(user), verification_required: verificationRequired, ...(process.env.NODE_ENV !== 'production' && verificationToken ? { development_verification_token: verificationToken } : {}) });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    return internalAuthError(res, 'register', err);
   }
 });
 
@@ -110,7 +118,7 @@ router.post('/login', async (req, res) => {
     setSessionCookies(res, token, refreshToken);
     res.json({ ...(process.env.NODE_ENV !== 'production' ? { token } : {}), user: publicUser(user) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return internalAuthError(res, 'login', err);
   }
 });
 
@@ -133,10 +141,15 @@ router.post('/logout', requireAuth, async (req, res) => {
 router.post('/refresh', async (req, res) => {
   const refreshToken = parseCookies(req)[REFRESH_COOKIE];
   if (!refreshToken) return res.status(401).json({ error: 'Refresh session is missing' });
-  const session = await db.prepare(`SELECT s.*, u.email, u.name FROM user_sessions s JOIN users u ON u.id = s.user_id WHERE s.refresh_token_hash = ? AND s.revoked_at IS NULL AND s.refresh_expires_at > CURRENT_TIMESTAMP`).get(hashToken(refreshToken));
-  if (!session) { clearSessionCookies(res); return res.status(401).json({ error: 'Refresh session is invalid or expired' }); }
   const nextRefresh = createRefreshToken();
-  await db.prepare(`UPDATE user_sessions SET refresh_token_hash = ?, refresh_expires_at = CURRENT_TIMESTAMP + (? * INTERVAL '1 second'), last_seen_at = CURRENT_TIMESTAMP WHERE id = ?`).run(hashToken(nextRefresh), REFRESH_TTL_SECONDS, session.id);
+  const session = await db.prepare(`
+    UPDATE user_sessions AS s
+    SET refresh_token_hash = ?, refresh_expires_at = CURRENT_TIMESTAMP + (? * INTERVAL '1 second'), last_seen_at = CURRENT_TIMESTAMP
+    FROM users AS u
+    WHERE u.id = s.user_id AND s.refresh_token_hash = ? AND s.revoked_at IS NULL AND s.refresh_expires_at > CURRENT_TIMESTAMP
+    RETURNING s.id, s.user_id, u.email, u.name
+  `).get(hashToken(nextRefresh), REFRESH_TTL_SECONDS, hashToken(refreshToken));
+  if (!session) { clearSessionCookies(res); return res.status(401).json({ error: 'Refresh session is invalid or expired' }); }
   const token = signAccessToken({ id: session.user_id, email: session.email, name: session.name }, session.id);
   setSessionCookies(res, token, nextRefresh);
   return res.json({ refreshed: true });
@@ -157,7 +170,7 @@ router.post('/resend-verification', async (req, res) => {
     const token = await createToken(user.id, 'email_verification', 24 * 60);
     await linkEmail({ to: user.email, name: user.name, purpose: 'verify', url: `${frontendUrl()}/verify-email?token=${encodeURIComponent(token)}`, locale: user.locale });
     return res.json({ sent: true, ...(process.env.NODE_ENV !== 'production' ? { development_token: token } : {}) });
-  } catch (error) { return res.status(error.status || 500).json({ error: error.message }); }
+  } catch (error) { return internalAuthError(res, 'resend_verification', error); }
 });
 
 router.post('/forgot-password', async (req, res) => {
@@ -168,7 +181,7 @@ router.post('/forgot-password', async (req, res) => {
     const token = await createToken(user.id, 'password_reset', 30);
     await linkEmail({ to: user.email, name: user.name, purpose: 'reset', url: `${frontendUrl()}/reset-password?token=${encodeURIComponent(token)}`, locale: user.locale });
     return res.json({ sent: true, ...(process.env.NODE_ENV !== 'production' ? { development_token: token } : {}) });
-  } catch (error) { return res.status(error.status || 500).json({ error: error.message }); }
+  } catch (error) { return internalAuthError(res, 'forgot_password', error); }
 });
 
 router.post('/reset-password', async (req, res) => {
@@ -188,3 +201,4 @@ router.post('/reset-password', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.internalAuthError = internalAuthError;

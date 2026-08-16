@@ -300,8 +300,11 @@ test('password reset uses a one-time token', async () => {
   const account = await register('reset');
   const forgot = await request(app).post('/api/auth/forgot-password').send({ email: account.user.email });
   assert.equal(forgot.status, 200); assert.ok(forgot.body.development_token);
-  const reset = await request(app).post('/api/auth/reset-password').send({ token: forgot.body.development_token, password: 'NewTestPass123!' });
-  assert.equal(reset.status, 200, reset.text);
+  const concurrent = await Promise.all([
+    request(app).post('/api/auth/reset-password').send({ token: forgot.body.development_token, password: 'NewTestPass123!' }),
+    request(app).post('/api/auth/reset-password').send({ token: forgot.body.development_token, password: 'NewTestPass123!' }),
+  ]);
+  assert.deepEqual(concurrent.map(response => response.status).sort(), [200, 400]);
   const reused = await request(app).post('/api/auth/reset-password').send({ token: forgot.body.development_token, password: 'AnotherPass123!' });
   assert.equal(reused.status, 400);
   const login = await request(app).post('/api/auth/login').send({ email: account.user.email, password: 'NewTestPass123!' });
@@ -424,12 +427,17 @@ test('cookie sessions enforce CSRF and rotate refresh tokens', async () => {
   const allowed = await agent.put('/api/users/preferences').set('x-csrf-token', csrf).send({ hotel_stars: ['5'], hotel_amenities: ['pool'], budget_per_night_max: 1000 });
   assert.equal(allowed.status, 200, allowed.text);
 
-  const refreshed = await agent.post('/api/auth/refresh').set('x-csrf-token', csrf);
-  assert.equal(refreshed.status, 200, refreshed.text);
+  const initialCookieHeader = initialCookies.map(value => value.split(';')[0]).join('; ');
+  const concurrentRefreshes = await Promise.all([
+    request(app).post('/api/auth/refresh').set('Cookie', initialCookieHeader).set('x-csrf-token', csrf),
+    request(app).post('/api/auth/refresh').set('Cookie', initialCookieHeader).set('x-csrf-token', csrf),
+  ]);
+  assert.deepEqual(concurrentRefreshes.map(response => response.status).sort(), [200, 401]);
+  const refreshed = concurrentRefreshes.find(response => response.status === 200);
   const rotatedCookies = refreshed.headers['set-cookie'];
   assert.ok(rotatedCookies.some(value => value.startsWith('fw_refresh=')));
   const replay = await request(app).post('/api/auth/refresh')
-    .set('Cookie', initialCookies.map(value => value.split(';')[0]).join('; '))
+    .set('Cookie', initialCookieHeader)
     .set('x-csrf-token', csrf);
   assert.equal(replay.status, 401);
 });

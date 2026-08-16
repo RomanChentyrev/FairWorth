@@ -15,9 +15,11 @@ async function createToken(userId, type, ttlMinutes) {
   return token;
 }
 async function consumeToken(token, type) {
-  const row = await db.prepare(`SELECT * FROM auth_tokens WHERE token_hash = ? AND type = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP`).get(hashToken(token), type);
-  if (!row) return null;
-  await db.prepare('UPDATE auth_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?').run(row.id);
-  return row;
+  return db.prepare(`
+    UPDATE auth_tokens
+    SET used_at = CURRENT_TIMESTAMP
+    WHERE token_hash = ? AND type = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+    RETURNING *
+  `).get(hashToken(token), type);
 }
 module.exports = { createToken, consumeToken };

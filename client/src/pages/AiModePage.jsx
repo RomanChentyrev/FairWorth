@@ -372,9 +372,9 @@ export default function AiModePage() {
           <p className={styles.welcomeText}>{t('ai_welcome_text')}</p>
           <div className={styles.quickGrid}>{QUICK_ACTIONS.map(({ key, icon: Icon, prompt }) => <button type="button" key={key} onClick={() => submit(t(prompt))}><Icon size={18} /><span>{t(`ai_quick_${key}`)}</span><ChevronRight size={15} /></button>)}</div>
           <div className={styles.trustLine}><Check size={13} />{t('ai_fact_notice')}</div>
-        </div> : <div className={styles.messageList}>{messages.map(message => message.role === 'tool'
-          ? <ToolMessage key={message.id} message={message} context={context} t={t} lang={lang} onHotelSelect={selectHotelResult} onFlightSelect={selectFlightResult} onHotelOpen={result => { aiModeApi.track({ event_type: 'ai_result_clicked', conversation_id: activeConversation.id, properties: { entity_type: 'hotel', entity_id: result.id } }).catch(() => {}); navigate(`/hotel/${result.id}?check_in=${context.date_start || ''}&check_out=${context.date_end || ''}&guests=${context.travelers || 2}`); }} />
-          : <div key={message.id} className={`${styles.messageRow} ${message.role === 'user' ? styles.userRow : styles.assistantRow}`}>
+        </div> : <div className={styles.messageList}>{messages.map((message, index) => message.role === 'tool'
+          ? <ToolMessage key={`${message.id || 'tool'}-${index}`} message={message} context={context} t={t} lang={lang} onHotelSelect={selectHotelResult} onFlightSelect={selectFlightResult} onHotelOpen={result => { aiModeApi.track({ event_type: 'ai_result_clicked', conversation_id: activeConversation.id, properties: { entity_type: 'hotel', entity_id: result.id } }).catch(() => {}); navigate(`/hotel/${result.id}?check_in=${context.date_start || ''}&check_out=${context.date_end || ''}&guests=${context.travelers || 2}`); }} />
+          : <div key={`${message.id || message.role || 'message'}-${index}`} className={`${styles.messageRow} ${message.role === 'user' ? styles.userRow : styles.assistantRow}`}>
             <div className={styles.avatar}>{message.role === 'user' ? <UserRound size={15} /> : <Sparkles size={15} />}</div>
             <div className={styles.bubble}><p>{message.content}</p>{message.metadata?.used_profile_fields?.length > 0 && <span className={styles.profileNote}><Bot size={12} />{t('ai_profile_used')}</span>}</div>
           </div>)}

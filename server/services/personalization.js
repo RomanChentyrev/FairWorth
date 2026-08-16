@@ -805,8 +805,12 @@ async function recordScoreSnapshot(userId, scoreResult) {
   const current = Number(scoreResult.fairworth_score);
   const shouldStore = !previous || Number(previous.score) !== current || Date.now() - new Date(previous.calculated_at).getTime() > 6 * 60 * 60 * 1000;
   if (!shouldStore) return;
-  await db.prepare(`INSERT INTO score_snapshots (id, user_id, hotel_id, score, score_version, breakdown, completeness, calculation_parameters, calculated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(uuidv4(), userId, scoreResult.id, current, scoreResult.score_version, JSON.stringify(scoreResult.score_breakdown), scoreResult.data_completeness.score, JSON.stringify(scoreResult.calculation_parameters), scoreResult.calculated_at);
+  const insertResult = await db.prepare(`
+    INSERT INTO score_snapshots (id, user_id, hotel_id, score, score_version, breakdown, completeness, calculation_parameters, calculated_at)
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
+  `).run(uuidv4(), userId, scoreResult.id, current, scoreResult.score_version, JSON.stringify(scoreResult.score_breakdown), scoreResult.data_completeness.score, JSON.stringify(scoreResult.calculation_parameters), scoreResult.calculated_at, userId);
+  if (!insertResult.rowCount) return;
   if (previous) {
     const delta = current - Number(previous.score);
     if (Math.abs(delta) >= SCORE_CHANGE_THRESHOLD) {

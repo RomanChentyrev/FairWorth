@@ -6,6 +6,7 @@ const { requireAuth } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { partnerClickSchema, partnerPostbackSchema } = require('../config/apiSchemas');
 const { requireCapability } = require('../config/capabilities');
+const logger = require('../services/logger');
 
 const router = express.Router();
 const frontendUrl = () => process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -29,9 +30,14 @@ function buildDeepLink(destination, clickId) {
 }
 
 router.post('/clicks', requireAuth, validate(partnerClickSchema), async (req, res) => {
+  let destination;
   try {
-    const destination = new URL(String(req.body.destination_url || ''));
-    if (!['http:', 'https:'].includes(destination.protocol)) throw new Error('Unsupported destination URL');
+    destination = new URL(String(req.body.destination_url || ''));
+  } catch {
+    return res.status(400).json({ error: 'Provider destination URL is invalid' });
+  }
+  if (!['http:', 'https:'].includes(destination.protocol)) return res.status(400).json({ error: 'Unsupported destination URL' });
+  try {
     const allowed = String(process.env.PARTNER_ALLOWED_HOSTS || '').split(',').map(v => v.trim()).filter(Boolean);
     if (allowed.length && !allowed.some(host => destination.hostname === host || destination.hostname.endsWith(`.${host}`))) return res.status(400).json({ error: 'Provider destination is not allowed' });
     const clickId = crypto.randomBytes(18).toString('base64url');
@@ -42,7 +48,10 @@ router.post('/clicks', requireAuth, validate(partnerClickSchema), async (req, re
     if (consent?.behavioural_tracking_consent) await db.prepare(`INSERT INTO user_interactions (id, user_id, hotel_id, event_type, signal, context, event_id) VALUES (?, ?, ?, 'provider_click', 4, ?, ?)`)
       .run(uuidv4(), req.user.id, req.body.hotel_id || null, JSON.stringify({ provider: req.body.provider, click_id: clickId }), `provider-click:${clickId}`);
     res.status(201).json({ click_id: clickId, redirect_url: `/api/partners/redirect/${clickId}`, return_url: `${frontendUrl()}/booking/return?click_id=${clickId}` });
-  } catch (error) { res.status(400).json({ error: error.message }); }
+  } catch (error) {
+    logger.error('partner_click_failed', { error: error?.message || 'Unknown error', user_id: req.user?.id });
+    res.status(500).json({ error: 'The partner service is temporarily unavailable', code: 'PARTNER_SERVICE_ERROR' });
+  }
 });
 
 router.get('/redirect/:clickId', async (req, res) => {

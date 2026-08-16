@@ -8,6 +8,12 @@ const { accountEmail } = require('../services/emailTemplates');
 const { validate } = require('../middleware/validate');
 const { profileSchema, preferencesSchema } = require('../config/apiSchemas');
 const { normalizeLocale, SUPPORTED_LOCALES } = require('../config/locales');
+const logger = require('../services/logger');
+
+function internalUserError(res, operation, error) {
+  logger.error('user_operation_failed', { operation, user_id: res.req?.user?.id, error: error?.message || 'Unknown error' });
+  return res.status(500).json({ error: 'The account service is temporarily unavailable', code: 'USER_SERVICE_ERROR' });
+}
 
 // GET /api/users/me
 router.get('/me', async (req, res) => {
@@ -18,7 +24,7 @@ router.get('/me', async (req, res) => {
     const prefs = await db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId);
     res.json({ user: { ...user, onboarding_completed: Boolean(user.onboarding_completed), behavioural_tracking_consent: Boolean(user.behavioural_tracking_consent) }, preferences: prefs });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return internalUserError(res, 'get_profile', err);
   }
 });
 
@@ -48,7 +54,7 @@ router.put('/profile', validate(profileSchema), async (req, res) => {
     await db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values, userId);
     const user = await db.prepare('SELECT id, email, name, birth_date, phone, city, country, bio, website, avatar, onboarding_completed FROM users WHERE id = ?').get(userId);
     res.json({ user: { ...user, onboarding_completed: Boolean(user.onboarding_completed) } });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { return internalUserError(res, 'update_profile', err); }
 });
 
 // PUT /api/users/password
@@ -65,7 +71,7 @@ router.put('/password', async (req, res) => {
     const recipient = await db.prepare('SELECT email, name, locale FROM users WHERE id = ?').get(req.user.id);
     await sendEmail({ to: recipient.email, ...accountEmail({ name: recipient.name, event: 'password_changed', locale: recipient.locale }) }).catch(() => null);
     res.json({ changed: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { return internalUserError(res, 'change_password', err); }
 });
 
 router.get('/sessions', async (req, res) => {
@@ -103,7 +109,7 @@ router.delete('/me', async (req, res) => {
     await sendEmail({ to: user.email, ...accountEmail({ name: user.name, event: 'account_deleted', locale: user.locale }) }).catch(() => null);
     res.status(204).end();
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return internalUserError(res, 'delete_account', err);
   }
 });
 
@@ -215,8 +221,7 @@ router.put('/preferences', validate(preferencesSchema), async (req, res) => {
     }
     res.json({ preferences: updated, message: 'Preferences saved successfully' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    return internalUserError(res, 'update_preferences', err);
   }
 });
 
@@ -233,7 +238,7 @@ router.get('/bookmarks', async (req, res) => {
     `).all(userId);
     res.json({ bookmarks });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return internalUserError(res, 'get_bookmarks', err);
   }
 });
 
@@ -250,7 +255,7 @@ router.post('/bookmarks/:hotelId', async (req, res) => {
     await db.prepare('INSERT INTO bookmarks (id, user_id, hotel_id) VALUES (?, ?, ?)').run(uuidv4(), userId, hotelId);
     res.json({ bookmarked: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return internalUserError(res, 'toggle_bookmark', err);
   }
 });
 
@@ -263,7 +268,7 @@ router.get('/searches', async (req, res) => {
     `).all(userId);
     res.json({ searches });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return internalUserError(res, 'get_searches', err);
   }
 });
 
@@ -292,8 +297,9 @@ router.post('/onboarding/complete', async (req, res) => {
       behavioural_tracking_consent: Boolean(user.behavioural_tracking_consent),
     } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return internalUserError(res, 'complete_onboarding', err);
   }
 });
 
 module.exports = router;
+module.exports.internalUserError = internalUserError;

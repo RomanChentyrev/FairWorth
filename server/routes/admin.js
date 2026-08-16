@@ -3,6 +3,7 @@ const { db } = require('../db/database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { enqueueCatalogSync } = require('../services/hotelCatalog');
 const { v4: uuidv4 } = require('uuid');
+const logger = require('../services/logger');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -37,7 +38,10 @@ router.post('/catalog/sync', async (req, res) => {
     const result = await enqueueCatalogSync({ city, iataCode: iata_code, reset: reset === true });
     await recordAdminAction(req, 'catalog.sync.enqueue', 'hotel_catalog', result?.iata_code || null, { city: city || null, iata_code: iata_code || null, reset: reset === true });
     return res.status(202).json({ queued: true, cursor: result });
-  } catch (error) { return res.status(502).json({ error: error.message }); }
+  } catch (error) {
+    logger.error('admin_catalog_sync_failed', { error: error?.message || 'Unknown error', user_id: req.user?.id });
+    return res.status(502).json({ error: 'The catalog provider is temporarily unavailable', code: 'CATALOG_PROVIDER_ERROR' });
+  }
 });
 
 router.get('/catalog/syncs', async (req, res) => {

@@ -15,4 +15,5 @@ client/test-results/
 client/playwright-report/
 client/public/data/world-cities.json
 client/scripts/.localization-cache.json
+strix_runs/
 .Rhistory

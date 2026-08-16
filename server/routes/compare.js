@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const logger = require('../services/logger');
 const { db } = require('../db/database');
 const { v4: uuidv4 } = require('uuid');
 const { compareHotels } = require('../services/ai');
@@ -138,8 +139,8 @@ router.post('/', async (req, res) => {
 
     res.json({ comparison: hotelsData, ai_verdict: aiVerdict, session_id: sessionId });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    logger.error('compare_operation_failed', { error: err?.message || 'Unknown error', user_id: req.user?.id });
+    res.status(500).json({ error: 'The comparison service is temporarily unavailable', code: 'COMPARE_SERVICE_ERROR' });
   }
 });
 

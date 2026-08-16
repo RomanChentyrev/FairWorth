@@ -6,6 +6,7 @@ const { validate } = require('../middleware/validate');
 const { interactionSchema } = require('../config/apiSchemas');
 
 const router = express.Router();
+const logger = require('../services/logger');
 const SIGNALS = Object.freeze({
   impression: 0,
   view: 0,
@@ -86,8 +87,8 @@ router.post('/', validate(interactionSchema), async (req, res) => {
     `).run(meaningfulRecorded, userId);
     res.status(201).json({ recorded });
   } catch (error) {
-    console.error('Interaction tracking error:', error);
-    res.status(500).json({ error: error.message });
+    logger.error('interaction_tracking_failed', { error: error?.message || 'Unknown error', user_id: req.user?.id });
+    res.status(500).json({ error: 'The interaction service is temporarily unavailable', code: 'INTERACTION_SERVICE_ERROR' });
   }
 });
 

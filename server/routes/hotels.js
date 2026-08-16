@@ -20,6 +20,7 @@ const googlePlaces = require('../services/googlePlaces');
 const cache = require('../services/cache');
 const { warmedDestination } = require('../services/hotelSearchWarmup');
 const monitoring = require('../services/monitoring');
+const logger = require('../services/logger');
 const { amenitySearchTerms, amenityMatches } = require('../config/hotelAmenities');
 const {
   CACHE_TTL_HOURS,
@@ -39,6 +40,14 @@ const INSIGHTS_CACHE_TTL_HOURS = Math.max(1, Number(process.env.INSIGHTS_CACHE_T
 const INSIGHTS_JOB_TIMEOUT_MS = Math.max(5000, Number(process.env.INSIGHTS_JOB_TIMEOUT_MS || 20000));
 const INSIGHTS_ITEM_TIMEOUT_MS = Math.max(1000, Number(process.env.INSIGHTS_ITEM_TIMEOUT_MS || 3500));
 let insightsRefreshPromise = null;
+
+function internalHotelError(res, operation, error, status = 500) {
+  logger.error('hotel_operation_failed', { operation, error: error?.message || 'Unknown error' });
+  return res.status(status).json({
+    error: status === 502 ? 'A hotel provider is temporarily unavailable' : 'The hotel service is temporarily unavailable',
+    code: status === 502 ? 'HOTEL_PROVIDER_ERROR' : 'HOTEL_SERVICE_ERROR',
+  });
+}
 
 function parseList(value) {
   if (Array.isArray(value)) return value;
@@ -947,8 +956,7 @@ router.get('/search', requireAuth, requireEmailVerified, requireOnboarding, asyn
     await cache.setJson(searchCacheKey, payload, Math.max(30, Number(process.env.HOTEL_SEARCH_CACHE_TTL_SECONDS || 300)));
     res.json(payload);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    return internalHotelError(res, 'search', err);
   }
 });
 
@@ -1155,8 +1163,7 @@ router.get('/popular-destinations', async (req, res) => {
       total: destinations.length,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    return internalHotelError(res, 'popular_destinations', err);
   }
 });
 
@@ -1178,8 +1185,7 @@ router.get('/insights', async (req, res) => {
     if (cached?.status === 'error') return res.status(503).json({ error: 'Insights are temporarily unavailable', code: 'INSIGHTS_UNAVAILABLE', retryable: true });
     return res.status(202).json({ status: 'refreshing', retry_after_seconds: 3, sections: [], total: 0 });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    return internalHotelError(res, 'insights', err);
   }
 });
 
@@ -1270,8 +1276,7 @@ router.get('/price-calendar', async (req, res) => {
       recommendation,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    return internalHotelError(res, 'price_calendar', err);
   }
 });
 
@@ -1377,8 +1382,7 @@ router.get('/:id', requireAuth, requireEmailVerified, requireOnboarding, async (
       () => loadHotelDetailSnapshot(options));
     res.json({ ...result.value, cached: result.cached });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    return internalHotelError(res, 'hotel_detail', err);
   }
 });
 
@@ -1466,8 +1470,7 @@ async function hotelAnalysisHandler(req, res) {
 
     res.json({ analysis, cached: false });
   } catch (err) {
-    console.error('AI analysis error:', err);
-    res.status(500).json({ error: err.message });
+    return internalHotelError(res, 'ai_analysis', err);
   }
 }
 
@@ -1521,7 +1524,7 @@ router.get('/:id/prices', async (req, res) => {
     `).all(req.params.id, checkIn, checkOut);
     res.json({ prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), ttl_hours: CACHE_TTL_HOURS });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return internalHotelError(res, 'hotel_prices', err);
   }
 });
 
@@ -1540,7 +1543,7 @@ router.post('/:id/prices/refresh', requireAuth, requireEmailVerified, requireOnb
     const prices = await db.prepare(`SELECT * FROM hotel_prices WHERE hotel_id = ? AND source IN ('liteapi', 'xotelo') AND price_valid = 1 AND check_in = ? AND check_out = ? ORDER BY price_per_night`).all(hotel.id, checkIn, checkOut);
     res.json({ success: true, hotel_id: hotel.id, prices: prices.map(price => normalizePrice(price, CACHE_TTL_HOURS)), ttl_hours: CACHE_TTL_HOURS });
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    return internalHotelError(res, 'refresh_prices', err, 502);
   }
 });
 
@@ -1556,3 +1559,4 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 module.exports = router;
+module.exports.internalHotelError = internalHotelError;
