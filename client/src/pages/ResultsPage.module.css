@@ -36,6 +36,8 @@
 .pillValue { font-size: 13px; font-weight: 600; color: var(--navy); }
 .pillDiv { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
 .searchBarRight { display: flex; align-items: center; gap: 10px; }
+.mobileFilterBtn, .filterBackdrop, .filterCloseBtn, .applyFiltersBtn { display: none; }
+.filterHeaderActions { display: flex; align-items: center; gap: 10px; }
 
 /* View toggle */
 .viewToggle { display: flex; background: var(--bg-subtle); border-radius: 8px; padding: 3px; border: 1px solid var(--border); }
@@ -546,4 +548,61 @@
   .mapPanel { display: none; }
   .hotelLayout { height: auto; overflow: visible; align-items: start; }
   .hotelLayout .main { overflow: visible; padding-right: 0; }
+}
+
+@media (max-width: 760px) {
+  .page { padding-top: 56px; padding-bottom: 0; }
+  .hotelResultsPage { min-height: calc(100dvh - 56px); }
+  .searchBar { top: 56px; padding: 8px 0; }
+  .searchBarInner { align-items: stretch; flex-direction: column; gap: 8px; padding: 0 12px; }
+  .searchPills { min-width: 0; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+  .searchPills::-webkit-scrollbar { display: none; }
+  .pill { min-width: max-content; padding: 0 10px; }
+  .pill:first-child { padding-left: 0; }
+  .pillValue { max-width: 220px; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .searchBarRight { width: 100%; }
+  .mobileFilterBtn {
+    min-height: 42px; display: inline-flex; flex: 1; align-items: center; justify-content: center; gap: 7px;
+    border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--navy); font-size: 12px; font-weight: 700;
+  }
+  .mobileFilterBtn span { min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: 99px; background: var(--navy); color: #fff; font-size: 10px; }
+  .viewToggle { flex: 0 0 auto; }
+  .viewBtn { min-height: 40px; padding-inline: 10px; font-size: 0; }
+  .changeBtn { min-height: 42px; padding-inline: 11px; font-size: 0; }
+  .changeBtn svg { margin: 0; }
+  .inlineSearchForm { align-items: stretch; flex-direction: column; gap: 3px; padding: 8px; overflow: visible; }
+  .inlineField { min-height: 54px; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  .inlineDivider { display: none; }
+  .inlineInput { min-height: 28px; font-size: 16px; }
+  .inlineSearchBtn { min-height: 46px; justify-content: center; }
+  .inlineCancelBtn { position: absolute; top: 14px; right: 20px; }
+  [dir='rtl'] .inlineCancelBtn { right: auto; left: 20px; }
+  .layout, .hotelLayout { display: block; padding: 12px 10px 84px; }
+  .sidebar {
+    position: fixed; z-index: 1300; inset: 0 0 0 auto; width: min(360px, 92vw); height: 100dvh !important;
+    padding: 0; background: #fff; transform: translateX(105%); transition: transform .18s ease; visibility: hidden;
+  }
+  [dir='rtl'] .sidebar { inset: 0 auto 0 0; transform: translateX(-105%); }
+  .sidebarOpen, [dir='rtl'] .sidebarOpen { visibility: visible; transform: translateX(0); }
+  .filterBackdrop { position: fixed; z-index: 1290; inset: 0; display: block; width: 100%; border: 0; border-radius: 0; background: rgba(16, 30, 52, .35); }
+  .filterCard { height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .filterHeader { min-height: 60px; padding: 12px 14px; }
+  .filterCloseBtn { width: 40px; height: 40px; display: grid; place-items: center; background: transparent; color: var(--navy); }
+  .applyFiltersBtn {
+    position: sticky; z-index: 2; bottom: 0; width: calc(100% - 24px); min-height: 48px; margin: 12px;
+    display: block; border-radius: 7px; background: var(--navy); color: #fff; font-size: 14px; font-weight: 700;
+  }
+  .filterSectionHeader, .sortItem, .checkItem { min-height: 46px; }
+  .main { width: 100%; }
+  .aiBanner { align-items: flex-start; padding: 12px; }
+  .resultsHeader { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .resultsMeta { text-align: start; }
+  .mapPanel { display: none !important; }
+  .mobileListHidden { display: none; }
+  .mobileMapVisible { display: block !important; height: calc(100dvh - 180px); min-height: 430px; }
+  .mobileMapVisible .mapSticky, .mobileMapVisible .mapContainer { position: relative; top: auto; height: 100%; min-height: 430px; }
+  .skeletonCard { grid-template-columns: 112px minmax(0, 1fr); }
+  .compareTray { bottom: calc(62px + env(safe-area-inset-bottom)); padding: 9px 10px; gap: 8px; }
+  .trayLabel, .trayItems { display: none; }
+  .trayGoBtn { width: 100%; min-height: 44px; justify-content: center; }
 }

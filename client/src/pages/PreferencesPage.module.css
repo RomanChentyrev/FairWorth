@@ -547,3 +547,48 @@
   flex-direction: column;
   gap: 16px;
 }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 230px minmax(0, 1fr); padding-inline: 18px; }
+}
+
+@media (max-width: 760px) {
+  .page { padding-top: 56px; }
+  .layout { display: flex; flex-direction: column; gap: 14px; padding: 14px 10px 84px; }
+  .sidebar { position: static; width: 100%; gap: 10px; }
+  .avatarCard { display: flex; align-items: center; gap: 12px; padding: 14px; text-align: start; border-radius: 8px; }
+  .avatarWrap, .avatar { width: 52px; height: 52px; }
+  .avatarWrap { flex: 0 0 52px; margin: 0; }
+  .avatar { font-size: 19px; }
+  .avatarEdit { display: none; }
+  .userEmail { max-width: 220px; overflow: hidden; margin-bottom: 5px; text-overflow: ellipsis; white-space: nowrap; }
+  .statsCard, .aiBadge { display: none; }
+  .tabNav {
+    flex-direction: row; gap: 4px; overflow-x: auto; padding: 5px; border-radius: 8px;
+    scroll-snap-type: x proximity; scrollbar-width: none;
+  }
+  .tabNav::-webkit-scrollbar { display: none; }
+  .tabNavItem { min-width: max-content; min-height: 42px; flex: 0 0 auto; padding: 8px 12px; scroll-snap-align: start; }
+  .tabContent { padding: 16px 12px; border-radius: 8px; }
+  .tabHeader { align-items: stretch; flex-direction: column; gap: 14px; margin-bottom: 20px; padding-bottom: 16px; }
+  .tabTitle { font-size: 19px; }
+  .editBtn { min-height: 44px; justify-content: center; }
+  .editActions { width: 100%; }
+  .editActions button { min-height: 44px; flex: 1; justify-content: center; }
+  .personalGrid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .personalFieldFull { grid-column: auto; }
+  .fieldInput, .fieldTextarea { min-height: 46px; font-size: 16px; }
+  .travelStatsCard, .prefCard, .securitySection { padding: 16px 12px; border-radius: 8px; }
+  .travelStatsGrid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .travelStatItem { padding: 8px 0; }
+  .chip { min-height: 42px; padding: 8px 11px; }
+  .notifGroup { padding: 16px 12px; }
+  .notifRow { min-height: 60px; gap: 10px; }
+  .sessionRow { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .revokeBtn, .dangerBtn { min-height: 44px; }
+  .modalBackdrop { align-items: end; padding: 0; }
+  .modal { width: 100%; padding: 20px 14px calc(20px + env(safe-area-inset-bottom)); border-radius: 8px 8px 0 0; }
+  .modalActions { flex-direction: column-reverse; }
+  .modalActions button { min-height: 46px; width: 100%; }
+  .loadingWrap { padding: 0 12px; }
+}

@@ -540,3 +540,43 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+@media (max-width: 760px) {
+  .page { padding-top: 56px; padding-bottom: 0; }
+  .hero { padding: 22px 14px 30px; gap: 22px; }
+  .heroLeft { display: contents; }
+  .badge { order: 0; width: fit-content; margin-bottom: -10px; font-size: 11px; }
+  .headline { order: 1; margin: 0; font-size: clamp(35px, 10.5vw, 46px); line-height: 1.02; }
+  .sub { order: 2; margin: 0; font-size: 14px; }
+  .trustRow { order: 3; width: 100%; justify-content: space-between; gap: 12px; margin: 0; padding: 4px 0; }
+  .trustItem strong { font-size: 19px; }
+  .trustItem span { font-size: 10px; }
+  .destinations { order: 5; min-width: 0; }
+  .sectionHeader { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .destinationGrid {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(142px, 44vw);
+    grid-template-columns: none; gap: 8px; overflow-x: auto; overscroll-behavior-inline: contain;
+    scroll-snap-type: x proximity; padding: 2px 2px 8px; margin: 0 -2px; scrollbar-width: none;
+  }
+  .destinationGrid::-webkit-scrollbar { display: none; }
+  .destinationCard, .destinationSkeleton { min-height: 98px; scroll-snap-align: start; }
+  .searchCard { order: 4; max-width: none; padding: 12px; border-radius: 8px; box-shadow: var(--shadow-md); }
+  .tabs { margin-bottom: 10px; }
+  .tabBtn { min-height: 42px; font-size: 12px; }
+  .formBody { gap: 10px; }
+  .row2 { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .input { min-height: 46px; padding: 10px 12px; font-size: 16px; }
+  .locationButton { width: 40px; height: 40px; right: 3px; }
+  .autocompleteWrap:has(.locationButton) .input { padding-right: 46px; }
+  .dropdown { position: fixed; z-index: 1200; top: 64px; left: 10px; right: 10px; max-height: min(62dvh, 480px); border-radius: 8px; }
+  .dropdownItem { min-height: 56px; padding: 10px 12px; }
+  .searchBtn { min-height: 48px; margin-top: 0; }
+  .aiHint { font-size: 11px; }
+}
+
+@media (max-width: 380px) {
+  .hero { padding-inline: 10px; }
+  .headline { font-size: 34px; }
+  .trustRow { gap: 8px; }
+  .trustItem strong { font-size: 17px; }
+}

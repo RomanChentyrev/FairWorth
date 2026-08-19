@@ -51,8 +51,13 @@
 @media (max-width: 800px) {
   .page:not(.registerPage) { grid-template-columns: 1fr; }
   .page:not(.registerPage) .left { display: none; }
-  .right { min-height: 100vh; padding: 72px 24px 40px; }
+  .right { min-height: 100dvh; padding: 72px 18px 40px; }
   .registerHeader { min-height: 64px; padding: 0 20px; }
-  .registerMain { min-height: calc(100vh - 64px); padding: 36px 20px 52px; }
+  .registerMain { min-height: calc(100dvh - 64px); padding: 28px 14px 44px; }
   .registerPage .formTitle { font-size: 30px; }
+  .formWrap, .registerPage .formWrap { max-width: 520px; }
+  .input { min-height: 48px; font-size: 16px; }
+  .submitBtn { min-height: 48px; }
+  .consent { grid-template-columns: 22px minmax(0, 1fr); font-size: 13px; }
+  .consent input { width: 20px; height: 20px; }
 }

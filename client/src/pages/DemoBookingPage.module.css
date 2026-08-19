@@ -43,4 +43,4 @@
 .confirmTotal { margin: 18px 0; color: var(--navy); font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 700; }
 .confirmation a { display: inline-block; padding: 10px 16px; border-radius: 6px; background: var(--navy); color: #fff; font-weight: 700; }
 @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } .summary { position: static; order: -1; } }
-@media (max-width: 600px) { .page { padding: 76px 12px 32px; } .pageHeader h1 { font-size: 28px; } .fields { grid-template-columns: minmax(0, 1fr); } .section, .summary { padding: 16px; } }
+@media (max-width: 600px) { .page { padding: 76px 10px 84px; } .pageHeader h1 { font-size: 28px; } .fields { grid-template-columns: minmax(0, 1fr); } .section, .summary { padding: 16px 12px; } .fields input, .fields select, .fullField textarea { min-height: 46px; font-size: 16px; } .submit { min-height: 48px; } }

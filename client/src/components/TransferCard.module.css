@@ -189,3 +189,11 @@
 .selectBtnActive {
   background: var(--green);
 }
+
+@media (max-width: 760px) {
+  .card, .card:hover { grid-template-columns: minmax(0, 1fr); transform: none; border-radius: 8px; }
+  .vehiclePanel { min-height: 108px; }
+  .body { padding: 14px 12px; }
+  .route { grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr); }
+  .selectBtn { min-height: 44px; }
+}

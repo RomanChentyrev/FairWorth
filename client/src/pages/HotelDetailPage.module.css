@@ -433,11 +433,20 @@
 }
 
 @media (max-width: 600px) {
+  .page { padding-top: 56px; padding-bottom: 80px; }
+  .hero { min-height: 360px; }
+  .heroContent { padding: 64px 14px 18px; }
   .heroTitle { font-size: 25px; }
   .heroMeta { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .galleryThumb { height: 48px; }
+  .galleryRail { display: grid; grid-auto-flow: column; grid-auto-columns: 92px; grid-template-columns: none; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .galleryRail::-webkit-scrollbar { display: none; }
+  .galleryThumb { height: 58px; }
   .amenityGrid { grid-template-columns: minmax(0, 1fr); }
   .aiCardHeader { flex-wrap: wrap; }
   .runAiBtn { margin-left: 0; }
-  .bookingCard, .aiCard, .descCard, .reviewsCard, .roomsSection { padding: 16px; }
+  .bookingCard, .aiCard, .descCard, .reviewsCard, .roomsSection { padding: 16px 12px; border-radius: 8px; }
+  .tabs { top: 56px; }
+  .tabsInner { gap: 18px; }
+  .tabsInner a { min-height: 44px; display: inline-flex; align-items: center; white-space: nowrap; }
+  .reviewRow { grid-template-columns: 82px minmax(0, 1fr) 30px; gap: 8px; }
 }

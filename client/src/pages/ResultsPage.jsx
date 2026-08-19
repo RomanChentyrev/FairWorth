@@ -231,6 +231,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
   const cacheSearch = { city, checkIn, checkOut, guests, tripPurpose };
   const cachedResults = useRef(readHotelResultsCache({ search: cacheSearch, language: lang })).current;
   const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [hotels, setHotels] = useState(cachedResults?.hotels || []);
   const [pendingHotels, setPendingHotels] = useState([]);
@@ -565,6 +566,11 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
                 </div>
               </div>
               <div className={styles.searchBarRight}>
+                <button type="button" className={styles.mobileFilterBtn} onClick={() => setFiltersOpen(true)}>
+                  <SlidersHorizontal size={15} />
+                  {t('results_filters')}
+                  {activeFiltersCount > 0 && <span>{activeFiltersCount}</span>}
+                </button>
                 <div className={styles.viewToggle}>
                   <button className={`${styles.viewBtn} ${viewMode === 'list' ? styles.viewBtnActive : ''}`} onClick={() => setViewMode('list')}><List size={14} /> {t('results_list')}</button>
                   <button className={`${styles.viewBtn} ${viewMode === 'map' ? styles.viewBtnActive : ''}`} onClick={() => setViewMode('map')}><Map size={14} /> {t('results_map')}</button>
@@ -600,7 +606,8 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
 
       <div className={`${styles.layout} ${styles.hotelLayout}`}>
         {/* Filters */}
-        <aside className={styles.sidebar}>
+        {filtersOpen && <button type="button" className={styles.filterBackdrop} aria-label={l('Close filters', 'Закрыть фильтры')} onClick={() => setFiltersOpen(false)} />}
+        <aside className={`${styles.sidebar} ${filtersOpen ? styles.sidebarOpen : ''}`} aria-hidden={!filtersOpen ? undefined : false}>
           <div className={styles.filterCard}>
             <div className={styles.filterHeader}>
               <div className={styles.filterHeaderLeft}>
@@ -608,7 +615,10 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
                 {t('results_filters')}
                 {activeFiltersCount > 0 && <span className={styles.filterBadge}>{activeFiltersCount}</span>}
               </div>
-              {activeFiltersCount > 0 && <button className={styles.resetBtn} onClick={resetFilters}>{t('results_reset')}</button>}
+              <div className={styles.filterHeaderActions}>
+                {activeFiltersCount > 0 && <button className={styles.resetBtn} onClick={resetFilters}>{t('results_reset')}</button>}
+                <button type="button" className={styles.filterCloseBtn} onClick={() => setFiltersOpen(false)} aria-label={l('Close filters', 'Закрыть фильтры')}><X size={18} /></button>
+              </div>
             </div>
 
             <FilterSection title={t('results_sort')}>
@@ -680,11 +690,14 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
                 </label>
               </div>
             </FilterSection>
+            <button type="button" className={styles.applyFiltersBtn} onClick={() => setFiltersOpen(false)}>
+              {l(`Show ${hotels.length} hotels`, `Показать ${hotels.length} отелей`)}
+            </button>
           </div>
         </aside>
 
         {/* Hotels */}
-        <main className={styles.main} ref={resultsScrollRef} onScroll={event => {
+        <main className={`${styles.main} ${viewMode === 'map' ? styles.mobileListHidden : ''}`} ref={resultsScrollRef} onScroll={event => {
           try {
             const cached = JSON.parse(window.sessionStorage.getItem(HOTEL_RESULTS_CACHE_KEY) || 'null');
             if (cached) window.sessionStorage.setItem(HOTEL_RESULTS_CACHE_KEY, JSON.stringify({ ...cached, scrollTop: event.currentTarget.scrollTop, savedAt: Date.now() }));
@@ -761,7 +774,7 @@ export default function ResultsPage({ compareList, toggleCompare, isInCompare })
         </main>
 
         {/* Map */}
-        <div className={styles.mapPanel}>
+        <div className={`${styles.mapPanel} ${viewMode === 'map' ? styles.mobileMapVisible : ''}`}>
           <div className={styles.mapSticky}>
             <HotelMap hotels={hotels} hoveredId={hoveredId} checkIn={checkIn} checkOut={checkOut} localize={l} />
             {!loading && !error && hotels.length > 0 && (

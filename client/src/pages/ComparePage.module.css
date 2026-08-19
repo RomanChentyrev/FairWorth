@@ -208,3 +208,22 @@
   transition: background 0.15s;
 }
 .backBtn:hover { background: var(--navy-mid); }
+
+@media (max-width: 760px) {
+  .page { padding-top: 56px; }
+  .header { padding: 14px 0; }
+  .headerInner { align-items: stretch; flex-direction: column; gap: 14px; padding: 0 12px; }
+  .title { font-size: 22px; }
+  .headerActions { display: grid; grid-template-columns: 1fr 1fr; }
+  .headerActions > * { min-height: 44px; align-items: center; justify-content: center; padding-inline: 8px; text-align: center; }
+  .content { gap: 16px; padding: 16px 10px 84px; }
+  .verdictCard { padding: 16px 12px; border-radius: 8px; }
+  .verdictTips { flex-direction: column; gap: 12px; }
+  .tableWrap { margin: 0 -10px; padding: 0 10px 8px; scroll-snap-type: x proximity; }
+  .table { min-width: 720px; }
+  .thEmpty { width: 110px; }
+  .colHead { padding: 16px 10px; }
+  .td { padding-inline: 10px; }
+  .emptyState { margin: 52px auto; padding: 0 16px; }
+  .backBtn { min-height: 44px; display: inline-flex; align-items: center; }
+}

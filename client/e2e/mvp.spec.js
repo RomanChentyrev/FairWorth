@@ -364,6 +364,53 @@ test('search → live price → filter → compare → details → booking pendi
   await expect(page.getByTestId('continue-at-provider')).toContainText(/booking will be soon/i);
 });
 
+test('mobile hotel results keep navigation, cards and filters usable', async ({ page, request }) => {
+  const account = await registerAccount(request, { label: 'mobile-results', verify: true, onboard: true });
+  const hotel = {
+    id: 'mobile-hotel', name: 'Mobile Bay Hotel', city: 'Singapore', country: 'Singapore',
+    location: 'Marina Bay', stars: 5, amenities: '["pool"]', min_price: 240,
+    fairworth_score: 87, adjusted_score: 84, availability_status: 'available', rate_freshness: 'fresh',
+    price_details: { provider: 'E2E fixture', currency: 'USD', refundable: true, includes_breakfast: true },
+  };
+  await page.context().addCookies([
+    { name: 'fw_access', value: account.token, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' },
+  ]);
+  await page.addInitScript(user => localStorage.setItem('fw_user', JSON.stringify({ ...user, onboarding_completed: true, email_verified: true })), account.user);
+  await page.route('**/api/hotels/search**', route => route.fulfill({ json: {
+    hotels: [hotel], total: 1, has_more: false, facets: { locations: ['Marina Bay'] },
+  } }));
+  await page.route('**/api/hotels/rates/batch', route => route.fulfill({ json: {
+    hotels: [hotel], checked: 1, available: 1, unavailable_hotel_ids: [],
+  } }));
+  await page.route('**/api/hotels/rates/stream?**', route => route.fulfill({
+    contentType: 'text/event-stream',
+    body: [
+      `event: batch\ndata: ${JSON.stringify({ hotels: [hotel], checked: 1, available: 1, unavailable_hotel_ids: [] })}\n\n`,
+      'event: complete\ndata: {"checked":1,"available":1,"total":1}\n\n',
+    ].join(''),
+  }));
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/results?city=Singapore');
+  const card = page.getByTestId('hotel-card-mobile-hotel');
+  await expect(card).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
+  const layout = await page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    cardRight: document.querySelector('[data-testid="hotel-card-mobile-hotel"]')?.getBoundingClientRect().right || 0,
+  }));
+  expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
+  expect(layout.cardRight).toBeLessThanOrEqual(layout.viewportWidth);
+
+  await page.getByRole('button', { name: 'Filters' }).first().click();
+  const filterClose = page.getByRole('complementary').getByRole('button', { name: 'Close filters' });
+  await expect(filterClose).toBeVisible();
+  await expect(page.getByRole('button', { name: /show 1 hotel/i })).toBeVisible();
+  await page.getByRole('button', { name: /show 1 hotel/i }).click();
+  await expect(filterClose).toBeHidden();
+});
+
 test('real hotel detail response renders without crashing', async ({ page, request }) => {
   const account = await registerAccount(request, { label: 'real-hotel-detail', verify: true, onboard: true });
   await page.context().addCookies([

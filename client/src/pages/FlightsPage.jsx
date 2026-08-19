@@ -376,6 +376,7 @@ export default function FlightsPage() {
   const [passengers, setPassengers] = useState(searchParams.get('passengers') || savedTrip.guests || '1');
   const [cabinClass, setCabinClass] = useState(searchParams.get('cabin_class') || savedTrip.cabin_class || 'business');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [flights, setFlights] = useState([]);
   const [alternativeFlights, setAlternativeFlights] = useState([]);
@@ -606,7 +607,13 @@ export default function FlightsPage() {
                   </span>
                 </div>
               </div>
-              <button className={styles.changeBtn} onClick={() => setSearchOpen(true)}><ChevronDown size={14} /> {t('results_change')}</button>
+              <div className={styles.searchBarRight}>
+                <button type="button" className={styles.mobileFilterBtn} onClick={() => setFiltersOpen(true)}>
+                  <SlidersHorizontal size={15} /> {t('results_filters')}
+                  {activeFiltersCount > 0 && <span>{activeFiltersCount}</span>}
+                </button>
+                <button className={styles.changeBtn} onClick={() => setSearchOpen(true)}><ChevronDown size={14} /> {t('results_change')}</button>
+              </div>
             </>
           ) : (
             <form onSubmit={handleSearch} className={styles.inlineSearchForm}>
@@ -638,7 +645,8 @@ export default function FlightsPage() {
       </div>
 
       <div className={`${styles.layout} ${styles.flightLayout}`}>
-        <aside className={styles.sidebar}>
+        {filtersOpen && <button type="button" className={styles.filterBackdrop} aria-label={l('Close filters', 'Закрыть фильтры')} onClick={() => setFiltersOpen(false)} />}
+        <aside className={`${styles.sidebar} ${filtersOpen ? styles.sidebarOpen : ''}`}>
           <div className={styles.filterCard}>
             <div className={styles.filterHeader}>
               <div className={styles.filterHeaderLeft}>
@@ -646,7 +654,10 @@ export default function FlightsPage() {
                 {t('results_filters')}
                 {activeFiltersCount > 0 && <span className={styles.filterBadge}>{activeFiltersCount}</span>}
               </div>
-              {activeFiltersCount > 0 && <button className={styles.resetBtn} onClick={resetFilters}>{t('results_reset')}</button>}
+              <div className={styles.filterHeaderActions}>
+                {activeFiltersCount > 0 && <button className={styles.resetBtn} onClick={resetFilters}>{t('results_reset')}</button>}
+                <button type="button" className={styles.filterCloseBtn} onClick={() => setFiltersOpen(false)} aria-label={l('Close filters', 'Закрыть фильтры')}><X size={18} /></button>
+              </div>
             </div>
 
             <FilterSection title={t('results_sort')}>
@@ -683,6 +694,9 @@ export default function FlightsPage() {
                 ))}
               </div>
             </FilterSection>
+            <button type="button" className={styles.applyFiltersBtn} onClick={() => setFiltersOpen(false)}>
+              {l(`Show ${flights.length + returnFlights.length} flights`, `Показать ${flights.length + returnFlights.length} перелётов`)}
+            </button>
           </div>
         </aside>
 

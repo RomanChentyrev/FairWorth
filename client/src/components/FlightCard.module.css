@@ -391,3 +391,20 @@
 .selectBtnActive {
   background: var(--green);
 }
+
+@media (max-width: 760px) {
+  .card, .compact, .card:hover { display: flex; flex-direction: column; transform: none; border-radius: 8px; }
+  .timeline, .compact .timeline { min-height: 108px; padding: 12px; }
+  .airlineMark { width: 36px; height: 36px; margin-bottom: 4px; }
+  .body, .compact .body { padding: 14px 12px; gap: 12px; }
+  .topRow { align-items: stretch; flex-direction: column-reverse; gap: 12px; }
+  .scoreBlock { width: auto; flex: none; align-items: center; flex-direction: row; justify-content: flex-start; gap: 8px; text-align: start; }
+  .route, .compact .route { grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr); gap: 7px; }
+  .time, .compact .time { font-size: 21px; }
+  .city { max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scoreDetails { font-size: 12px; }
+  .scoreGrid { grid-template-columns: minmax(0, 1fr); }
+  .bottomRow { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .priceBlock { justify-content: flex-start; }
+  .fareOption, .selectBtn { min-height: 44px; }
+}

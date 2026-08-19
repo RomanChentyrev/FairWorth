@@ -25,7 +25,11 @@ export default function DemoBookingPage() {
   const grandTotal = hotelTotal + flightsTotal;
 
   useEffect(() => {
-    usersApi.getMe().then(response => setContact(current => ({ ...current, email: response.data.user.email || '', phone: response.data.user.phone || '' }))).catch(() => {});
+    usersApi.getMe().then(response => setContact(current => ({
+      ...current,
+      email: current.email || response.data.user.email || '',
+      phone: current.phone || response.data.user.phone || '',
+    }))).catch(() => {});
   }, []);
 
   const updateTraveler = (index, key, value) => setTravelers(current => current.map((traveler, itemIndex) => itemIndex === index ? { ...traveler, [key]: value } : traveler));

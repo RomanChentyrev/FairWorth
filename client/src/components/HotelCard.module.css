@@ -207,3 +207,21 @@
   border-color: var(--green-border);
 }
 .tripBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+@media (max-width: 760px) {
+  .card, .card:hover { display: flex; flex-direction: column; transform: none; border-radius: 8px; }
+  .imgArea { min-height: 190px; background-position: center; }
+  .body { padding: 14px 12px; gap: 11px; }
+  .topRow { gap: 8px; }
+  .name { font-size: 18px; white-space: normal; line-height: 1.2; }
+  .location { align-items: flex-start; }
+  .bottomRow { align-items: stretch; flex-direction: column; gap: 12px; }
+  .price { font-size: 24px; }
+  .actions { display: grid; grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr); justify-content: stretch; }
+  .actions > button { min-height: 44px; justify-content: center; }
+  .hideBtn { width: 44px; height: 44px; }
+  .compareBtn, .viewBtn, .tripBtn { padding-inline: 8px; }
+  .hideOverlay { align-items: end; padding: 0; }
+  .hideMenu { width: 100%; padding: 18px 14px calc(18px + env(safe-area-inset-bottom)); border-radius: 8px 8px 0 0; }
+  .hideReasons button { min-height: 46px; }
+}
