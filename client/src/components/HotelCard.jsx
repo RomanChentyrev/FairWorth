@@ -12,11 +12,11 @@ import { formatAmount } from '../utils/money';
 import { parseStringList } from '../utils/collections';
 
 const HOTEL_GRADIENTS = [
-  'linear-gradient(135deg, #1a3a5c 0%, #2d6b8a 100%)',
-  'linear-gradient(135deg, #2a4a2e 0%, #3a6a3e 100%)',
-  'linear-gradient(135deg, #4a2a1a 0%, #6a3a1a 100%)',
-  'linear-gradient(135deg, #2a1a4a 0%, #3a2a6a 100%)',
-  'linear-gradient(135deg, #1a3050 0%, #0a4060 100%)',
+  '#315f70',
+  '#2f665f',
+  '#705647',
+  '#4f5d78',
+  '#29536b',
 ];
 function getGradient(id) {
   let hash = 0;

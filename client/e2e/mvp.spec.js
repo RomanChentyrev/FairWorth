@@ -131,6 +131,62 @@ test('achievements map saves a city and places its pin', async ({ page, request 
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
 });
 
+test('profile preferences stay interactive and responsive', async ({ page, request }) => {
+  const account = await registerAccount(request, { label: 'profile-design', verify: true, onboard: true });
+  await page.context().addCookies([
+    { name: 'fw_access', value: account.token, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' },
+    { name: 'fw_csrf', value: 'e2e-profile-csrf', domain: '127.0.0.1', path: '/', httpOnly: false, sameSite: 'Lax' },
+  ]);
+  await page.addInitScript(user => localStorage.setItem('fw_user', JSON.stringify({ ...user, onboarding_completed: true, email_verified: true })), account.user);
+
+  await page.goto('/preferences');
+  await expect(page.getByRole('heading', { name: 'Your travel profile' })).toBeVisible();
+  await expect(page.getByText('Profile readiness')).toBeVisible();
+  await page.locator('nav').getByRole('button', { name: 'Preferences', exact: true }).click();
+  await expect(page.getByText(/signals selected/)).toBeVisible();
+  await expect(page.getByRole('main').locator('summary').filter({ hasText: 'Hotels' })).toBeVisible();
+  const fourStars = page.getByRole('button', { name: /4 stars/i });
+  await fourStars.click();
+  await expect(fourStars).toHaveAttribute('aria-pressed', 'true');
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.getByRole('heading', { name: 'Your travel profile' })).toBeVisible();
+  const dimensions = await page.evaluate(() => ({ viewport: window.innerWidth, content: document.documentElement.scrollWidth }));
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+});
+
+test('Insights renders a live offer as a responsive visual card', async ({ page, request }) => {
+  const account = await registerAccount(request, { label: 'insights', verify: true, onboard: true });
+  await page.context().addCookies([
+    { name: 'fw_access', value: account.token, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' },
+    { name: 'fw_csrf', value: 'e2e-insights-csrf', domain: '127.0.0.1', path: '/', httpOnly: false, sameSite: 'Lax' },
+  ]);
+  await page.addInitScript(user => localStorage.setItem('fw_user', JSON.stringify({ ...user, onboarding_completed: true, email_verified: true })), account.user);
+  await page.route('**/api/hotels/insights', route => route.fulfill({
+    json: {
+      sections: [{
+        key: 'hot',
+        offers: [{
+          city: 'Paris', country: 'France', destination_code: 'PAR', min_price: 305,
+          package_price: 1420, avg_rating: 4.7, hotel_count: 126, discount_percent: 18,
+          has_hotel_price: true, nights: 4, ai_reason: 'Strong current value with a verified hotel price.',
+        }],
+      }],
+      refreshing: false,
+    },
+  }));
+
+  await page.goto('/insights');
+  const offer = page.getByRole('button', { name: /Paris/ });
+  await expect(offer).toBeVisible();
+  await expect(offer).toContainText('$1,420');
+  await expect(offer).toHaveCSS('background-color', 'rgb(17, 40, 63)');
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  const dimensions = await page.evaluate(() => ({ viewport: window.innerWidth, content: document.documentElement.scrollWidth }));
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+});
+
 test('AI Mode opens as a separate conversational workspace', async ({ page, request }) => {
   const account = await registerAccount(request, { label: 'ai-mode', verify: true, onboard: true });
   const conversation = {
@@ -525,12 +581,12 @@ test('registration remains usable on a mobile viewport', async ({ page }) => {
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
 });
 
-test('login uses the light Fairworth layout on desktop and mobile', async ({ page }) => {
+test('login uses the light Tripalora layout on desktop and mobile', async ({ page }) => {
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   await expect(page.getByText('AI remembers your hotel and flight preferences')).toHaveCount(0);
   const background = await page.locator('main').evaluate(main => getComputedStyle(main.parentElement).backgroundColor);
-  expect(background).toBe('rgb(250, 250, 250)');
+  expect(background).toBe('rgb(244, 248, 250)');
 
   await page.setViewportSize({ width: 375, height: 812 });
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();

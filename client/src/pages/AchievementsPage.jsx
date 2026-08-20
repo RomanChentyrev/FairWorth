@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from 'react-simple-maps';
-import { Check, Globe2, MapPin, Plus, Search, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ComposableMap, Geographies, Geography, Marker, Sphere, ZoomableGroup } from 'react-simple-maps';
+import { ArrowRight, Check, Compass, Globe2, MapPin, Plus, Search, Trash2, Trophy, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import worldMap from 'world-atlas/countries-110m.json';
 import { achievementsApi } from '../api';
 import { useLang } from '../i18n/LanguageContext';
 import styles from './AchievementsPage.module.css';
+import { defaultTravelDates } from '../utils/dates';
 
 function normalized(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -16,6 +18,7 @@ function flag(code) {
 
 export default function AchievementsPage() {
   const { lang , l} = useLang();
+  const navigate = useNavigate();
   const [visits, setVisits] = useState([]);
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -71,6 +74,13 @@ export default function AchievementsPage() {
     countries: new Set(cityVisits.map(visit => visit.country_code)).size,
     cities: cityVisits.length,
   }), [cityVisits]);
+  const nextMilestone = stats.cities < 5 ? 5 : Math.ceil((stats.cities + 1) / 5) * 5;
+  const milestoneProgress = Math.min(100, Math.round((stats.cities / nextMilestone) * 100));
+  const badges = [
+    { key: 'first', icon: MapPin, unlocked: stats.cities >= 1, label: l('First pin', 'Первая отметка') },
+    { key: 'countries', icon: Compass, unlocked: stats.countries >= 3, label: l('Border crosser', 'Через границы') },
+    { key: 'cities', icon: Trophy, unlocked: stats.cities >= 10, label: l('City collector', 'Коллекционер городов') },
+  ];
 
   const choosePlace = place => {
     setSelected(place);
@@ -113,6 +123,10 @@ export default function AchievementsPage() {
 
   const resetMap = () => setPosition({ coordinates: [0, 14], zoom: 1 });
   const markerScale = compactMap ? 1.8 : 1;
+  const exploreHotels = visit => {
+    const dates = defaultTravelDates();
+    navigate(`/results?city=${encodeURIComponent(visit.city_name)}&check_in=${dates.check_in}&check_out=${dates.check_out}&guests=2&trip_purpose=leisure`);
+  };
 
   return (
     <main className={styles.page}>
@@ -125,8 +139,28 @@ export default function AchievementsPage() {
         <div className={styles.stats} aria-label={l('Travel statistics', 'Статистика путешествий')}>
           <div><strong>{stats.countries}</strong><span>{l('countries', 'стран')}</span></div>
           <div><strong>{stats.cities}</strong><span>{l('cities', 'городов')}</span></div>
+          <div className={styles.milestoneStat}>
+            <strong>{nextMilestone}</strong><span>{l('next milestone', 'следующая цель')}</span>
+          </div>
         </div>
       </header>
+
+      <section className={styles.progressBand} aria-label={l('Travel progress', 'Прогресс путешествий')}>
+        <div className={styles.progressCopy}>
+          <span><Trophy size={16} /> {l('Your next travel milestone', 'Следующая цель путешествий')}</span>
+          <strong>{stats.cities} / {nextMilestone} {l('cities pinned', 'городов отмечено')}</strong>
+        </div>
+        <div className={styles.progressTrack} aria-valuemin="0" aria-valuemax={nextMilestone} aria-valuenow={stats.cities} role="progressbar">
+          <span style={{ width: `${milestoneProgress}%` }} />
+        </div>
+        <div className={styles.badges}>
+          {badges.map(({ key, icon: Icon, unlocked, label }) => (
+            <span key={key} className={`${styles.achievementBadge} ${unlocked ? styles.badgeUnlocked : ''}`} title={label}>
+              <Icon size={15} /> <span>{label}</span>
+            </span>
+          ))}
+        </div>
+      </section>
 
       <section className={styles.workspace}>
         <aside className={styles.sidebar}>
@@ -192,17 +226,23 @@ export default function AchievementsPage() {
           </div>
           <ComposableMap projection="geoMercator" projectionConfig={{ center: [0, 12], scale: 128 }} className={styles.map} aria-label={l('Map of visited places', 'Карта посещённых мест')}>
             <ZoomableGroup center={position.coordinates} zoom={position.zoom} onMoveEnd={setPosition} minZoom={1} maxZoom={6}>
+              <Sphere id="tripalora-world-sphere" className={styles.sphere} />
               <Geographies geography={worldMap}>
                 {({ geographies }) => geographies
                   .filter(geography => geography.properties?.name !== 'Antarctica')
-                  .map(geography => (
-                    <Geography key={geography.rsmKey} geography={geography} tabIndex={-1} className={styles.country} />
+                  .map((geography, index) => (
+                    <Geography
+                      key={geography.rsmKey}
+                      geography={geography}
+                      tabIndex={-1}
+                      className={`${styles.country} ${styles[`countryTone${index % 5}`]}`}
+                    />
                   ))}
               </Geographies>
               {cityVisits.map(visit => (
                 <Marker key={visit.id} coordinates={[visit.longitude, visit.latitude]} onClick={() => setActiveVisit(visit)}>
                   <g
-                    className={styles.marker}
+                    className={`${styles.marker} ${activeVisit?.id === visit.id ? styles.markerActive : ''}`}
                     role="button"
                     tabIndex="0"
                     aria-label={`${visit.city_name}, ${visit.country_name}`}
@@ -229,6 +269,9 @@ export default function AchievementsPage() {
               <button type="button" className={styles.popupClose} onClick={() => setActiveVisit(null)} aria-label={l('Close', 'Закрыть')}><X size={15} /></button>
               <span className={styles.popupFlag}>{flag(activeVisit.country_code)}</span>
               <div><strong>{activeVisit.city_name}</strong><small>{activeVisit.country_name}</small></div>
+              <button type="button" className={styles.exploreButton} onClick={() => exploreHotels(activeVisit)}>
+                {l('Hotels', 'Отели')} <ArrowRight size={15} />
+              </button>
               <button type="button" className={styles.deleteButton} onClick={() => removeVisit(activeVisit)} title={l('Remove visit', 'Удалить отметку')}><Trash2 size={16} /></button>
             </div>
           )}

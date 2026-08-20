@@ -16,8 +16,8 @@
 }
 
 .recommended {
-  border-color: var(--gold-border);
-  box-shadow: 0 0 0 1px var(--gold-border), var(--shadow-md);
+  border-color: var(--green-border);
+  box-shadow: 0 0 0 1px var(--green-border), var(--shadow-md);
 }
 
 .compact {
@@ -64,7 +64,7 @@
 .timeline {
   min-height: 164px;
   padding: 14px;
-  background: linear-gradient(135deg, #1A2B4A 0%, #285C74 100%);
+  background: var(--navy);
   color: #fff;
   display: flex;
   flex-direction: column;
@@ -77,7 +77,7 @@
   position: absolute;
   top: 12px;
   left: 12px;
-  background: var(--gold);
+  background: var(--coral);
   color: #fff;
   font-size: 10px;
   font-weight: 700;

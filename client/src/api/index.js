@@ -22,7 +22,10 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(response => response, async error => {
   const status = error.response?.status;
   const original = error.config;
-  if (status === 401 && original && !original._sessionRetry && !String(original.url).includes('/auth/refresh')) {
+  const requestUrl = String(original?.url || '');
+  const isGuestSessionProbe = requestUrl.includes('/auth/me');
+  if (status === 401 && isGuestSessionProbe) return Promise.reject(error);
+  if (status === 401 && original && !original._sessionRetry && !requestUrl.includes('/auth/refresh')) {
     original._sessionRetry = true;
     try {
       await api.post('/auth/refresh');

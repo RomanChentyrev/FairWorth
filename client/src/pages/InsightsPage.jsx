@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Flame, Sparkles, Star, TrendingUp } from 'lucide-react';
+import { ArrowRight, Flame, MapPin, Sparkles, Star, TrendingUp, TriangleAlert } from 'lucide-react';
 import { hotelsApi } from '../api';
 import { useLang } from '../i18n/LanguageContext';
 import styles from './InsightsPage.module.css';
@@ -8,6 +8,7 @@ import useCapabilities from '../hooks/useCapabilities';
 import ProviderUnavailable from '../components/ProviderUnavailable';
 import { defaultTravelDates } from '../utils/dates';
 import { formatAmount } from '../utils/money';
+import { destinationVisual } from '../utils/destinationVisuals';
 
 const SECTION_ICONS = {
   hot: Flame,
@@ -32,6 +33,7 @@ function OfferCard({ offer, sectionKey }) {
   const hasHotelPrice = offer.has_hotel_price !== false && Number(offer.min_price) > 0;
   const departureDate = offer.departure_date || dates.checkIn;
   const nights = offer.nights || 7;
+  const visual = destinationVisual(offer.city, lang);
 
   const openOffer = () => {
     if (hasHotelPrice) {
@@ -44,45 +46,46 @@ function OfferCard({ offer, sectionKey }) {
   };
 
   return (
-    <button type="button" className={styles.offerCard} onClick={openOffer}>
+    <button
+      type="button"
+      className={styles.offerCard}
+      onClick={openOffer}
+      style={{ '--offer-image': `url("${visual.image}")` }}
+    >
+      <span className={styles.offerShade} aria-hidden="true" />
       <div className={styles.offerTop}>
         <span className={`${styles.badge} ${styles[`badge_${sectionKey}`]}`}>
           {t(`insights_badge_${sectionKey}`)}
         </span>
-        <ArrowRight size={16} className={styles.arrow} />
+        <span className={styles.arrow}><ArrowRight size={18} /></span>
       </div>
 
-      <div>
+      <div className={styles.offerContent}>
+        <div className={styles.locationLine}><MapPin size={13} />{offer.country || offer.destination_code}</div>
         <h3 className={styles.city}>{offer.city}</h3>
-        <div className={styles.country}>{offer.country}</div>
-      </div>
 
-      <div className={styles.stats}>
-        <span><Star size={12} fill="currentColor" /> {offer.avg_rating}</span>
-        <span>{hasHotelPrice ? `${offer.hotel_count} ${t('home_popular_hotels')}` : (offer.destination_code || 'Live route')}</span>
-        {offer.flight_total && (
-          <span>
-            ${formatAmount(offer.flight_total, lang)} {offer.has_round_trip ? 'RT' : 'OW'}
-          </span>
-        )}
-        <span>{offer.discount_percent}% {t('insights_discount')}</span>
-      </div>
-
-      <div className={styles.reason}>{offer.ai_reason}</div>
-
-      <div className={styles.priceRow}>
-        <div>
-          <span className={styles.priceLabel}>
-            {hasHotelPrice
-              ? `${t('insights_package_from')} · ${nights} ${l('nights', 'ночей')}`
-              : (l('Flights from', 'Перелеты от'))}
-          </span>
-          <strong>${formatAmount(offer.package_price, lang)}</strong>
+        <div className={styles.stats}>
+          <span><Star size={12} fill="currentColor" /> {offer.avg_rating}</span>
+          <span>{hasHotelPrice ? `${offer.hotel_count} ${t('home_popular_hotels')}` : (offer.destination_code || 'Live route')}</span>
+          <span>{offer.discount_percent}% {t('insights_discount')}</span>
         </div>
-        <div className={styles.nightly}>
-          {hasHotelPrice
-            ? `${t('card_from')} $${formatAmount(offer.min_price, lang)}${t('card_per_night')}`
-            : (l('Hotels soon', 'Отели скоро'))}
+
+        <div className={styles.reason}>{offer.ai_reason}</div>
+
+        <div className={styles.priceRow}>
+          <div>
+            <span className={styles.priceLabel}>
+              {hasHotelPrice
+                ? `${t('insights_package_from')} · ${nights} ${l('nights', 'ночей')}`
+                : (l('Flights from', 'Перелеты от'))}
+            </span>
+            <strong>${formatAmount(offer.package_price, lang)}</strong>
+          </div>
+          <div className={styles.nightly}>
+            {hasHotelPrice
+              ? `${t('card_from')} $${formatAmount(offer.min_price, lang)}${t('card_per_night')}`
+              : (l('Hotels soon', 'Отели скоро'))}
+          </div>
         </div>
       </div>
     </button>
@@ -145,7 +148,7 @@ export default function InsightsPage() {
   return (
     <div className={styles.page}>
       <section className={styles.hero}>
-        <div className={styles.eyebrow}>{t('insights_eyebrow')}</div>
+        <div className={styles.eyebrow}><Sparkles size={14} /> {t('insights_eyebrow')}</div>
         <h1>{t('insights_title')}</h1>
         <p>{t('insights_sub')}</p>
       </section>
@@ -165,9 +168,9 @@ export default function InsightsPage() {
         </div>
       )}
 
-      {error && <div className={styles.stateCard}><div className={styles.stateIcon}>⚠️</div><h2>{l('Insights are temporarily unavailable', 'Insights временно недоступны')}</h2><p>{error}</p><button onClick={retry}>{l('Try again', 'Попробовать снова')}</button></div>}
+      {error && <div className={styles.stateCard}><div className={styles.stateIcon}><TriangleAlert size={28} /></div><h2>{l('Insights are temporarily unavailable', 'Insights временно недоступны')}</h2><p>{error}</p><button onClick={retry}>{l('Try again', 'Попробовать снова')}</button></div>}
 
-      {!loading && !error && empty && <div className={styles.stateCard}><div className={styles.stateIcon}>✨</div><h2>{l('No insights available yet', 'Пока нет доступных предложений')}</h2><p>{l('We did not receive enough fresh supplier data. Try refreshing the calculation again shortly.', 'Мы не получили достаточно свежих данных от поставщиков. Попробуйте обновить расчёт немного позже.')}</p><button onClick={retry}>{l('Refresh Insights', 'Обновить Insights')}</button></div>}
+      {!loading && !error && empty && <div className={styles.stateCard}><div className={styles.stateIcon}><Sparkles size={28} /></div><h2>{l('No insights available yet', 'Пока нет доступных предложений')}</h2><p>{l('We did not receive enough fresh supplier data. Try refreshing the calculation again shortly.', 'Мы не получили достаточно свежих данных от поставщиков. Попробуйте обновить расчёт немного позже.')}</p><button onClick={retry}>{l('Refresh Insights', 'Обновить Insights')}</button></div>}
 
       {!loading && !error && !empty && (
         <div className={styles.sections}>

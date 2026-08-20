@@ -8,6 +8,7 @@ import {
   Map,
   Menu,
   Plane,
+  Route,
   SlidersHorizontal,
   Sparkles,
   X,
@@ -73,9 +74,15 @@ export default function Navbar({ compareCount, user, onLogout }) {
   return (
     <header className={styles.nav}>
       <div className={styles.inner}>
-        <Link to="/" className={styles.logo}>Tripalora</Link>
+        <Link to="/" className={styles.logo} aria-label={l('Tripalora home', 'Tripalora — главная')}>
+          <span className={styles.logoMark}><Route size={16} aria-hidden="true" /></span>
+          <span>Tripalora</span>
+        </Link>
 
         <nav className={styles.links} aria-label={l('Primary navigation', 'Основная навигация')}>
+          <Link to="/" className={`${styles.link} ${location.pathname === '/' ? styles.active : ''}`}>
+            {l('Plan a trip', 'Спланировать')}
+          </Link>
           <Link to={hotelsLink} className={`${styles.link} ${location.pathname === '/results' ? styles.active : ''}`}>
             {t('nav_hotels')}
           </Link>

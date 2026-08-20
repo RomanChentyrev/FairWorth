@@ -1,4 +1,4 @@
-.page { padding-top: 58px; min-height: 100vh; background: var(--bg); overflow-x: clip; }
+.page { padding-top: 64px; min-height: 100vh; background: var(--bg); overflow-x: clip; }
 
 .hero {
   min-height: 340px;
@@ -123,7 +123,7 @@
 .tabsBar {
   background: #fff;
   border-bottom: 1px solid var(--border);
-  position: sticky; top: 58px; z-index: 10;
+  position: sticky; top: 64px; z-index: 10;
 }
 .tabsInner {
   max-width: 1120px; margin: 0 auto; padding: 0 24px;
@@ -433,7 +433,7 @@
 }
 
 @media (max-width: 600px) {
-  .page { padding-top: 56px; padding-bottom: 80px; }
+  .page { padding-top: 60px; padding-bottom: 80px; }
   .hero { min-height: 360px; }
   .heroContent { padding: 64px 14px 18px; }
   .heroTitle { font-size: 25px; }
@@ -445,7 +445,7 @@
   .aiCardHeader { flex-wrap: wrap; }
   .runAiBtn { margin-left: 0; }
   .bookingCard, .aiCard, .descCard, .reviewsCard, .roomsSection { padding: 16px 12px; border-radius: 8px; }
-  .tabs { top: 56px; }
+  .tabs { top: 60px; }
   .tabsInner { gap: 18px; }
   .tabsInner a { min-height: 44px; display: inline-flex; align-items: center; white-space: nowrap; }
   .reviewRow { grid-template-columns: 82px minmax(0, 1fr) 30px; gap: 8px; }

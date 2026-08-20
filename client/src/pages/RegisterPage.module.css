@@ -1,12 +1,13 @@
 .page { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; }
 .registerPage { display: block; min-height: 100vh; background: var(--bg); }
 .registerHeader { min-height: 72px; padding: 0 48px; border-bottom: 1px solid var(--border); background: var(--bg-card); display: flex; align-items: center; justify-content: space-between; }
-.registerLogo { font-family: 'Playfair Display', serif; font-size: 25px; font-weight: 700; color: var(--navy); }
+.registerLogo { display: inline-flex; align-items: center; gap: 10px; font-family: 'Manrope', sans-serif; font-size: 23px; font-weight: 800; color: var(--navy); }
+.registerLogo span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--coral); }
 .langBtn { min-width: 42px; min-height: 36px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--navy); font-size: 12px; font-weight: 700; }
 .langBtn:hover { background: var(--bg-subtle); }
 .registerMain { min-height: calc(100vh - 72px); display: flex; justify-content: center; padding: 52px 24px 72px; }
 .loginMain { align-items: center; padding-top: 48px; padding-bottom: 96px; }
-.registerPage .formWrap { max-width: 460px; }
+.registerPage .formWrap { max-width: 480px; padding: 28px; border: 1px solid var(--border); border-radius: 8px; background: #fff; box-shadow: var(--shadow-md); }
 .registerPage .formTitle { font-size: 34px; }
 .registerPage .formHeader { margin-bottom: 30px; }
 .left { background: #1A2B4A; display: flex; align-items: center; justify-content: center; padding: 60px 48px; position: sticky; top: 0; height: 100vh; }
@@ -26,8 +27,8 @@
 .form { display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0; color: #9AA5B4; }
-.input { width: 100%; padding: 11px 14px; border: 1.5px solid #E2E8F0; border-radius: 8px; font-size: 15px; color: #1A2B4A; background: #fff; transition: border-color 0.15s, box-shadow 0.15s; }
-.input:focus { border-color: #1A2B4A; box-shadow: 0 0 0 3px rgba(26,43,74,0.08); outline: none; }
+.input { width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 15px; color: var(--navy); background: #f9fbfc; transition: border-color 0.15s, box-shadow 0.15s; }
+.input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(8,127,115,.12); outline: none; }
 .input::placeholder { color: #C0C8D4; }
 .passwordWrap { position: relative; }
 .passwordWrap .input { padding-right: 44px; }
@@ -36,8 +37,8 @@
 .consent input { width: 15px; height: 15px; margin-top: 2px; accent-color: var(--navy); }
 .consent a { color: var(--navy); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .error { padding: 10px 14px; background: #FFF5F5; border: 1px solid #FEB2B2; border-radius: 8px; font-size: 13px; color: #C53030; }
-.submitBtn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 13px; background: #1A2B4A; color: #fff; border-radius: 10px; font-size: 15px; font-weight: 700; margin-top: 4px; transition: background 0.15s; }
-.submitBtn:hover:not(:disabled) { background: #2D4470; }
+.submitBtn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 13px; background: var(--coral); color: #fff; border-radius: 6px; font-size: 15px; font-weight: 800; margin-top: 4px; transition: background 0.15s, transform .15s; }
+.submitBtn:hover:not(:disabled) { background: var(--coral-dark); transform: translateY(-1px); }
 .submitBtn:disabled { opacity: 0.65; cursor: not-allowed; }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

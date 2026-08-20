@@ -18,8 +18,8 @@
 }
 
 .card.recommended {
-  border-color: var(--gold-border);
-  box-shadow: 0 0 0 1px var(--gold-border), var(--shadow-md);
+  border-color: var(--green-border);
+  box-shadow: 0 0 0 1px var(--green-border), var(--shadow-md);
 }
 
 .imgArea {
@@ -33,7 +33,7 @@
 
 .recBadge {
   display: inline-block;
-  background: var(--gold);
+  background: var(--coral);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -69,7 +69,8 @@
 
 .name {
   font-size: 16px;
-  font-weight: 600;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 800;
   color: var(--navy);
   white-space: nowrap;
   overflow: hidden;
@@ -113,7 +114,7 @@
 
 .priceBlock { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
 .priceLabel { font-size: 11px; color: var(--text-muted); }
-.price { font-size: 22px; font-weight: 700; color: var(--navy); }
+.price { font: 800 22px 'Manrope', sans-serif; color: var(--navy); }
 .priceNote { font-size: 11px; color: var(--text-muted); }
 .liveBadge {
   padding: 2px 6px;
@@ -185,11 +186,11 @@
   border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 600;
-  background: var(--navy);
+  background: var(--coral);
   color: #fff;
   transition: background 0.15s;
 }
-.viewBtn:hover { background: var(--navy-mid); }
+.viewBtn:hover { background: var(--coral-dark); }
 
 .tripBtn {
   padding: 7px 13px;

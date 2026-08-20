@@ -74,9 +74,9 @@ function HotelMap({ hotels, hoveredId, checkIn, checkOut, localize }) {
       const markerContent = document.createElement('div');
       markerContent.textContent = price;
       Object.assign(markerContent.style, {
-        background: isHovered ? '#1A2B4A' : '#fff', color: isHovered ? '#fff' : '#1A2B4A',
-        border: '2px solid #1A2B4A', borderRadius: '20px', padding: '3px 7px', fontSize: '11px',
-        fontWeight: '700', fontFamily: 'Inter, sans-serif', boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+        background: isHovered ? '#11283F' : '#fff', color: isHovered ? '#fff' : '#11283F',
+        border: '2px solid #11283F', borderRadius: '20px', padding: '3px 7px', fontSize: '11px',
+        fontWeight: '700', fontFamily: 'DM Sans, sans-serif', boxShadow: '0 2px 6px rgba(17,40,63,0.18)',
         whiteSpace: 'nowrap', cursor: 'pointer',
       });
       const icon = L.divIcon({

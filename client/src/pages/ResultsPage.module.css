@@ -1,4 +1,4 @@
-.page { padding-top: 58px; min-height: 100vh; background: var(--bg); }
+.page { padding-top: 64px; min-height: 100vh; background: var(--bg); }
 .hotelResultsPage {
   height: 100vh;
   overflow: hidden;
@@ -17,7 +17,7 @@
   border-bottom: 1px solid var(--border);
   padding: 12px 0;
   position: sticky;
-  top: 58px;
+  top: 64px;
   z-index: 50;
 }
 .searchBarInner {
@@ -70,7 +70,7 @@
   display: flex; align-items: center; gap: 0; flex: 1;
   background: var(--bg-subtle);
   border: 1.5px solid var(--border);
-  border-radius: 12px; padding: 4px; overflow: hidden;
+  border-radius: 8px; padding: 4px; overflow: hidden;
 }
 .inlineField { display: flex; flex-direction: column; gap: 2px; padding: 6px 14px; flex: 1; min-width: 0; }
 .inlineLabel { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
@@ -78,11 +78,11 @@
 .inlineDivider { width: 1px; height: 32px; background: var(--border); flex-shrink: 0; }
 .inlineSearchBtn {
   display: flex; align-items: center; gap: 6px;
-  padding: 9px 18px; background: var(--navy); color: #fff;
+  padding: 9px 18px; background: var(--coral); color: #fff;
   border-radius: 9px; font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
   transition: background 0.15s;
 }
-.inlineSearchBtn:hover { background: var(--navy-mid); }
+.inlineSearchBtn:hover { background: var(--coral-dark); }
 .inlineCancelBtn {
   display: flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; border-radius: 7px;
@@ -551,9 +551,9 @@
 }
 
 @media (max-width: 760px) {
-  .page { padding-top: 56px; padding-bottom: 0; }
+  .page { padding-top: 60px; padding-bottom: 0; }
   .hotelResultsPage { min-height: calc(100dvh - 56px); }
-  .searchBar { top: 56px; padding: 8px 0; }
+  .searchBar { top: 60px; padding: 8px 0; }
   .searchBarInner { align-items: stretch; flex-direction: column; gap: 8px; padding: 0 12px; }
   .searchPills { min-width: 0; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
   .searchPills::-webkit-scrollbar { display: none; }

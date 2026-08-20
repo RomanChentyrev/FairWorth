@@ -124,8 +124,17 @@ export default function AiModePage() {
   const [toolStatus, setToolStatus] = useState('');
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [contextOpen, setContextOpen] = useState(true);
+  const [contextOpen, setContextOpen] = useState(() => typeof window === 'undefined' || !window.matchMedia('(max-width: 760px)').matches);
   const timelineRef = useRef(null);
+
+  useEffect(() => {
+    const compactViewport = window.matchMedia('(max-width: 760px)');
+    const handleViewportChange = event => {
+      if (event.matches) setContextOpen(false);
+    };
+    compactViewport.addEventListener('change', handleViewportChange);
+    return () => compactViewport.removeEventListener('change', handleViewportChange);
+  }, []);
 
   const context = activeConversation?.search_context || {};
   const sortedConversations = useMemo(() => [...conversations].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)), [conversations]);
@@ -339,15 +348,17 @@ export default function AiModePage() {
     context.budget_amount && { icon: CircleDollarSign, value: `${formatAmount(context.budget_amount, lang)} ${context.currency || ''}` },
   ].filter(Boolean);
 
-  return <main className={styles.page}>
+  return <main className={`${styles.page} ${contextOpen ? '' : styles.contextHidden}`}>
     <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ''}`}>
-      <div className={styles.sidebarHeader}><div><Sparkles size={17} /><strong>AI Mode</strong></div><button type="button" onClick={() => setSidebarOpen(false)} className={styles.mobileClose}><X size={18} /></button></div>
+      <div className={styles.sidebarHeader}><div><span className={styles.sidebarMark}><Sparkles size={17} /></span><strong>AI Mode</strong></div><button type="button" aria-label="Close conversations" onClick={() => setSidebarOpen(false)} className={styles.mobileClose}><X size={18} /></button></div>
       <button className={styles.newChat} type="button" onClick={newConversation}><MessageSquarePlus size={16} />{t('ai_new_chat')}</button>
       <div className={styles.historyLabel}>{t('ai_history')}</div>
-      <div className={styles.historyList}>{sortedConversations.map(conversation => <button type="button" key={conversation.id} className={`${styles.historyItem} ${conversation.id === activeConversation?.id ? styles.historyActive : ''}`} onClick={() => openConversation(conversation.id)}>
-        <span><strong>{conversation.title}</strong><small>{new Date(conversation.updated_at).toLocaleDateString(lang, { month: 'short', day: 'numeric' })}</small></span>
-        <Trash2 size={13} onClick={event => deleteConversation(event, conversation.id)} />
-      </button>)}</div>
+      <div className={styles.historyList}>{sortedConversations.map(conversation => <div key={conversation.id} className={`${styles.historyEntry} ${conversation.id === activeConversation?.id ? styles.historyActive : ''}`}>
+        <button type="button" className={styles.historyItem} onClick={() => openConversation(conversation.id)}>
+          <span><strong>{conversation.title}</strong><small>{new Date(conversation.updated_at).toLocaleDateString(lang, { month: 'short', day: 'numeric' })}</small></span>
+        </button>
+        <button type="button" className={styles.historyDelete} aria-label={`Delete ${conversation.title}`} onClick={event => deleteConversation(event, conversation.id)}><Trash2 size={13} /></button>
+      </div>)}</div>
       <div className={styles.sidebarFoot}><span className={styles.onlineDot} />{t('ai_grounded')}</div>
     </aside>
 
@@ -355,9 +366,10 @@ export default function AiModePage() {
 
     <section className={styles.workspace}>
       <header className={styles.workspaceHeader}>
-        <button className={styles.mobileMenu} type="button" onClick={() => setSidebarOpen(true)}><Menu size={18} /></button>
+        <button className={styles.mobileMenu} type="button" aria-label="Open conversations" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}><Menu size={18} /></button>
         <div><span><Sparkles size={15} /> AI Travel Assistant</span><small>{t('ai_header_subtitle')}</small></div>
-        <button className={styles.contextToggle} type="button" onClick={() => setContextOpen(value => !value)}><PanelRightClose size={17} /></button>
+        <span className={styles.assistantStatus}><span className={styles.onlineDot} />{t('ai_grounded')}</span>
+        <button className={styles.contextToggle} type="button" aria-label={t('ai_trip_context')} aria-expanded={contextOpen} onClick={() => setContextOpen(value => !value)}><PanelRightClose size={17} /></button>
       </header>
 
       <div className={`${styles.contextBar} ${contextItems.length === 0 ? styles.contextBarEmpty : ''}`} aria-hidden={contextItems.length === 0 || undefined}>
@@ -392,8 +404,8 @@ export default function AiModePage() {
       </div>
     </section>
 
-    <aside className={`${styles.contextPanel} ${contextOpen ? '' : styles.contextClosed}`}>
-      <div className={styles.contextHeader}><div><strong>{t('ai_trip_context')}</strong><span>{t('ai_live_context')}</span></div><button type="button" onClick={() => setContextOpen(false)}><X size={16} /></button></div>
+    <aside className={`${styles.contextPanel} ${contextOpen ? '' : styles.contextClosed}`} aria-hidden={!contextOpen || undefined}>
+      <div className={styles.contextHeader}><div><span className={styles.contextIcon}><Route size={17} /></span><span><strong>{t('ai_trip_context')}</strong><small>{t('ai_live_context')}</small></span></div><button type="button" aria-label="Close trip context" onClick={() => setContextOpen(false)}><X size={16} /></button></div>
       <section className={styles.contextSection}><h2>{t('ai_active_request')}</h2>{contextItems.length ? <dl>{context.origin && <><dt>{t('home_from')}</dt><dd>{context.origin}</dd></>}{context.destination && <><dt>{t('home_to')}</dt><dd>{context.destination}</dd></>}{context.date_start && <><dt>{t('results_dates')}</dt><dd>{readableDate(context.date_start, lang)}{context.date_end ? ` – ${readableDate(context.date_end, lang)}` : ''}</dd></>}{context.travelers && <><dt>{t('results_guests')}</dt><dd>{context.travelers}</dd></>}</dl> : <p className={styles.muted}>{t('ai_context_empty')}</p>}</section>
       {(context.hard_constraints?.length > 0 || context.soft_preferences?.length > 0) && <section className={styles.contextSection}><h2>{t('ai_preferences')}</h2><div className={styles.constraintList}>{context.hard_constraints?.map(value => <span key={value} className={styles.hardConstraint}>{value}</span>)}{context.soft_preferences?.map(value => <span key={value}>{value}</span>)}</div></section>}
       <section className={styles.contextSection}><h2>{t('ai_your_trip')}</h2>{basket.hotel || basket.outboundFlight ? <div className={styles.tripSelections}>{basket.hotel && <div><Hotel size={16} /><span><strong>{basket.hotel.name}</strong><small>{basket.hotel.city}</small></span></div>}{basket.outboundFlight && <div><Plane size={16} /><span><strong>{basket.outboundFlight.title}</strong><small>{basket.outboundFlight.originCode} → {basket.outboundFlight.destinationCode}</small></span></div>}</div> : <p className={styles.muted}>{t('ai_trip_empty')}</p>}</section>

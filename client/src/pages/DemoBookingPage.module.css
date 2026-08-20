@@ -1,4 +1,4 @@
-.page { min-height: 100vh; padding: 88px 24px 64px; background: #f7f8fa; }
+.page { min-height: 100vh; padding: 94px 24px 64px; background: var(--bg); }
 .pageHeader { max-width: 1180px; margin: 0 auto 24px; }
 .pageHeader > span { color: var(--green); font-size: 11px; font-weight: 800; text-transform: uppercase; }
 .pageHeader h1 { margin-top: 6px; color: var(--navy); font-size: 34px; }
@@ -8,7 +8,7 @@
 .section, .summary { padding: 20px; border: 1px solid var(--border); border-radius: 8px; background: #fff; box-shadow: var(--shadow-sm); }
 .sectionTitle { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 18px; color: var(--navy); }
 .sectionTitle svg { margin-top: 2px; }
-.sectionTitle h2, .summary h2 { font-family: 'Inter', sans-serif; font-size: 16px; }
+.sectionTitle h2, .summary h2 { font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 800; }
 .sectionTitle p { margin-top: 2px; color: var(--text-muted); font-size: 11px; }
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .fields label, .fullField { display: grid; gap: 5px; }

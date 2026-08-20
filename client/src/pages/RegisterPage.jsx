@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Route } from 'lucide-react';
 import styles from './RegisterPage.module.css';
 import { useLang } from '../i18n/LanguageContext';
 import { legalApi } from '../api';
@@ -43,7 +43,7 @@ export default function RegisterPage({ onLogin }) {
   return (
     <div className={`${styles.page} ${styles.registerPage}`}>
       <header className={styles.registerHeader}>
-        <Link to="/" className={styles.registerLogo}>Tripalora</Link>
+        <Link to="/" className={styles.registerLogo}><span><Route size={16} aria-hidden="true" /></span>Tripalora</Link>
         <LanguageSelect />
       </header>
       <main className={styles.registerMain}>

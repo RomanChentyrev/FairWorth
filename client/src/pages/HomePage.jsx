@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, LocateFixed, LoaderCircle, MapPin, Search, Sparkles } from 'lucide-react';
+import { ArrowRight, BadgeCheck, BrainCircuit, LocateFixed, LoaderCircle, Scale, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { useLang } from '../i18n/LanguageContext';
 import { hotelsApi } from '../api';
 import PriceCalendar from '../components/PriceCalendar';
@@ -9,6 +9,7 @@ import { defaultTravelDates, formatLocalDate } from '../utils/dates';
 import { formatAmount } from '../utils/money';
 import useCapabilities from '../hooks/useCapabilities';
 import ProviderUnavailable from '../components/ProviderUnavailable';
+import { destinationVisual, selectFeaturedDestinations } from '../utils/destinationVisuals';
 
 const CITIES = [
   { name: 'Сингапур', nameEn: 'Singapore', names: { de: 'Singapur', fr: 'Singapour', it: 'Singapore', es: 'Singapur', 'zh-CN': '新加坡', ar: 'سنغافورة' }, code: 'SIN', country: 'Сингапур', countryEn: 'Singapore', countries: { de: 'Singapur', fr: 'Singapour', it: 'Singapore', es: 'Singapur', 'zh-CN': '新加坡', ar: 'سنغافورة' }, flag: '🇸🇬' },
@@ -333,9 +334,10 @@ export default function HomePage() {
     hotelsApi.popularDestinations({ limit: 30 })
       .then(res => {
         if (!cancelled) {
-          const destinations = (res.data.destinations || [])
-            .filter(destination => SUPPORTED_CITY_NAMES.has(String(destination.city || '').toLowerCase()))
-            .slice(0, 5);
+          const destinations = selectFeaturedDestinations(
+            (res.data.destinations || [])
+              .filter(destination => SUPPORTED_CITY_NAMES.has(String(destination.city || '').toLowerCase())),
+          );
           setPopularDestinations(destinations);
         }
       })
@@ -389,51 +391,6 @@ export default function HomePage() {
             <div className={styles.trustItem}><strong>{l('No', 'Нет')}</strong><span>{t('home_trust_ads')}</span></div>
           </div>
 
-          <section className={styles.destinations}>
-            <div className={styles.sectionHeader}>
-              <div>
-                <h2 className={styles.sectionTitle}>{t('home_popular_title')}</h2>
-                <p className={styles.sectionSub}>{t('home_popular_sub')}</p>
-              </div>
-            </div>
-
-            <div className={styles.destinationGrid}>
-              {destinationsLoading && [1,2,3,4,5].map(i => (
-                <div key={i} className={styles.destinationSkeleton}>
-                  <div className={`skeleton ${styles.skeletonTitle}`} />
-                  <div className={`skeleton ${styles.skeletonLine}`} />
-                  <div className={`skeleton ${styles.skeletonPrice}`} />
-                </div>
-              ))}
-              {!destinationsLoading && popularDestinations.map(destination => (
-                <button
-                  type="button"
-                  key={`${destination.city}-${destination.country}`}
-                  className={styles.destinationCard}
-                  onClick={() => navigate(`/results?city=${encodeURIComponent(destination.city)}&check_in=${form.check_in}&check_out=${form.check_out}&guests=${form.guests}&trip_purpose=${form.trip_purpose}`)}
-                >
-                  <div className={styles.destinationTop}>
-                    <div>
-                      <h3 className={styles.destinationName}>{localizedPlace(destination.city, lang)}</h3>
-                      <div className={styles.destinationCountry}>
-                        <MapPin size={12} />
-                        {destination.country}
-                      </div>
-                    </div>
-                    <ArrowRight size={15} className={styles.destinationArrow} />
-                  </div>
-                  <div className={styles.destinationPrice}>
-                    <span>{t('card_from')}</span>
-                    <strong>${formatAmount(destination.min_price, lang)}</strong>
-                    <span>{t('card_per_night')}</span>
-                  </div>
-                </button>
-              ))}
-              {!destinationsLoading && popularDestinations.length === 0 && (
-                <div className={styles.destinationsEmpty}>{t('home_popular_empty')}</div>
-              )}
-            </div>
-          </section>
         </div>
 
         <div className={styles.searchCard}>
@@ -560,15 +517,60 @@ export default function HomePage() {
         </div>
       </div>
 
+      <section className={styles.destinations}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <span className={styles.sectionEyebrow}>{l('Popular now', 'Популярно сейчас')}</span>
+            <h2 className={styles.sectionTitle}>{t('home_popular_title')}</h2>
+            <p className={styles.sectionSub}>{t('home_popular_sub')}</p>
+          </div>
+          <button type="button" className={styles.exploreLink} onClick={() => document.querySelector(`.${styles.searchCard}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+            {l('Explore destinations', 'Выбрать направление')} <ArrowRight size={18} />
+          </button>
+        </div>
+        <div className={styles.destinationGrid}>
+          {destinationsLoading && [1,2,3].map(i => (
+            <div key={i} className={styles.destinationSkeleton}>
+              <div className={`skeleton ${styles.destinationSkeletonFill}`} />
+            </div>
+          ))}
+          {!destinationsLoading && popularDestinations.map(destination => {
+            const visual = destinationVisual(destination.city, lang);
+            return (
+              <button
+                type="button"
+                key={`${destination.city}-${destination.country}`}
+                className={styles.destinationCard}
+                onClick={() => navigate(`/results?city=${encodeURIComponent(destination.city)}&check_in=${form.check_in}&check_out=${form.check_out}&guests=${form.guests}&trip_purpose=${form.trip_purpose}`)}
+                style={{ '--destination-image': `url("${visual.image}")` }}
+              >
+                <span className={styles.destinationShade} aria-hidden="true" />
+                <span className={styles.destinationContent}>
+                  <span className={styles.destinationTag}>{visual.tag || destination.country}</span>
+                  <span className={styles.destinationName}>{localizedPlace(destination.city, lang)}</span>
+                  <span className={styles.destinationPrice}>
+                    <span>{t('card_from')}</span>
+                    <strong>${formatAmount(destination.min_price, lang)}</strong>
+                    <span>{t('card_per_night')}</span>
+                  </span>
+                </span>
+                <span className={styles.destinationArrow} aria-hidden="true"><ArrowRight size={21} /></span>
+              </button>
+            );
+          })}
+          {!destinationsLoading && popularDestinations.length === 0 && <div className={styles.destinationsEmpty}>{t('home_popular_empty')}</div>}
+        </div>
+      </section>
+
       <div className={styles.features}>
         {[
-          { icon: '🎯', title: t('home_feature_score_title'), desc: t('home_feature_score_desc') },
-          { icon: '🔍', title: t('home_feature_analysis_title'), desc: t('home_feature_analysis_desc') },
-          { icon: '⚖️', title: t('home_feature_compare_title'), desc: t('home_feature_compare_desc') },
-          { icon: '🧠', title: t('home_feature_learn_title'), desc: t('home_feature_learn_desc') },
+          { icon: BadgeCheck, title: t('home_feature_score_title'), desc: t('home_feature_score_desc') },
+          { icon: ShieldCheck, title: t('home_feature_analysis_title'), desc: t('home_feature_analysis_desc') },
+          { icon: Scale, title: t('home_feature_compare_title'), desc: t('home_feature_compare_desc') },
+          { icon: BrainCircuit, title: t('home_feature_learn_title'), desc: t('home_feature_learn_desc') },
         ].map(f => (
           <div key={f.title} className={styles.feature}>
-            <div className={styles.featureIcon}>{f.icon}</div>
+            <div className={styles.featureIcon}><f.icon size={21} aria-hidden="true" /></div>
             <div>
               <div className={styles.featureTitle}>{f.title}</div>
               <div className={styles.featureDesc}>{f.desc}</div>

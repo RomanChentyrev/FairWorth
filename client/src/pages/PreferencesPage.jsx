@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { usersApi, notificationsApi } from '../api';
-import { Save, Check, Sparkles, User, Settings, Bell, Shield, Camera, MapPin, Globe, Edit2 } from 'lucide-react';
+import {
+  BarChart3, BedDouble, Bell, Bookmark, CalendarDays, Check, Clock3, Edit2,
+  ExternalLink, Globe, Hotel, Luggage, Plane, Save, Search, Settings, Shield,
+  Sparkles, TrendingDown, TrendingUp, User, WalletCards,
+} from 'lucide-react';
 import { useLang } from '../i18n/LanguageContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styles from './PreferencesPage.module.css';
@@ -19,7 +23,7 @@ function MultiSelect({ options, value = [], onChange }) {
     <div className={styles.chips}>
       {options.map(opt => (
         <button type="button" aria-pressed={value.includes(opt.value)} key={opt.value} className={`${styles.chip} ${value.includes(opt.value) ? styles.chipOn : ''}`} onClick={() => toggle(opt.value)}>
-          {opt.icon && <span>{opt.icon}</span>}{opt.label}
+          {value.includes(opt.value) && <Check size={13} aria-hidden="true" />}{opt.icon && <span>{opt.icon}</span>}{opt.label}
         </button>
       ))}
     </div>
@@ -31,7 +35,7 @@ function SingleSelect({ options, value, onChange }) {
     <div className={styles.chips}>
       {options.map(opt => (
         <button type="button" aria-pressed={value === opt.value} key={opt.value} className={`${styles.chip} ${value === opt.value ? styles.chipOn : ''}`} onClick={() => onChange(opt.value)}>
-          {opt.label}
+          {value === opt.value && <Check size={13} aria-hidden="true" />}{opt.label}
         </button>
       ))}
     </div>
@@ -234,6 +238,13 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
   ];
  
   const initials = (user?.name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  const profileFields = [personalForm.name, user?.email, personalForm.phone, personalForm.city, personalForm.country, personalForm.bio];
+  const profileCompletion = Math.round((profileFields.filter(value => String(value || '').trim()).length / profileFields.length) * 100);
+  const selectedPreferenceCount = [
+    prefs.hotel_stars, prefs.room_type, prefs.room_view, prefs.hotel_amenities,
+    prefs.required_hotel_amenities, prefs.preferred_airlines, prefs.travel_style,
+    prefs.favorite_destinations,
+  ].reduce((total, values) => total + (Array.isArray(values) ? values.length : 0), 0);
  
   // Localised options
   const HOTEL_STARS = [
@@ -332,18 +343,18 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
   ];
  
   const TRAVEL_STATS = [
-    { icon: '🔎', value: stats.searches, label: t('prefs_searches') },
-    { icon: '🔖', value: stats.saved, label: t('prefs_saved_count') },
-    { icon: '⚖️', value: stats.comparisons, label: t('prefs_comparisons') },
-    { icon: '↗', value: stats.booking_intents, label: l('Booking visits', 'Переходов к бронированию') },
-    { icon: '📅', value: stats.member_since ? new Date(stats.member_since).toLocaleDateString(lang) : '—', label: l('Member since', 'Участник с') },
+    { icon: Search, value: stats.searches, label: t('prefs_searches') },
+    { icon: Bookmark, value: stats.saved, label: t('prefs_saved_count') },
+    { icon: BarChart3, value: stats.comparisons, label: t('prefs_comparisons') },
+    { icon: ExternalLink, value: stats.booking_intents, label: l('Booking visits', 'Переходов к бронированию') },
+    { icon: CalendarDays, value: stats.member_since ? new Date(stats.member_since).toLocaleDateString(lang) : '—', label: l('Member since', 'Участник с') },
   ];
  
   const NOTIFS = [
-    { key: 'alert_price_drop', label: t('prefs_notif_price_drop'), desc: t('prefs_notif_price_drop_desc'), icon: '📉' },
-    { key: 'alert_price_rise', label: t('prefs_notif_price_rise'), desc: t('prefs_notif_price_rise_desc'), icon: '📈' },
-    { key: 'alert_booking_reminder', label: t('prefs_notif_reminder'), desc: t('prefs_notif_reminder_desc'), icon: '⏰' },
-    { key: 'alert_weekly_insights', label: t('prefs_notif_insights'), desc: t('prefs_notif_insights_desc'), icon: '📊' },
+    { key: 'alert_price_drop', label: t('prefs_notif_price_drop'), desc: t('prefs_notif_price_drop_desc'), icon: TrendingDown },
+    { key: 'alert_price_rise', label: t('prefs_notif_price_rise'), desc: t('prefs_notif_price_rise_desc'), icon: TrendingUp },
+    { key: 'alert_booking_reminder', label: t('prefs_notif_reminder'), desc: t('prefs_notif_reminder_desc'), icon: Clock3 },
+    { key: 'alert_weekly_insights', label: t('prefs_notif_insights'), desc: t('prefs_notif_insights_desc'), icon: BarChart3 },
   ];
  
   if (loading) return (
@@ -356,6 +367,17 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
  
   return (
     <div className={styles.page}>
+      <header className={styles.pageIntro}>
+        <div>
+          <span className={styles.pageEyebrow}><Sparkles size={16} /> {t('prefs_title')}</span>
+          <h1>{l('Your travel profile', 'Ваш профиль путешествий')}</h1>
+          <p>{t('prefs_ai_text')}</p>
+        </div>
+        <div className={styles.profileProgress}>
+          <div className={styles.progressRing}><strong>{profileCompletion}%</strong></div>
+          <div><strong>{l('Profile readiness', 'Готовность профиля')}</strong><span>{l('Complete your details for sharper recommendations', 'Заполните данные для более точных рекомендаций')}</span></div>
+        </div>
+      </header>
       <div className={styles.layout}>
  
         {/* SIDEBAR */}
@@ -366,7 +388,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
             </div>
             <div className={styles.userName}>{user?.name || (l('User', 'Пользователь'))}</div>
             <div className={styles.userEmail}>{user?.email}</div>
-            <div className={styles.userBadge}>{t('prefs_member')}</div>
+            <div className={styles.userBadge}><Sparkles size={12} /> {String(t('prefs_member')).replace('✦', '').trim()}</div>
           </div>
  
           <div className={styles.statsCard}>
@@ -387,7 +409,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
             {TABS.map(tab => {
               const Icon = tab.icon;
               return (
-                <button key={tab.id} className={`${styles.tabNavItem} ${activeTab === tab.id ? styles.tabNavActive : ''}`} onClick={() => setActiveTab(tab.id)}>
+                <button key={tab.id} aria-current={activeTab === tab.id ? 'page' : undefined} className={`${styles.tabNavItem} ${activeTab === tab.id ? styles.tabNavActive : ''}`} onClick={() => setActiveTab(tab.id)}>
                   <Icon size={16} />{tab.label}
                 </button>
               );
@@ -401,7 +423,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
         </aside>
  
         {/* MAIN */}
-        <main className={styles.main}>
+        <main key={activeTab} className={styles.main}>
  
           {/* PERSONAL */}
           {activeTab === 'personal' && (
@@ -462,15 +484,17 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
               <div className={styles.travelStatsCard}>
                 <div className={styles.travelStatsTitle}>{t('prefs_travel_stats')}</div>
                 <div className={styles.travelStatsGrid}>
-                  {TRAVEL_STATS.map(s => (
+                  {TRAVEL_STATS.map(s => {
+                    const Icon = s.icon;
+                    return (
                     <div key={s.label} className={styles.travelStatItem}>
-                      <div className={styles.travelStatIcon}>{s.icon}</div>
+                      <div className={styles.travelStatIcon}><Icon size={19} /></div>
                       <div>
                         <div className={styles.travelStatValue}>{s.value}</div>
                         <div className={styles.travelStatLabel}>{s.label}</div>
                       </div>
                     </div>
-                  ))}
+                  );})}
                 </div>
               </div>
             </div>
@@ -482,7 +506,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
               <div className={styles.tabHeader}>
                 <div>
                   <h2 className={styles.tabTitle}>{t('prefs_pref_title')}</h2>
-                  <p className={styles.tabSub}>{t('prefs_pref_sub')}</p>
+                  <p className={styles.tabSub}>{t('prefs_pref_sub')} · {selectedPreferenceCount} {l('signals selected', 'параметров выбрано')}</p>
                 </div>
                 <button className={styles.saveSmBtn} onClick={handleSavePrefs} disabled={saving}>
                   {saved ? <><Check size={14} />{t('prefs_saved')}</> : saving ? t('prefs_saving') : <><Save size={14} />{onboarding ? (l('Save and start', 'Сохранить и начать')) : t('prefs_save')}</>}
@@ -490,8 +514,9 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
               </div>
  
               <div className={styles.prefsGrid}>
-                <div className={styles.prefCard}>
-                  <div className={styles.prefCardTitle}>{t('prefs_hotels_label')}</div>
+                <details className={styles.prefCard} open>
+                  <summary className={styles.prefCardTitle}><span><BedDouble size={18} /> {t('prefs_hotels_label')}</span><span className={styles.prefCount}>{prefs.hotel_stars.length + prefs.room_type.length + prefs.room_view.length + prefs.hotel_amenities.length + prefs.required_hotel_amenities.length}</span></summary>
+                  <div className={styles.prefCardBody}>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_category')}</div><MultiSelect options={HOTEL_STARS} value={prefs.hotel_stars} onChange={v => set('hotel_stars', v)} /></div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_room_type')}</div><MultiSelect options={ROOM_TYPES} value={prefs.room_type} onChange={v => set('room_type', v)} /></div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_view')}</div><MultiSelect options={VIEWS} value={prefs.room_view} onChange={v => set('room_view', v)} /></div>
@@ -511,18 +536,22 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                     <div className={styles.prefLabel}>{l('Preferred: room and special needs', 'Желательные: номер и особые условия')}</div>
                     <MultiSelect options={ROOM_AMENITIES} value={prefs.hotel_amenities} onChange={v => setAmenities('hotel_amenities', v)} />
                   </div>
-                </div>
- 
-                <div className={styles.prefCard}>
-                  <div className={styles.prefCardTitle}>{t('prefs_flights_label')}</div>
+                  </div>
+                </details>
+
+                <details className={styles.prefCard} open>
+                  <summary className={styles.prefCardTitle}><span><Plane size={18} /> {t('prefs_flights_label')}</span><span className={styles.prefCount}>{prefs.preferred_airlines.length + 3}</span></summary>
+                  <div className={styles.prefCardBody}>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_flight_type')}</div><SingleSelect options={FLIGHT_TYPES} value={prefs.flight_type} onChange={v => set('flight_type', v)} /></div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_class')}</div><SingleSelect options={SEAT_CLASSES} value={prefs.seat_class} onChange={v => set('seat_class', v)} /></div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_seat')}</div><SingleSelect options={SEATS} value={prefs.seat_position} onChange={v => set('seat_position', v)} /></div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_airlines')}</div><MultiSelect options={AIRLINES} value={prefs.preferred_airlines} onChange={v => set('preferred_airlines', v)} /></div>
-                </div>
- 
-                <div className={styles.prefCard}>
-                  <div className={styles.prefCardTitle}>{t('prefs_style_label')}</div>
+                  </div>
+                </details>
+
+                <details className={styles.prefCard} open>
+                  <summary className={styles.prefCardTitle}><span><WalletCards size={18} /> {t('prefs_style_label')}</span><span className={styles.prefCount}>{prefs.travel_style.length + prefs.favorite_destinations.length + 3}</span></summary>
+                  <div className={styles.prefCardBody}>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_interests')}</div><MultiSelect options={TRAVEL_STYLES} value={prefs.travel_style} onChange={v => set('travel_style', v)} /></div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_budget')}</div><SingleSelect options={BUDGETS} value={prefs.budget_level} onChange={v => set('budget_level', v)} /></div>
                   <div className={styles.prefSection}>
@@ -536,7 +565,8 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                     <div className={styles.sliderLabels}><span>{l('Not important', 'Не важно')}</span><span>{l('Critical', 'Критично')}</span></div>
                   </div>
                   <div className={styles.prefSection}><div className={styles.prefLabel}>{t('prefs_destinations')}</div><MultiSelect options={DESTINATIONS} value={prefs.favorite_destinations} onChange={v => set('favorite_destinations', v)} /></div>
-                </div>
+                  </div>
+                </details>
               </div>
             </div>
           )}
@@ -557,29 +587,33 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
               <div className={styles.notifCard}>
                 <div className={styles.notifGroup}>
                   <div className={styles.notifGroupTitle}>{t('prefs_notif_prices')}</div>
-                  {NOTIFS.slice(0, 3).map(n => (
+                  {NOTIFS.slice(0, 3).map(n => {
+                    const Icon = n.icon;
+                    return (
                     <div key={n.key} className={styles.notifRow}>
-                      <div className={styles.notifIcon}>{n.icon}</div>
+                      <div className={styles.notifIcon}><Icon size={19} /></div>
                       <div className={styles.notifText}>
                         <div className={styles.notifLabel}>{n.label}</div>
                         <div className={styles.notifDesc}>{n.desc}</div>
                       </div>
                       <ToggleSwitch label={n.label} on={prefs[n.key]} onChange={v => set(n.key, v)} />
                     </div>
-                  ))}
+                  );})}
                 </div>
                 <div className={styles.notifGroup}>
                   <div className={styles.notifGroupTitle}>{t('prefs_notif_info')}</div>
-                  {NOTIFS.slice(3).map(n => (
+                  {NOTIFS.slice(3).map(n => {
+                    const Icon = n.icon;
+                    return (
                     <div key={n.key} className={styles.notifRow}>
-                      <div className={styles.notifIcon}>{n.icon}</div>
+                      <div className={styles.notifIcon}><Icon size={19} /></div>
                       <div className={styles.notifText}>
                         <div className={styles.notifLabel}>{n.label}</div>
                         <div className={styles.notifDesc}>{n.desc}</div>
                       </div>
                       <ToggleSwitch label={n.label} on={prefs[n.key]} onChange={v => set(n.key, v)} />
                     </div>
-                  ))}
+                  );})}
                 </div>
                 <div className={styles.notifGroup}>
                   <div className={styles.notifGroupTitle}>{l('Weekly insights schedule', 'Расписание weekly insights')}</div>
@@ -598,7 +632,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                   <div className={styles.notifGroupTitle}>{l('Price watches', 'Отслеживание цен')}</div>
                   {!watches.length && <div className={styles.notifDesc}>{l('Open a hotel and select the bell icon to track its price.', 'Откройте карточку отеля и нажмите значок колокольчика.')}</div>}
                   {watches.map(watch => <div className={styles.notifRow} key={watch.id}>
-                    <div className={styles.notifIcon}>🏨</div><div className={styles.notifText}><div className={styles.notifLabel}>{watch.hotel_name}</div><div className={styles.notifDesc}>{watch.check_in} → {watch.check_out} · {watch.currency} {watch.last_price || '—'} · {watch.last_checked_at ? new Date(watch.last_checked_at).toLocaleString(lang) : (l('waiting for first check', 'ожидает проверки'))}</div></div>
+                    <div className={styles.notifIcon}><Hotel size={19} /></div><div className={styles.notifText}><div className={styles.notifLabel}>{watch.hotel_name}</div><div className={styles.notifDesc}>{watch.check_in} → {watch.check_out} · {watch.currency} {watch.last_price || '—'} · {watch.last_checked_at ? new Date(watch.last_checked_at).toLocaleString(lang) : (l('waiting for first check', 'ожидает проверки'))}</div></div>
                     <label className={styles.notifText}><span className={styles.notifDesc}>{l('Target price', 'Целевая цена')}</span><input className={styles.fieldInput} type="number" min="1" defaultValue={watch.target_price || ''} placeholder={watch.currency} onBlur={e => updateWatchTarget(watch, e.target.value)} /></label>
                     <ToggleSwitch on={watch.active} onChange={() => toggleWatch(watch)} /><button className={styles.revokeBtn} onClick={() => removeWatch(watch.id)}>{l('Delete', 'Удалить')}</button>
                   </div>)}
@@ -606,7 +640,7 @@ export default function PreferencesPage({ user: propUser, onUserUpdate }) {
                 <div className={styles.notifGroup}>
                   <div className={styles.notifGroupTitle}>{l('Trip reminders', 'Напоминания о поездках')}</div>
                   {!trips.length && <div className={styles.notifDesc}>{l('Save your trip basket to receive reminders.', 'Сохраните поездку из корзины, чтобы получать напоминания.')}</div>}
-                  {trips.map(trip => <div className={styles.notifRow} key={trip.id}><div className={styles.notifIcon}>🧳</div><div className={styles.notifText}><div className={styles.notifLabel}>{trip.title}</div><div className={styles.notifDesc}>{trip.start_date} · {trip.status}</div></div><ToggleSwitch on={Boolean(trip.reminder_enabled)} onChange={() => toggleTripReminder(trip)} /></div>)}
+                  {trips.map(trip => <div className={styles.notifRow} key={trip.id}><div className={styles.notifIcon}><Luggage size={19} /></div><div className={styles.notifText}><div className={styles.notifLabel}>{trip.title}</div><div className={styles.notifDesc}>{trip.start_date} · {trip.status}</div></div><ToggleSwitch on={Boolean(trip.reminder_enabled)} onChange={() => toggleTripReminder(trip)} /></div>)}
                 </div>
               </div>
             </div>
