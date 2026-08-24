@@ -57,6 +57,23 @@ test('an explicit any-stops search overrides a saved direct-flight preference', 
   assert.equal(result.score_context.max_stops, null);
 });
 
+test('profile constraints can be relaxed without relaxing explicit search constraints', () => {
+  const preferences = { flight_type: 'direct', max_stops: 0, seat_class: 'premium_economy' };
+  const economyConnection = ticket({ transfers: 1, cabin_class: 'economy' });
+  const strictProfile = scoreFlights([economyConnection], preferences, {})[0];
+  assert.deepEqual(strictProfile.strict_filter_failures.sort(), ['cabin_class', 'max_stops']);
+
+  const relaxedProfile = scoreFlights([economyConnection], preferences, { relaxProfileConstraints: true })[0];
+  assert.deepEqual(relaxedProfile.strict_filter_failures, []);
+  assert.equal(relaxedProfile.score_context.profile_constraints_relaxed, true);
+
+  const explicitDirect = scoreFlights([economyConnection], preferences, {
+    maxStops: 0,
+    relaxProfileConstraints: true,
+  })[0];
+  assert.deepEqual(explicitDirect.strict_filter_failures, ['max_stops']);
+});
+
 test('pair seating prefers a two-seat block and does not invent missing layouts', () => {
   assert.equal(seatingScore({ seat_layout: '2-4-2' }, 2), 100);
   assert.equal(seatingScore({ seat_layout: '3-3' }, 2), 72);

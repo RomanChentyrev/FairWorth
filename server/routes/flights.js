@@ -80,6 +80,7 @@ function scoringContext(query) {
     cabinClass: query.cabin_class ? String(query.cabin_class).toLowerCase() : null,
     maxStops: query.max_stops,
     tripDays: Number.isFinite(Number(query.trip_days)) ? Math.max(0, Number(query.trip_days)) : calculatedTripDays,
+    relaxProfileConstraints: String(query.relax_profile_constraints || '').toLowerCase() === 'true',
   };
 }
 
@@ -314,7 +315,7 @@ router.get('/top', async (req, res) => {
 
   const requestedDate = params.depart_date;
   const isExactDateSearch = requestedDate.length === 10;
-  const context = scoringContext(req.query);
+  let context = scoringContext(req.query);
   const originGroup = resolveAirportGroup(params.origin);
   const destinationGroup = resolveAirportGroup(params.destination);
   const originCodes = originGroup.airports.map(airport => airport.code);
@@ -456,9 +457,18 @@ router.get('/top', async (req, res) => {
     if (aDistance !== bDistance) return aDistance - bDistance;
     return Number(a.price || Infinity) - Number(b.price || Infinity);
   });
+  const requireRoundTrip = String(req.query.require_round_trip || '').toLowerCase() === 'true' && Boolean(params.return_date);
+  if (requireRoundTrip) tickets = tickets.filter(ticket => Boolean(ticket.return_at));
   tickets = await enrichArrivalTimes(tickets);
   const preferences = await flightPreferences(req.user.id);
-  tickets = rankedFlights(tickets, preferences, context).slice(0, limit);
+  const providerTicketCount = tickets.length;
+  let ranked = rankedFlights(tickets, preferences, context);
+  const allowProfileFallback = String(req.query.allow_profile_fallback || '').toLowerCase() === 'true';
+  if (!ranked.length && providerTicketCount && allowProfileFallback && context.relaxProfileConstraints !== true) {
+    context = { ...context, relaxProfileConstraints: true };
+    ranked = rankedFlights(tickets, preferences, context);
+  }
+  tickets = ranked.slice(0, limit);
 
   const exactTickets = tickets.filter(ticket => !ticket.is_alternative_date);
   const alternativeTickets = tickets.filter(ticket => ticket.is_alternative_date);
@@ -494,6 +504,9 @@ router.get('/top', async (req, res) => {
     limit,
     score_version: FLIGHT_SCORE_VERSION,
     scoring_context: context,
+    provider_ticket_count: providerTicketCount,
+    profile_constraints_relaxed: context.relaxProfileConstraints === true,
+    round_trip_required: requireRoundTrip,
     route_graph: routeGraph,
     route_options: routeOptions,
     fare_positioning: {

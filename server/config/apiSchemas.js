@@ -162,7 +162,7 @@ const aiMessageSchema = z.object({
 }).strict();
 
 const aiToolResultSchema = z.object({
-  tool: z.enum(['hotel_search', 'flight_search', 'compare', 'itinerary']),
+  tool: z.enum(['hotel_search', 'flight_search', 'compare', 'itinerary', 'budget_plan']),
   status: z.enum(['success', 'no_results', 'error']),
   summary: z.string().trim().max(1200).default(''),
   request: boundedObject.default({}),

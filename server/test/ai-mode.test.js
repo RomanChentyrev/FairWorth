@@ -231,9 +231,107 @@ test('AI Mode fallback completes a multi-turn destination and date clarification
   assert.equal(cityAnswer.action.type, 'hotel_search');
 });
 
+test('AI Mode replaces an existing destination when the traveler changes their mind', () => {
+  const context = {
+    origin: 'Moscow', destination: 'Paris', date_start: '2026-10-10', date_end: '2026-10-15', travelers: 2,
+  };
+  for (const [message, expected] of [
+    ['I changed my mind, now I want to go to Madrid', 'Madrid'],
+    ['Instead, let\'s go to Barcelona', 'Barcelona'],
+    ['Я передумал, теперь хочу в Мадрид', 'Мадрид'],
+  ]) {
+    const plan = fallbackPlan(message, context, 'en', { previousIntent: 'hotel_search' });
+    assert.equal(plan.context_patch.destination, expected, message);
+    assert.equal(plan.action.type, 'hotel_search', message);
+    assert.deepEqual(plan.missing_fields, [], message);
+  }
+});
+
+test('AI Mode normalizes a common Nha Trang spelling mistake', () => {
+  const plan = fallbackPlan('Nha Thang', {
+    origin: 'Moscow', date_start: '2026-10-10', date_end: '2026-10-20', travelers: 2,
+  }, 'en', { previousIntent: 'flight_search' });
+  assert.equal(plan.context_patch.destination, 'Nha Trang');
+  assert.equal(plan.action.type, 'flight_search');
+});
+
+test('AI Mode switches between hotel and flight search in the same conversation', () => {
+  const context = {
+    origin: 'Moscow', destination: 'Madrid', date_start: '2026-10-10', date_end: '2026-10-15', travelers: 2,
+  };
+  const flight = fallbackPlan('Now find me flights too', context, 'en', { previousIntent: 'hotel_search' });
+  assert.equal(flight.intent, 'flight_search');
+  assert.equal(flight.action.type, 'flight_search');
+  assert.equal(flight.context_patch.destination, undefined);
+
+  const hotel = fallbackPlan('Теперь подбери отель', context, 'ru', { previousIntent: 'flight_search' });
+  assert.equal(hotel.intent, 'hotel_search');
+  assert.equal(hotel.action.type, 'hotel_search');
+
+  const needsOrigin = fallbackPlan('Now find me flights too', {
+    destination: 'Madrid', date_start: '2026-10-10', date_end: '2026-10-15', travelers: 2,
+  }, 'en', { previousIntent: 'hotel_search' });
+  assert.deepEqual(needsOrigin.missing_fields, ['origin']);
+  const originAnswer = fallbackPlan('Moscow', {
+    destination: 'Madrid', date_start: '2026-10-10', date_end: '2026-10-15', travelers: 2,
+  }, 'en', { previousIntent: 'flight_search' });
+  assert.equal(originAnswer.context_patch.origin, 'Moscow');
+  assert.equal(originAnswer.action.type, 'flight_search');
+});
+
+test('AI Mode budget planning gathers every field and launches a dedicated action', () => {
+  let context = {};
+  let plan = fallbackPlan('Help me plan a trip within my budget', context, 'en');
+  assert.equal(plan.intent, 'budget');
+  assert.equal(plan.action.type, 'none');
+  assert.deepEqual(plan.missing_fields, ['origin', 'destination', 'date_start', 'date_end', 'budget_amount']);
+
+  context = {
+    origin: 'Moscow', destination: 'Madrid', date_start: '2026-10-10', date_end: '2026-10-15',
+    travelers: 2, budget_amount: 3000, currency: 'USD',
+  };
+  plan = fallbackPlan('Plan the complete trip within my budget', context, 'en', { previousIntent: 'budget' });
+  assert.equal(plan.intent, 'budget');
+  assert.equal(plan.action.type, 'budget_plan');
+  assert.deepEqual(plan.missing_fields, []);
+  assert.match(plan.reply, /hotel and flight prices/i);
+});
+
+test('AI Mode budget clarification fills a broad destination before the origin', () => {
+  let context = {};
+  let plan = fallbackPlan('Help me plan a trip within my budget', context, 'en');
+  context = mergeSearchContext(context, plan.context_patch);
+  assert.deepEqual(plan.missing_fields, ['origin', 'destination', 'date_start', 'date_end', 'budget_amount']);
+  assert.match(plan.reply, /exact city or island/i);
+
+  plan = fallbackPlan('Vietnam', context, 'en', { previousIntent: plan.intent });
+  context = mergeSearchContext(context, plan.context_patch);
+  assert.equal(context.destination, 'Vietnam');
+  assert.equal(context.origin, undefined);
+  assert.deepEqual(plan.missing_fields, ['origin', 'destination', 'date_start', 'date_end', 'budget_amount']);
+
+  plan = fallbackPlan('Paris', context, 'en', { previousIntent: plan.intent });
+  context = mergeSearchContext(context, plan.context_patch);
+  assert.equal(context.destination, 'Paris');
+  assert.equal(context.origin, undefined);
+  assert.deepEqual(plan.missing_fields, ['origin', 'date_start', 'date_end', 'budget_amount']);
+  assert.match(plan.reply, /depart from/i);
+
+  plan = fallbackPlan('Moscow', context, 'en', { previousIntent: plan.intent });
+  context = mergeSearchContext(context, plan.context_patch);
+  assert.equal(context.destination, 'Paris');
+  assert.equal(context.origin, 'Moscow');
+  assert.deepEqual(plan.missing_fields, ['date_start', 'date_end', 'budget_amount']);
+  assert.match(plan.reply, /check-in and check-out dates/i);
+});
+
 test('AI Mode plan schema rejects unsupported tools', () => {
   assert.throws(() => planSchema.parse({
     intent: 'hotel_search', reply: 'Searching', context_patch: {},
     action: { type: 'book_now' }, missing_fields: [], used_profile_fields: [],
+  }));
+  assert.doesNotThrow(() => planSchema.parse({
+    intent: 'budget', reply: 'Calculating', context_patch: {},
+    action: { type: 'budget_plan' }, missing_fields: [], used_profile_fields: [],
   }));
 });

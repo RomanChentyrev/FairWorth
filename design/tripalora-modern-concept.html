@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Tripalora modern travel planning concept">
+  <title>Tripalora - Modern travel workspace concept</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
+  <style>
+    :root {
+      --ink: #11283f;
+      --ink-soft: #4d6172;
+      --paper: #ffffff;
+      --canvas: #f4f8fa;
+      --line: #dbe5e9;
+      --line-strong: #b8c9d0;
+      --teal: #087f73;
+      --teal-soft: #ddf3ee;
+      --coral: #e85d3f;
+      --coral-dark: #c9482f;
+      --gold: #d4a229;
+      --blue-soft: #e6f2f8;
+      --success: #187a52;
+      --danger: #ba3e42;
+      --shadow-sm: 0 8px 24px rgba(17, 40, 63, .08);
+      --shadow-lg: 0 24px 64px rgba(17, 40, 63, .17);
+      --header-h: 72px;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: "DM Sans", sans-serif;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+    body.drawer-open { overflow: hidden; }
+    button, input, select { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    button { cursor: pointer; }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
+    .container { width: min(1240px, calc(100% - 48px)); margin-inline: auto; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    :focus-visible { outline: 3px solid #4ca8e0; outline-offset: 3px; }
+
+    .topbar {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 100;
+      height: var(--header-h);
+      color: #fff;
+      transition: background-color .25s ease, box-shadow .25s ease, color .25s ease;
+    }
+    .topbar.scrolled { color: var(--ink); background: rgba(255,255,255,.96); box-shadow: 0 1px 0 var(--line); }
+    .topbar-inner { height: 100%; display: flex; align-items: center; gap: 30px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; font: 800 23px/1 Manrope, sans-serif; letter-spacing: 0; }
+    .brand-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--coral); color: #fff; }
+    .desktop-nav { display: flex; align-items: center; gap: 24px; margin-left: 20px; }
+    .desktop-nav a { position: relative; padding: 25px 0 22px; font-size: 14px; font-weight: 600; opacity: .84; }
+    .desktop-nav a:hover, .desktop-nav a.active { opacity: 1; }
+    .desktop-nav a.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: 14px; height: 2px; background: var(--coral); }
+    .top-actions { display: flex; align-items: center; gap: 9px; margin-left: auto; }
+    .icon-btn, .avatar-btn, .menu-btn {
+      min-width: 44px; height: 44px; display: inline-grid; place-items: center;
+      border: 1px solid rgba(255,255,255,.38); border-radius: var(--radius); color: inherit; background: rgba(255,255,255,.12);
+      transition: background-color .2s ease, border-color .2s ease;
+    }
+    .topbar.scrolled .icon-btn, .topbar.scrolled .avatar-btn, .topbar.scrolled .menu-btn { border-color: var(--line); background: var(--paper); }
+    .icon-btn:hover, .avatar-btn:hover, .menu-btn:hover { background: rgba(255,255,255,.24); }
+    .avatar-btn { border-radius: 50%; font-weight: 800; color: var(--ink); background: #fff; }
+    .ai-button {
+      height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 16px;
+      border: 1px solid rgba(255,255,255,.38); border-radius: var(--radius); color: #fff; background: rgba(10,37,58,.42); font-weight: 700;
+    }
+    .topbar.scrolled .ai-button { color: #fff; border-color: var(--ink); background: var(--ink); }
+    .language { height: 44px; padding: 0 10px; border: 1px solid rgba(255,255,255,.38); border-radius: var(--radius); color: inherit; background: rgba(255,255,255,.12); font-weight: 700; }
+    .topbar.scrolled .language { border-color: var(--line); color: var(--ink); background: #fff; }
+    .language option { color: var(--ink); }
+    .menu-btn { display: none; }
+
+    .hero {
+      position: relative;
+      min-height: 820px;
+      display: flex;
+      align-items: center;
+      color: #fff;
+      background: #466c7c;
+      isolation: isolate;
+      overflow: visible;
+    }
+    .hero::before { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(5, 28, 44, .48); }
+    .hero::after { content: ""; position: absolute; inset: auto 0 0; height: 140px; z-index: -1; background: rgba(5, 28, 44, .20); }
+    .hero-image-motion { --hero-x: 50%; position: absolute; inset: 0; z-index: -2; background: #466c7c url("assets/tripalora-hero-concept.png") var(--hero-x) 50% / cover no-repeat; animation: hero-breathe 18s ease-in-out infinite alternate; }
+    .hero-content { padding: 112px 0 214px; }
+    .live-pill { width: fit-content; display: flex; align-items: center; gap: 9px; margin-bottom: 24px; padding: 8px 12px; border: 1px solid rgba(255,255,255,.35); border-radius: 99px; background: rgba(9,45,60,.44); font-size: 13px; font-weight: 700; }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #62e2ae; box-shadow: 0 0 0 6px rgba(98,226,174,.12); animation: pulse 2s ease-in-out infinite; }
+    .hero h1 { max-width: 780px; margin: 0; font: 800 clamp(48px, 6vw, 82px)/.98 Manrope, sans-serif; letter-spacing: -2.4px; text-wrap: balance; }
+    .hero h1 em { color: #ffcc55; font-style: normal; }
+    .hero-lead { max-width: 610px; margin: 24px 0 0; color: rgba(255,255,255,.88); font-size: 18px; line-height: 1.65; }
+    .hero-proof { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 30px; }
+    .proof-item { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+    .proof-item svg { color: #ffcc55; }
+
+    .planner {
+      position: absolute;
+      z-index: 5;
+      left: 50%;
+      bottom: -92px;
+      width: min(1240px, calc(100% - 48px));
+      transform: translateX(-50%);
+      color: var(--ink);
+      border: 1px solid rgba(255,255,255,.8);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.97);
+      box-shadow: var(--shadow-lg);
+    }
+    .planner-head { display: flex; align-items: center; min-height: 62px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
+    .trip-tabs { display: flex; gap: 4px; }
+    .trip-tab { min-width: 126px; height: 46px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 6px 6px 0 0; color: var(--ink-soft); background: transparent; font-weight: 700; }
+    .trip-tab.active { color: var(--ink); background: var(--blue-soft); }
+    .planner-memory { display: flex; align-items: center; gap: 7px; margin-left: auto; padding-right: 8px; color: var(--success); font-size: 12px; font-weight: 700; }
+    .planner-body { padding: 22px; }
+    .planner-grid { display: grid; grid-template-columns: 1.1fr 44px 1.1fr .85fr .85fr .7fr auto; gap: 10px; align-items: end; }
+    .field { min-width: 0; }
+    .field label { display: block; margin: 0 0 7px; color: #617587; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .input-wrap { position: relative; }
+    .input-wrap svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #6a7f90; pointer-events: none; }
+    .field input, .field select {
+      width: 100%; height: 50px; padding: 0 13px 0 40px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: #f9fbfc; font-weight: 600;
+      transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease;
+    }
+    .field select { appearance: none; padding-left: 13px; }
+    .field input:focus, .field select:focus { border-color: var(--teal); background: #fff; box-shadow: 0 0 0 3px rgba(8,127,115,.11); outline: 0; }
+    .swap-btn { width: 44px; height: 44px; display: grid; place-items: center; margin-bottom: 3px; border: 1px solid var(--line); border-radius: 50%; color: var(--ink); background: #fff; transition: transform .25s ease, border-color .2s ease; }
+    .swap-btn:hover { border-color: var(--teal); transform: rotate(180deg); }
+    .search-btn { height: 50px; min-width: 164px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 0; border-radius: 6px; color: #fff; background: var(--coral); font-weight: 800; box-shadow: 0 8px 20px rgba(232,93,63,.24); transition: background-color .2s ease, transform .2s ease; }
+    .search-btn:hover { background: var(--coral-dark); transform: translateY(-2px); }
+    .search-btn[aria-busy="true"] svg { animation: spin 1s linear infinite; }
+    .planner-foot { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--line); }
+    .planner-foot strong { font-size: 12px; }
+    .preference-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+    .chip { min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 99px; color: var(--ink-soft); background: #fff; font-size: 12px; font-weight: 700; }
+    .chip.active { border-color: #8accc2; color: #07665d; background: var(--teal-soft); }
+    .search-progress { position: absolute; inset: auto 0 -4px; height: 4px; overflow: hidden; background: transparent; }
+    .search-progress span { display: block; width: 100%; height: 100%; background: var(--teal); transform: scaleX(0); transform-origin: left; }
+    .planner.searching .search-progress span { animation: search-progress 1.2s ease-in-out infinite; }
+
+    .journey-band { padding: 150px 0 58px; background: #fff; }
+    .journey-header { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+    .eyebrow { margin: 0 0 8px; color: var(--teal); font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .section-title { margin: 0; font: 800 clamp(30px, 4vw, 46px)/1.1 Manrope, sans-serif; letter-spacing: -1.2px; text-wrap: balance; }
+    .section-copy { max-width: 600px; margin: 12px 0 0; color: var(--ink-soft); font-size: 16px; }
+    .trip-total { text-align: right; }
+    .trip-total span { display: block; color: var(--ink-soft); font-size: 12px; }
+    .trip-total strong { font: 800 30px Manrope, sans-serif; }
+    .journey-board { display: grid; grid-template-columns: 1fr 1fr 1fr; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; box-shadow: var(--shadow-sm); overflow: hidden; }
+    .journey-step { position: relative; min-height: 138px; display: grid; grid-template-columns: 48px 1fr; gap: 14px; align-content: center; padding: 24px; border-right: 1px solid var(--line); }
+    .journey-step:last-child { border-right: 0; }
+    .step-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; color: var(--teal); background: var(--teal-soft); }
+    .journey-step.pending .step-icon { color: #6a7f90; background: #edf2f4; }
+    .journey-step strong { display: block; margin-bottom: 4px; font-size: 15px; }
+    .journey-step p { margin: 0; color: var(--ink-soft); font-size: 13px; }
+    .step-state { margin-top: 9px; color: var(--success); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+    .journey-step.pending .step-state { color: var(--gold); }
+
+    .destinations { padding: 82px 0; }
+    .section-heading-row { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+    .text-link { min-height: 44px; display: inline-flex; align-items: center; gap: 7px; color: var(--teal); font-weight: 800; }
+    .destination-grid { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 16px; }
+    .destination-card { position: relative; min-height: 350px; overflow: hidden; border: 0; border-radius: var(--radius); color: #fff; background: #54717d; text-align: left; isolation: isolate; box-shadow: var(--shadow-sm); }
+    .destination-card::after { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(5,24,39,.34); transition: background-color .25s ease; }
+    .destination-card:hover::after { background: rgba(5,24,39,.23); }
+    .destination-card img { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; transition: transform .6s cubic-bezier(.2,.8,.2,1); }
+    .destination-card:hover img { transform: scale(1.045); }
+    .destination-content { position: absolute; inset: auto 0 0; padding: 24px; }
+    .destination-content span { display: block; margin-bottom: 4px; color: rgba(255,255,255,.82); font-size: 12px; font-weight: 700; }
+    .destination-content h3 { margin: 0 0 14px; font: 800 28px Manrope, sans-serif; }
+    .destination-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .destination-meta strong { font-size: 14px; }
+    .round-arrow { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; color: var(--ink); background: #fff; }
+
+    .shortlist-band { padding: 82px 0; background: #fff; }
+    .shortlist-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(310px, .65fr); gap: 24px; align-items: start; }
+    .hotel-list { display: grid; gap: 12px; }
+    .hotel-card { display: grid; grid-template-columns: 220px 1fr auto; min-height: 188px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; overflow: hidden; transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
+    .hotel-card:hover { border-color: #9eb8c3; box-shadow: var(--shadow-sm); transform: translateY(-2px); }
+    .hotel-photo { position: relative; min-height: 188px; overflow: hidden; background: #dce7eb; }
+    .hotel-photo img { width: 100%; height: 100%; object-fit: cover; }
+    .top-pick { position: absolute; left: 12px; top: 12px; padding: 6px 9px; border-radius: 4px; color: #fff; background: var(--teal); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .hotel-body { padding: 20px; }
+    .hotel-body h3 { margin: 0 0 5px; font: 800 20px Manrope, sans-serif; }
+    .hotel-location { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 13px; }
+    .amenities { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 18px; }
+    .amenity { padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-soft); background: #f8fafb; font-size: 11px; font-weight: 700; }
+    .price-block { min-width: 168px; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 10px; padding: 18px; border-left: 1px solid var(--line); }
+    .score { width: 56px; height: 56px; display: grid; place-items: center; border: 5px solid #cde9e4; border-top-color: var(--teal); border-radius: 50%; font: 800 18px Manrope, sans-serif; }
+    .price-block span { color: var(--ink-soft); font-size: 11px; }
+    .price-block strong { font: 800 24px Manrope, sans-serif; }
+    .small-btn { min-height: 42px; padding: 0 13px; border: 1px solid var(--ink); border-radius: 6px; color: #fff; background: var(--ink); font-size: 12px; font-weight: 800; }
+    .ai-panel { position: sticky; top: 92px; border: 1px solid #b8ded7; border-radius: var(--radius); background: #eef9f6; overflow: hidden; }
+    .ai-panel-head { display: flex; align-items: center; gap: 12px; padding: 20px; color: #fff; background: var(--teal); }
+    .ai-panel-head div { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: rgba(255,255,255,.18); }
+    .ai-panel-head strong { display: block; }
+    .ai-panel-head span { color: rgba(255,255,255,.78); font-size: 12px; }
+    .ai-panel-body { padding: 22px; }
+    .ai-panel-body blockquote { margin: 0; color: #214f4b; font-size: 16px; line-height: 1.65; }
+    .match-list { display: grid; gap: 10px; margin: 20px 0; padding: 0; list-style: none; }
+    .match-list li { display: flex; align-items: center; gap: 9px; color: #41645f; font-size: 13px; }
+    .match-list svg { color: var(--success); }
+    .outline-btn { width: 100%; min-height: 46px; border: 1px solid var(--teal); border-radius: 6px; color: var(--teal); background: transparent; font-weight: 800; }
+
+    .score-band { padding: 82px 0; background: #e9f3f7; }
+    .score-layout { display: grid; grid-template-columns: .8fr 1.2fr; gap: 70px; align-items: center; }
+    .score-visual { position: relative; min-height: 420px; display: grid; place-items: center; }
+    .score-ring { width: 250px; height: 250px; display: grid; place-items: center; border: 30px solid #fff; border-top-color: var(--teal); border-right-color: var(--coral); border-radius: 50%; box-shadow: var(--shadow-lg); transform: rotate(-22deg); }
+    .score-ring-inner { transform: rotate(22deg); text-align: center; }
+    .score-ring strong { display: block; font: 800 62px/.9 Manrope, sans-serif; }
+    .score-ring span { color: var(--ink-soft); font-size: 12px; font-weight: 800; }
+    .confidence { position: absolute; right: 8%; bottom: 18%; padding: 12px 15px; border: 1px solid var(--line); border-radius: 6px; background: #fff; box-shadow: var(--shadow-sm); font-size: 12px; font-weight: 800; }
+    .confidence b { color: var(--success); }
+    .factor-list { display: grid; gap: 15px; margin-top: 28px; }
+    .factor { display: grid; grid-template-columns: 130px 1fr 42px; gap: 12px; align-items: center; }
+    .factor span { font-size: 13px; font-weight: 700; }
+    .factor-track { height: 8px; overflow: hidden; border-radius: 99px; background: #ccdde3; }
+    .factor-track i { display: block; height: 100%; border-radius: inherit; background: var(--teal); transform-origin: left; animation: bar-in .8s .2s both; }
+    .factor strong { text-align: right; }
+
+    .life-tools { padding: 82px 0; background: #fff; }
+    .tool-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 18px; }
+    .tool-panel { min-height: 360px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: #fff; }
+    .tool-copy { padding: 28px; }
+    .tool-copy h3 { margin: 0 0 9px; font: 800 28px Manrope, sans-serif; }
+    .tool-copy p { max-width: 480px; margin: 0; color: var(--ink-soft); }
+    .insight-chart { height: 190px; display: flex; align-items: end; gap: 11px; padding: 28px; background: #f4f9fb; }
+    .bar { flex: 1; min-width: 12px; height: var(--h); border-radius: 4px 4px 0 0; background: var(--teal); transform-origin: bottom; animation: bar-in .7s both; }
+    .bar:nth-child(3n) { background: var(--coral); }
+    .map-stage { position: relative; min-height: 245px; background: #dfeff2; overflow: hidden; }
+    .map-stage::before { content: ""; position: absolute; inset: 25px; opacity: .62; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 700 300'%3E%3Cpath d='M52 102l47-33 66 6 22 41-31 24-3 40-62 6-43-37zm172 15 34-45 59-16 46 29-11 47-38 12-18 58-51-9-24-35zm185-10 53-42 82 7 49 35-16 28-69-6-31 45-48-11zm121 97 43-24 65 14 17 39-33 31-65-8-28-29z' fill='%23a9c8cf' stroke='%2385aeb7' stroke-width='3'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: center; background-size: contain; }
+    .map-pin { position: absolute; width: 18px; height: 18px; border: 4px solid #fff; border-radius: 50%; background: var(--coral); box-shadow: 0 4px 10px rgba(17,40,63,.25); animation: pin-pop .5s both; }
+    .map-pin.one { left: 35%; top: 35%; }
+    .map-pin.two { left: 58%; top: 52%; animation-delay: .15s; }
+    .map-pin.three { left: 72%; top: 30%; animation-delay: .3s; }
+
+    .final-cta { padding: 76px 0; color: #fff; background: var(--ink); }
+    .final-cta-inner { display: flex; align-items: center; justify-content: space-between; gap: 28px; }
+    .final-cta h2 { max-width: 700px; margin: 0; font: 800 clamp(34px, 5vw, 56px)/1.08 Manrope, sans-serif; letter-spacing: -1.5px; }
+    .cta-btn { min-height: 54px; display: inline-flex; align-items: center; gap: 9px; padding: 0 20px; border: 0; border-radius: 6px; color: #fff; background: var(--coral); font-weight: 800; white-space: nowrap; }
+    footer { padding: 28px 0; color: var(--ink-soft); background: #fff; font-size: 13px; }
+    .footer-inner { display: flex; justify-content: space-between; gap: 20px; }
+    .footer-links { display: flex; gap: 18px; }
+
+    .backdrop { position: fixed; inset: 0; z-index: 190; border: 0; background: rgba(8,24,37,.45); opacity: 0; pointer-events: none; transition: opacity .22s ease; }
+    .backdrop.open { opacity: 1; pointer-events: auto; }
+    .drawer { position: fixed; z-index: 200; inset: 0 0 0 auto; width: min(440px, 100%); display: flex; flex-direction: column; background: #fff; box-shadow: var(--shadow-lg); transform: translateX(105%); transition: transform .32s cubic-bezier(.2,.8,.2,1); }
+    .drawer.open { transform: translateX(0); }
+    .drawer-head { min-height: 72px; display: flex; align-items: center; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--line); }
+    .drawer-head strong { font: 800 18px Manrope, sans-serif; }
+    .drawer-head button { margin-left: auto; }
+    .drawer-body { flex: 1; overflow: auto; padding: 20px; }
+    .chat-message { width: 88%; margin: 0 0 14px; padding: 14px 16px; border-radius: 8px; color: #31524f; background: var(--teal-soft); }
+    .chat-message.user { margin-left: auto; color: #fff; background: var(--ink); }
+    .chat-compose { display: grid; grid-template-columns: 1fr 48px; gap: 8px; padding: 14px; border-top: 1px solid var(--line); }
+    .chat-compose input { min-width: 0; height: 48px; padding: 0 13px; border: 1px solid var(--line); border-radius: 6px; }
+    .chat-compose button { border: 0; border-radius: 6px; color: #fff; background: var(--coral); }
+    .basket-item { display: grid; grid-template-columns: 54px 1fr auto; gap: 12px; align-items: center; padding: 15px 0; border-bottom: 1px solid var(--line); }
+    .basket-item > div:first-child { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 6px; color: var(--teal); background: var(--teal-soft); }
+    .basket-item strong { display: block; font-size: 14px; }
+    .basket-item span { color: var(--ink-soft); font-size: 12px; }
+    .basket-total { display: flex; justify-content: space-between; margin-top: 24px; padding-top: 20px; border-top: 2px solid var(--ink); font-size: 18px; font-weight: 800; }
+    .drawer-action { width: 100%; min-height: 50px; margin-top: 18px; border: 0; border-radius: 6px; color: #fff; background: var(--coral); font-weight: 800; }
+    .menu-links { display: grid; gap: 4px; }
+    .menu-links a { min-height: 50px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 6px; color: var(--ink); font-weight: 750; }
+    .menu-links a:hover { background: var(--sky); }
+    .menu-settings { display: grid; gap: 8px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .menu-settings label { color: var(--ink-soft); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+    .menu-settings select { min-height: 48px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: #fff; font: inherit; }
+    .toast { position: fixed; z-index: 300; left: 50%; bottom: 24px; display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-radius: 6px; color: #fff; background: var(--ink); box-shadow: var(--shadow-lg); opacity: 0; transform: translate(-50%, 18px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .mobile-nav { display: none; }
+    .reveal { opacity: 0; transform: translateY(22px); transition: opacity .6s ease, transform .6s ease; }
+    .reveal.visible { opacity: 1; transform: none; }
+
+    @keyframes hero-breathe { from { background-position: var(--hero-x) 48%; } to { background-position: var(--hero-x) 52%; } }
+    @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(.72); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes search-progress { 0% { transform: scaleX(0); } 60% { transform: scaleX(.75); } 100% { transform: scaleX(1); opacity: 0; } }
+    @keyframes bar-in { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    @keyframes pin-pop { from { opacity: 0; transform: translateY(-14px) scale(.6); } to { opacity: 1; transform: none; } }
+
+    @media (max-width: 1080px) {
+      .desktop-nav { display: none; }
+      .menu-btn { display: grid; }
+      .planner-grid { grid-template-columns: 1fr 44px 1fr 1fr 1fr; }
+      .planner-grid .guests-field { grid-column: 1 / 3; }
+      .search-btn { grid-column: 3 / -1; }
+      .shortlist-layout { grid-template-columns: 1fr; }
+      .ai-panel { position: static; }
+      .score-layout { gap: 34px; }
+    }
+
+    @media (max-width: 760px) {
+      :root { --header-h: 60px; }
+      body { padding-bottom: 66px; }
+      .container { width: min(100% - 28px, 1240px); }
+      .topbar { color: var(--ink); background: rgba(255,255,255,.96); box-shadow: 0 1px 0 var(--line); }
+      .topbar-inner { gap: 8px; }
+      .brand { font-size: 20px; }
+      .brand-mark { width: 28px; height: 28px; }
+      .language, .avatar-btn { display: none; }
+      .topbar .ai-button { width: 44px; padding: 0; justify-content: center; border-color: var(--ink); color: #fff; background: var(--ink); font-size: 0; }
+      .topbar .menu-btn { border-color: var(--line); background: #fff; }
+      .hero { min-height: auto; align-items: stretch; flex-direction: column; padding-top: var(--header-h); }
+      .hero-image-motion { --hero-x: 58%; }
+      .hero::before { background: rgba(5,28,44,.56); }
+      .hero-content { width: min(100% - 28px, 1240px); padding: 72px 0 28px; }
+      .live-pill { font-size: 11px; }
+      .hero h1 { font-size: clamp(42px, 13vw, 62px); letter-spacing: -1.6px; }
+      .hero-lead { font-size: 16px; }
+      .hero-proof { gap: 12px; }
+      .proof-item { width: calc(50% - 6px); font-size: 12px; }
+      .planner { position: relative; left: auto; bottom: auto; width: calc(100% - 28px); margin: 18px auto -88px; transform: none; }
+      .planner-head { overflow-x: auto; }
+      .trip-tab { min-width: 104px; }
+      .planner-memory { display: none; }
+      .planner-body { padding: 15px; }
+      .planner-grid { grid-template-columns: 1fr 44px; }
+      .planner-grid .from-field { grid-column: 1; }
+      .planner-grid .swap-btn { grid-column: 2; grid-row: 1; }
+      .planner-grid .to-field { grid-column: 1 / -1; }
+      .planner-grid .date-field, .planner-grid .guests-field { grid-column: 1 / -1; }
+      .search-btn { grid-column: 1 / -1; width: 100%; }
+      .planner-foot { align-items: flex-start; flex-direction: column; }
+      .journey-band { padding-top: 134px; }
+      .journey-header, .section-heading-row { align-items: flex-start; flex-direction: column; }
+      .trip-total { text-align: left; }
+      .journey-board { grid-template-columns: 1fr; }
+      .journey-step { min-height: 112px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .journey-step:last-child { border-bottom: 0; }
+      .destinations, .shortlist-band, .score-band, .life-tools { padding: 62px 0; }
+      .destination-grid { grid-template-columns: 88% 88% 88%; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 10px; }
+      .destination-card { min-height: 330px; scroll-snap-align: start; }
+      .hotel-card { grid-template-columns: 1fr; }
+      .hotel-photo { min-height: 210px; }
+      .price-block { align-items: flex-start; border-top: 1px solid var(--line); border-left: 0; }
+      .score-layout { grid-template-columns: 1fr; }
+      .score-visual { min-height: 330px; }
+      .score-ring { width: 220px; height: 220px; }
+      .confidence { right: 0; }
+      .factor { grid-template-columns: 104px 1fr 36px; }
+      .tool-grid { grid-template-columns: 1fr; }
+      .final-cta-inner { align-items: flex-start; flex-direction: column; }
+      .footer-inner, .footer-links { flex-direction: column; }
+      .mobile-nav { position: fixed; z-index: 110; inset: auto 0 0; height: 66px; display: grid; grid-template-columns: repeat(5,1fr); border-top: 1px solid var(--line); background: rgba(255,255,255,.98); }
+      .mobile-nav a, .mobile-nav button { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; color: var(--ink-soft); background: transparent; font-size: 9px; font-weight: 700; }
+      .mobile-nav .active { color: var(--teal); }
+      .toast { bottom: 80px; width: calc(100% - 28px); justify-content: center; }
+    }
+
+    @media (max-width: 390px) {
+      .proof-item { width: 100%; }
+      .hero h1 { font-size: 41px; }
+      .journey-step { padding: 18px; }
+      .tool-copy { padding: 22px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <div class="container topbar-inner">
+      <a href="#top" class="brand" aria-label="Tripalora home">
+        <span class="brand-mark"><i data-lucide="route" width="17" aria-hidden="true"></i></span>
+        Tripalora
+      </a>
+      <nav class="desktop-nav" aria-label="Primary navigation">
+        <a class="active" href="#planner">Plan a trip</a>
+        <a href="#shortlist">Hotels</a>
+        <a href="#journey">Flights</a>
+        <a href="#insights">Insights</a>
+        <a href="#achievements">Achievements</a>
+      </nav>
+      <div class="top-actions">
+        <button class="ai-button" type="button" data-open="ai" aria-label="Open AI travel assistant"><i data-lucide="sparkles" width="17" aria-hidden="true"></i><span>AI planner</span></button>
+        <button class="icon-btn" type="button" data-open="basket" aria-label="Open trip basket"><i data-lucide="shopping-bag" width="18" aria-hidden="true"></i></button>
+        <select class="language" aria-label="Language"><option>EN</option><option>DE</option><option>FR</option><option>IT</option><option>ES</option><option>ZH</option><option>AR</option></select>
+        <button class="avatar-btn" type="button" aria-label="Open profile">R</button>
+        <button class="menu-btn" type="button" data-open="menu" aria-label="Open menu"><i data-lucide="menu" width="20" aria-hidden="true"></i></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-image-motion" aria-hidden="true"></div>
+      <div class="container hero-content">
+        <div class="live-pill"><span class="live-dot"></span> Live prices and personalized recommendations</div>
+        <h1 id="hero-title">Plan the whole trip. <em>Feel good</em> about every choice.</h1>
+        <p class="hero-lead">Flights, stays and the details between them, compared around your budget and travel style.</p>
+        <div class="hero-proof" aria-label="Tripalora benefits">
+          <div class="proof-item"><i data-lucide="badge-check" width="18" aria-hidden="true"></i> Verified provider prices</div>
+          <div class="proof-item"><i data-lucide="scale" width="18" aria-hidden="true"></i> Unpaid rankings</div>
+          <div class="proof-item"><i data-lucide="brain-circuit" width="18" aria-hidden="true"></i> Personal match score</div>
+        </div>
+      </div>
+
+      <form class="planner" id="planner" aria-label="Plan a trip">
+        <div class="planner-head">
+          <div class="trip-tabs" role="tablist" aria-label="Search type">
+            <button class="trip-tab active" type="button" role="tab" aria-selected="true" data-tab="trip"><i data-lucide="luggage" width="17" aria-hidden="true"></i> Full trip</button>
+            <button class="trip-tab" type="button" role="tab" aria-selected="false" data-tab="hotel"><i data-lucide="bed-double" width="17" aria-hidden="true"></i> Hotels</button>
+            <button class="trip-tab" type="button" role="tab" aria-selected="false" data-tab="flight"><i data-lucide="plane" width="17" aria-hidden="true"></i> Flights</button>
+          </div>
+          <div class="planner-memory"><i data-lucide="circle-check" width="15" aria-hidden="true"></i> Preferences connected</div>
+        </div>
+        <div class="planner-body">
+          <div class="planner-grid">
+            <div class="field from-field"><label for="from">From</label><div class="input-wrap"><i data-lucide="navigation" width="17" aria-hidden="true"></i><input id="from" value="Moscow" autocomplete="off"></div></div>
+            <button class="swap-btn" id="swap" type="button" aria-label="Swap origin and destination"><i data-lucide="arrow-right-left" width="17" aria-hidden="true"></i></button>
+            <div class="field to-field"><label for="to">To</label><div class="input-wrap"><i data-lucide="map-pin" width="17" aria-hidden="true"></i><input id="to" value="Amalfi Coast" autocomplete="off"></div></div>
+            <div class="field date-field"><label for="checkin">Departure</label><div class="input-wrap"><i data-lucide="calendar" width="17" aria-hidden="true"></i><input id="checkin" type="date"></div></div>
+            <div class="field date-field"><label for="checkout">Return</label><div class="input-wrap"><i data-lucide="calendar" width="17" aria-hidden="true"></i><input id="checkout" type="date"></div></div>
+            <div class="field guests-field"><label for="guests">Travelers</label><select id="guests"><option>1 traveler</option><option selected>2 travelers</option><option>3 travelers</option><option>4 travelers</option><option>5+ travelers</option></select></div>
+            <button class="search-btn" type="submit"><i data-lucide="search" width="18" aria-hidden="true"></i><span>Plan my trip</span></button>
+          </div>
+          <div class="planner-foot">
+            <strong>Travel style</strong>
+            <div class="preference-chips" aria-label="Travel preferences">
+              <button class="chip active" type="button">Comfort</button>
+              <button class="chip active" type="button">Direct flights</button>
+              <button class="chip" type="button">Sea view</button>
+              <button class="chip" type="button">Free cancellation</button>
+            </div>
+          </div>
+        </div>
+        <div class="search-progress" aria-hidden="true"><span></span></div>
+      </form>
+    </section>
+
+    <section class="journey-band" id="journey">
+      <div class="container reveal">
+        <div class="journey-header">
+          <div><p class="eyebrow">Your trip at a glance</p><h2 class="section-title">One journey, not five open tabs</h2><p class="section-copy">Your best flight, stay and daily plan remain connected as the trip changes.</p></div>
+          <div class="trip-total"><span>Estimated total for 2</span><strong>$3,640</strong></div>
+        </div>
+        <div class="journey-board">
+          <article class="journey-step"><div class="step-icon"><i data-lucide="plane" aria-hidden="true"></i></div><div><strong>Flight to Naples</strong><p>ITA Airways, 1 stop, 8h 45m</p><div class="step-state">Best balance</div></div></article>
+          <article class="journey-step"><div class="step-icon"><i data-lucide="hotel" aria-hidden="true"></i></div><div><strong>Casa Angelina</strong><p>Praiano, sea view, breakfast included</p><div class="step-state">92 match score</div></div></article>
+          <article class="journey-step pending"><div class="step-icon"><i data-lucide="map" aria-hidden="true"></i></div><div><strong>Trip plan</strong><p>Transfer and a relaxed 5-day itinerary</p><div class="step-state">AI is shaping it</div></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="destinations" aria-labelledby="destination-title">
+      <div class="container reveal">
+        <div class="section-heading-row"><div><p class="eyebrow">Popular now</p><h2 class="section-title" id="destination-title">Trips worth considering</h2><p class="section-copy">Live starting prices for places that fit your saved preferences.</p></div><a class="text-link" href="#planner">Explore all destinations <i data-lucide="arrow-right" width="17" aria-hidden="true"></i></a></div>
+        <div class="destination-grid">
+          <button class="destination-card" type="button" data-destination="Paris"><img src="https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1200&q=82" alt="Paris with the Eiffel Tower" loading="lazy"><span class="destination-content"><span>France · culture and food</span><h3>Paris</h3><span class="destination-meta"><strong>Trips from $1,420</strong><span class="round-arrow"><i data-lucide="arrow-up-right" width="18" aria-hidden="true"></i></span></span></span></button>
+          <button class="destination-card" type="button" data-destination="Singapore"><img src="https://images.unsplash.com/photo-1525625293386-3f8f99389edd?auto=format&fit=crop&w=1000&q=82" alt="Singapore skyline" loading="lazy"><span class="destination-content"><span>Singapore · city and food</span><h3>Singapore</h3><span class="destination-meta"><strong>Trips from $1,860</strong><span class="round-arrow"><i data-lucide="arrow-up-right" width="18" aria-hidden="true"></i></span></span></span></button>
+          <button class="destination-card" type="button" data-destination="Da Nang"><img src="https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=1000&q=82" alt="Coast near Da Nang" loading="lazy"><span class="destination-content"><span>Vietnam · beach and calm</span><h3>Da Nang</h3><span class="destination-meta"><strong>Trips from $1,260</strong><span class="round-arrow"><i data-lucide="arrow-up-right" width="18" aria-hidden="true"></i></span></span></span></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="shortlist-band" id="shortlist" aria-labelledby="shortlist-title">
+      <div class="container reveal">
+        <div class="section-heading-row"><div><p class="eyebrow">Smart shortlist</p><h2 class="section-title" id="shortlist-title">The options that make sense for you</h2><p class="section-copy">Available stays with comparable prices, ranked by fit and data confidence.</p></div><a class="text-link" href="#score-section">How scoring works <i data-lucide="arrow-down" width="17" aria-hidden="true"></i></a></div>
+        <div class="shortlist-layout">
+          <div class="hotel-list">
+            <article class="hotel-card"><div class="hotel-photo"><img src="https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=700&q=82" alt="Luxury coastal hotel" loading="lazy"><span class="top-pick">AI top pick</span></div><div class="hotel-body"><h3>Casa Angelina</h3><div class="hotel-location"><i data-lucide="map-pin" width="15" aria-hidden="true"></i> Praiano · Amalfi Coast</div><div class="amenities"><span class="amenity">Sea view</span><span class="amenity">Breakfast</span><span class="amenity">Spa</span><span class="amenity">Free cancellation</span></div></div><div class="price-block"><div class="score" title="Fairworth Score">92</div><div><span>from</span> <strong>$384</strong><span>/night</span></div><button class="small-btn add-trip" type="button">Add to trip</button></div></article>
+            <article class="hotel-card"><div class="hotel-photo"><img src="https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=700&q=82" alt="Bright premium hotel room" loading="lazy"></div><div class="hotel-body"><h3>Hotel Margherita</h3><div class="hotel-location"><i data-lucide="map-pin" width="15" aria-hidden="true"></i> Praiano · Amalfi Coast</div><div class="amenities"><span class="amenity">Rooftop pool</span><span class="amenity">Sea view</span><span class="amenity">Airport transfer</span></div></div><div class="price-block"><div class="score" title="Fairworth Score">88</div><div><span>from</span> <strong>$298</strong><span>/night</span></div><button class="small-btn add-trip" type="button">Add to trip</button></div></article>
+          </div>
+          <aside class="ai-panel" aria-label="AI recommendation"><div class="ai-panel-head"><div><i data-lucide="sparkles" width="20" aria-hidden="true"></i></div><p><strong>Why this one?</strong><span>Based on your trip context</span></p></div><div class="ai-panel-body"><blockquote>Casa Angelina costs a little more, but it is the strongest fit for a quiet couples trip with a real sea view.</blockquote><ul class="match-list"><li><i data-lucide="check" width="16" aria-hidden="true"></i> Direct beach access confirmed</li><li><i data-lucide="check" width="16" aria-hidden="true"></i> Recent service reviews are strong</li><li><i data-lucide="check" width="16" aria-hidden="true"></i> Full price includes breakfast</li></ul><button class="outline-btn" type="button" data-open="ai">Ask a follow-up</button></div></aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="score-band" id="score-section" aria-labelledby="score-title">
+      <div class="container score-layout reveal">
+        <div class="score-visual" aria-label="Fairworth Score 92 with high confidence"><div class="score-ring"><div class="score-ring-inner"><strong>92</strong><span>Fairworth Score</span></div></div><div class="confidence">Confidence: <b>High</b></div></div>
+        <div><p class="eyebrow">Transparent matching</p><h2 class="section-title" id="score-title">A score you can actually understand</h2><p class="section-copy">Price, quality, travel style and your preferences are assessed together. Missing provider data lowers confidence, not the hotel score.</p><div class="factor-list"><div class="factor"><span>Quality</span><span class="factor-track"><i style="width:94%"></i></span><strong>94</strong></div><div class="factor"><span>Personal fit</span><span class="factor-track"><i style="width:91%"></i></span><strong>91</strong></div><div class="factor"><span>Value</span><span class="factor-track"><i style="width:84%;background:var(--coral)"></i></span><strong>84</strong></div><div class="factor"><span>Review trust</span><span class="factor-track"><i style="width:89%"></i></span><strong>89</strong></div></div></div>
+      </div>
+    </section>
+
+    <section class="life-tools" id="insights" aria-labelledby="tools-title">
+      <div class="container reveal"><div class="section-heading-row"><div><p class="eyebrow">Beyond booking</p><h2 class="section-title" id="tools-title">Your travel life, in one place</h2></div></div><div class="tool-grid"><article class="tool-panel"><div class="tool-copy"><p class="eyebrow">Insights</p><h3>Travel when the value is better</h3><p>Compare seasonality, price movement and destination patterns before committing.</p></div><div class="insight-chart" aria-label="Illustrative monthly price chart"><span class="bar" style="--h:42%"></span><span class="bar" style="--h:55%"></span><span class="bar" style="--h:74%"></span><span class="bar" style="--h:64%"></span><span class="bar" style="--h:48%"></span><span class="bar" style="--h:38%"></span><span class="bar" style="--h:52%"></span><span class="bar" style="--h:78%"></span><span class="bar" style="--h:88%"></span><span class="bar" style="--h:67%"></span><span class="bar" style="--h:50%"></span><span class="bar" style="--h:43%"></span></div></article><article class="tool-panel" id="achievements"><div class="tool-copy"><p class="eyebrow">Achievements</p><h3>Keep the places that shaped you</h3><p>Your personal map grows city by city, with every trip saved to your profile.</p></div><div class="map-stage" aria-label="Illustrative visited cities map"><span class="map-pin one"></span><span class="map-pin two"></span><span class="map-pin three"></span></div></article></div></div>
+    </section>
+
+    <section class="final-cta"><div class="container final-cta-inner reveal"><h2>Your next trip can start with one clear plan.</h2><button class="cta-btn" type="button" data-scroll="planner">Start planning <i data-lucide="arrow-right" width="18" aria-hidden="true"></i></button></div></section>
+  </main>
+
+  <footer><div class="container footer-inner"><strong>Tripalora</strong><span>Live provider data · Transparent ranking · No paid placements</span><div class="footer-links"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Support</a></div></div></footer>
+
+  <nav class="mobile-nav" aria-label="Mobile navigation"><a class="active" href="#planner"><i data-lucide="search" width="19" aria-hidden="true"></i>Plan</a><a href="#shortlist"><i data-lucide="bed-double" width="19" aria-hidden="true"></i>Hotels</a><a href="#journey"><i data-lucide="plane" width="19" aria-hidden="true"></i>Flights</a><button type="button" data-open="ai"><i data-lucide="sparkles" width="19" aria-hidden="true"></i>AI</button><button type="button" data-open="basket"><i data-lucide="shopping-bag" width="19" aria-hidden="true"></i>Trip</button></nav>
+
+  <button class="backdrop" id="backdrop" type="button" aria-label="Close panel"></button>
+  <aside class="drawer" id="ai-drawer" aria-hidden="true" aria-label="AI travel assistant"><div class="drawer-head"><i data-lucide="sparkles" width="19" aria-hidden="true"></i><strong>AI travel assistant</strong><button class="icon-btn close-drawer" type="button" aria-label="Close AI assistant"><i data-lucide="x" width="19" aria-hidden="true"></i></button></div><div class="drawer-body" id="chat-body"><div class="chat-message">I can refine this Amalfi trip around your budget, dates and preferred pace. What would you like to change?</div><div class="chat-message user">Find a quieter hotel with a sea view.</div><div class="chat-message">I would keep Praiano and compare Casa Angelina with two smaller hotels nearby. All three have verified sea-view room options.</div></div><form class="chat-compose" id="chat-form"><label class="sr-only" for="chat-input">Message AI assistant</label><input id="chat-input" placeholder="Ask about this trip..."><button type="submit" aria-label="Send message"><i data-lucide="arrow-up" width="19" aria-hidden="true"></i></button></form></aside>
+  <aside class="drawer" id="basket-drawer" aria-hidden="true" aria-label="Trip basket"><div class="drawer-head"><i data-lucide="shopping-bag" width="19" aria-hidden="true"></i><strong>Your Amalfi trip</strong><button class="icon-btn close-drawer" type="button" aria-label="Close trip basket"><i data-lucide="x" width="19" aria-hidden="true"></i></button></div><div class="drawer-body"><div class="basket-item"><div><i data-lucide="plane" aria-hidden="true"></i></div><div><strong>Flight to Naples</strong><span>2 travelers · return</span></div><b>$1,720</b></div><div class="basket-item"><div><i data-lucide="hotel" aria-hidden="true"></i></div><div><strong>Casa Angelina</strong><span>5 nights · breakfast</span></div><b>$1,920</b></div><div class="basket-total"><span>Total</span><span>$3,640</span></div><button class="drawer-action" type="button">Continue to demo booking</button></div></aside>
+  <aside class="drawer" id="menu-drawer" aria-hidden="true" aria-label="Mobile menu"><div class="drawer-head"><i data-lucide="menu" width="19" aria-hidden="true"></i><strong>Explore Tripalora</strong><button class="icon-btn close-drawer" type="button" aria-label="Close menu"><i data-lucide="x" width="19" aria-hidden="true"></i></button></div><div class="drawer-body"><nav class="menu-links" aria-label="Mobile menu links"><a href="#planner"><i data-lucide="route" width="18" aria-hidden="true"></i>Plan a trip</a><a href="#shortlist"><i data-lucide="bed-double" width="18" aria-hidden="true"></i>Hotels</a><a href="#journey"><i data-lucide="plane" width="18" aria-hidden="true"></i>Flights</a><a href="#insights"><i data-lucide="chart-no-axes-combined" width="18" aria-hidden="true"></i>Insights</a><a href="#achievements"><i data-lucide="map-pinned" width="18" aria-hidden="true"></i>Achievements</a></nav><div class="menu-settings"><label for="mobile-language">Language</label><select id="mobile-language"><option>English</option><option>Deutsch</option><option>Francais</option><option>Italiano</option><option>Espanol</option><option>Chinese</option><option>Arabic</option></select></div></div></aside>
+  <div class="toast" id="toast" role="status" aria-live="polite"><i data-lucide="circle-check" width="18" aria-hidden="true"></i><span>Added to your trip</span></div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) window.lucide.createIcons();
+      const topbar = document.getElementById('topbar');
+      const planner = document.getElementById('planner');
+      const searchButton = planner.querySelector('.search-btn');
+      const fromInput = document.getElementById('from');
+      const toInput = document.getElementById('to');
+      const backdrop = document.getElementById('backdrop');
+      const drawers = [...document.querySelectorAll('.drawer')];
+      const toast = document.getElementById('toast');
+
+      const futureDate = (days) => {
+        const date = new Date();
+        date.setDate(date.getDate() + days);
+        return date.toISOString().slice(0, 10);
+      };
+      document.getElementById('checkin').value = futureDate(32);
+      document.getElementById('checkout').value = futureDate(37);
+
+      const updateHeader = () => topbar.classList.toggle('scrolled', window.scrollY > 28);
+      updateHeader();
+      window.addEventListener('scroll', updateHeader, { passive: true });
+
+      document.querySelectorAll('.trip-tab').forEach(tab => tab.addEventListener('click', () => {
+        document.querySelectorAll('.trip-tab').forEach(item => { item.classList.toggle('active', item === tab); item.setAttribute('aria-selected', item === tab ? 'true' : 'false'); });
+        const labels = { trip: 'Plan my trip', hotel: 'Find hotels', flight: 'Find flights' };
+        searchButton.querySelector('span').textContent = labels[tab.dataset.tab];
+      }));
+
+      document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => chip.classList.toggle('active')));
+      document.getElementById('swap').addEventListener('click', () => { const current = fromInput.value; fromInput.value = toInput.value; toInput.value = current; });
+
+      planner.addEventListener('submit', event => {
+        event.preventDefault();
+        planner.classList.add('searching');
+        searchButton.setAttribute('aria-busy', 'true');
+        searchButton.querySelector('span').textContent = 'Building your shortlist';
+        setTimeout(() => {
+          planner.classList.remove('searching');
+          searchButton.removeAttribute('aria-busy');
+          searchButton.querySelector('span').textContent = 'Plan my trip';
+          document.getElementById('journey').scrollIntoView({ behavior: 'smooth' });
+          showToast('Trip options refreshed for ' + (toInput.value || 'your destination'));
+        }, 1350);
+      });
+
+      document.querySelectorAll('.destination-card').forEach(card => card.addEventListener('click', () => {
+        toInput.value = card.dataset.destination;
+        planner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => toInput.focus(), 500);
+      }));
+
+      const closeDrawers = () => {
+        drawers.forEach(drawer => { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); });
+        backdrop.classList.remove('open');
+        document.body.classList.remove('drawer-open');
+      };
+      const openDrawer = name => {
+        closeDrawers();
+        const drawer = document.getElementById(name + '-drawer');
+        if (!drawer) return;
+        drawer.classList.add('open');
+        drawer.setAttribute('aria-hidden', 'false');
+        backdrop.classList.add('open');
+        document.body.classList.add('drawer-open');
+        drawer.querySelector('button, input')?.focus();
+      };
+      document.querySelectorAll('[data-open]').forEach(button => button.addEventListener('click', () => openDrawer(button.dataset.open)));
+      document.querySelectorAll('.close-drawer').forEach(button => button.addEventListener('click', closeDrawers));
+      document.querySelectorAll('.menu-links a').forEach(link => link.addEventListener('click', closeDrawers));
+      backdrop.addEventListener('click', closeDrawers);
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDrawers(); });
+
+      document.querySelectorAll('.add-trip').forEach(button => button.addEventListener('click', () => {
+        showToast('Hotel added to your trip');
+        button.textContent = 'Added';
+        button.disabled = true;
+      }));
+      document.querySelectorAll('[data-scroll]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.scroll)?.scrollIntoView({ behavior: 'smooth', block: 'center' })));
+
+      document.getElementById('chat-form').addEventListener('submit', event => {
+        event.preventDefault();
+        const input = document.getElementById('chat-input');
+        if (!input.value.trim()) return;
+        const body = document.getElementById('chat-body');
+        const userMessage = document.createElement('div');
+        userMessage.className = 'chat-message user';
+        userMessage.textContent = input.value;
+        body.appendChild(userMessage);
+        input.value = '';
+        setTimeout(() => {
+          const reply = document.createElement('div');
+          reply.className = 'chat-message';
+          reply.textContent = 'I have kept the live prices and your current trip context. I would compare a quieter property in Praiano before changing the route.';
+          body.appendChild(reply);
+          body.scrollTop = body.scrollHeight;
+        }, 550);
+      });
+
+      function showToast(message) {
+        toast.querySelector('span').textContent = message;
+        toast.classList.add('show');
+        clearTimeout(window.tripToastTimer);
+        window.tripToastTimer = setTimeout(() => toast.classList.remove('show'), 2300);
+      }
+
+      const observer = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); }), { threshold: .12 });
+      document.querySelectorAll('.reveal').forEach(element => observer.observe(element));
+    });
+  </script>
+</body>
+</html>

@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import ResultsPage from './pages/ResultsPage';
 import FlightsPage from './pages/FlightsPage';
+import FlightDetailPage from './pages/FlightDetailPage';
 import InsightsPage from './pages/InsightsPage';
 import HotelDetailPage from './pages/HotelDetailPage';
 import ComparePage from './pages/ComparePage';
@@ -126,6 +127,11 @@ export default function App() {
             <Route path="/flights" element={
               <RequireAuth user={user}>
                 <RequireVerified user={user}><RequireOnboarding user={user}><FlightsPage /></RequireOnboarding></RequireVerified>
+              </RequireAuth>
+            } />
+            <Route path="/flight/:id" element={
+              <RequireAuth user={user}>
+                <RequireVerified user={user}><RequireOnboarding user={user}><FlightDetailPage /></RequireOnboarding></RequireVerified>
               </RequireAuth>
             } />
             <Route path="/transfers" element={<Navigate to="/" replace />} />

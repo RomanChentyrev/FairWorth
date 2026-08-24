@@ -179,7 +179,10 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
   const passengers = Math.max(1, Number(context.passengers) || 1);
   const preferredAirlines = parseList(preferences.preferred_airlines).map(value => String(value).toLowerCase());
   const travelStyle = parseList(preferences.travel_style).map(value => String(value).toLowerCase());
-  const wantedCabin = String(context.cabinClass || preferences.seat_class || '').toLowerCase() || null;
+  const requestedCabin = String(context.cabinClass || '').toLowerCase() || null;
+  const profileCabin = String(preferences.seat_class || '').toLowerCase() || null;
+  const wantedCabin = requestedCabin || profileCabin;
+  const relaxProfileConstraints = context.relaxProfileConstraints === true;
   const explicitAnyStops = String(context.maxStops || '').toLowerCase() === 'any';
   const hasSearchStopsOverride = context.maxStops !== undefined && context.maxStops !== null && context.maxStops !== '';
   let maxStops = explicitAnyStops
@@ -189,6 +192,8 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
       : (preferences.max_stops !== null && preferences.max_stops !== '' && Number.isFinite(Number(preferences.max_stops)) ? Number(preferences.max_stops) : null);
   if (!hasSearchStopsOverride && maxStops === null && preferences.flight_type === 'direct') maxStops = 0;
   if (!hasSearchStopsOverride && maxStops === null && preferences.flight_type === '1stop') maxStops = 1;
+  const strictMaxStops = hasSearchStopsOverride || !relaxProfileConstraints ? maxStops : null;
+  const strictCabin = requestedCabin || (relaxProfileConstraints ? null : profileCabin);
   const weights = contextWeights(travelStyle, context.tripDays ?? null, preferences.budget_level);
   const benchmarks = buildBenchmarks(tickets, wantedCabin);
 
@@ -241,8 +246,8 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
     fare.unknown.forEach(item => { if (!unknown.includes(item)) unknown.push(item); });
 
     const strictFailures = [];
-    if (maxStops !== null && stops !== null && stops > maxStops) strictFailures.push('max_stops');
-    if (wantedCabin && cabin && cabin !== wantedCabin) strictFailures.push('cabin_class');
+    if (strictMaxStops !== null && stops !== null && stops > strictMaxStops) strictFailures.push('max_stops');
+    if (strictCabin && cabin && cabin !== strictCabin) strictFailures.push('cabin_class');
     if (finitePositive(ticket.seats_left) && Number(ticket.seats_left) < passengers) strictFailures.push('party_availability');
 
     return {
@@ -265,6 +270,7 @@ function scoreFlights(tickets, preferences = {}, context = {}) {
         travel_style: travelStyle,
         requested_cabin: wantedCabin,
         max_stops: maxStops,
+        profile_constraints_relaxed: relaxProfileConstraints,
         group_seating_score: seatFit === null ? null : round(seatFit),
         connection_score: connectionFit === null ? null : round(connectionFit),
       },

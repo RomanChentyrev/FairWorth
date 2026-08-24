@@ -303,6 +303,49 @@ async function getCountries() { return fetchStaticFile('countries'); }
 async function getAirlines()  { return fetchStaticFile('airlines'); }
 async function getPlanes()    { return fetchStaticFile('planes'); }
 
+function normalizeSearchTerm(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\p{L}]+/gu, ' ')
+    .trim();
+}
+
+function editDistance(left, right) {
+  const a = normalizeSearchTerm(left);
+  const b = normalizeSearchTerm(right);
+  if (!a) return b.length;
+  if (!b) return a.length;
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    let previous = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const diagonal = previous;
+      previous = row[j];
+      row[j] = Math.min(
+        row[j] + 1,
+        row[j - 1] + 1,
+        diagonal + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+  }
+  return row[b.length];
+}
+
+function fuzzyPlaceScore(query, values) {
+  const normalizedQuery = normalizeSearchTerm(query);
+  if (normalizedQuery.length < 4) return 0;
+  return values.reduce((best, value) => {
+    const normalizedValue = normalizeSearchTerm(value);
+    if (!normalizedValue) return best;
+    const distance = editDistance(normalizedQuery, normalizedValue);
+    const similarity = 1 - distance / Math.max(normalizedQuery.length, normalizedValue.length);
+    return Math.max(best, similarity);
+  }, 0);
+}
+
 /**
  * Поиск аэропорта/города по строке (для автокомплита)
  */
@@ -356,7 +399,31 @@ async function searchAirports(query) {
     }
   }
 
-  return results.slice(0, 10);
+  if (results.length) return results.slice(0, 10);
+
+  // Autocomplete must remain useful when a conversational query contains a
+  // small typo (for example "Nha Thang" instead of "Nha Trang").
+  const fuzzy = [];
+  for (const city of Object.values(cities)) {
+    const score = fuzzyPlaceScore(query, [city.name, city.name_translations?.ru, city.code]);
+    if (score >= 0.78) fuzzy.push({
+      type: 'city', code: city.code, name: city.name,
+      name_ru: city.name_translations?.ru, country: city.country_code, match_score: score,
+    });
+  }
+  for (const ap of Object.values(airports)) {
+    if (!ap.iata_type) continue;
+    const score = fuzzyPlaceScore(query, [ap.name, ap.name_translations?.ru, ap.city_name, ap.code]);
+    if (score >= 0.78) fuzzy.push({
+      type: 'airport', code: ap.code, name: ap.name,
+      name_ru: ap.name_translations?.ru, city: ap.city_name,
+      country: ap.country_code, match_score: score,
+    });
+  }
+  return fuzzy
+    .sort((left, right) => right.match_score - left.match_score || Number(left.type !== 'city') - Number(right.type !== 'city'))
+    .filter((item, index, list) => list.findIndex(candidate => candidate.code === item.code && candidate.type === item.type) === index)
+    .slice(0, 10);
 }
 
 module.exports = {
@@ -371,5 +438,6 @@ module.exports = {
   getAirlines,
   getPlanes,
   searchAirports,
+  fuzzyPlaceScore,
   markIndicativeFares,
 };
