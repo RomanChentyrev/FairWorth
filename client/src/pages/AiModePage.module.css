@@ -208,7 +208,7 @@
 
 @media (max-width: 760px) {
   .page, .contextHidden { height: calc(var(--ai-visual-viewport-height, 100dvh) - 60px - 66px - env(safe-area-inset-bottom)); margin-top: 60px; grid-template-columns: minmax(0, 1fr); }
-  .page.keyboardOpen, .contextHidden.keyboardOpen { height: calc(var(--ai-visual-viewport-height, 100dvh) - 60px); }
+  .page.keyboardOpen, .contextHidden.keyboardOpen { position: fixed; inset-inline: 0; top: calc(60px + var(--ai-visual-viewport-offset, 0px)); bottom: auto; width: 100%; height: calc(var(--ai-visual-viewport-height, 100dvh) - 60px); margin-top: 0; z-index: 80; }
   .sidebar { position: fixed; inset-block: 56px calc(62px + env(safe-area-inset-bottom)); inset-inline-start: 0; width: min(286px, 88vw); transform: translateX(-105%); transition: transform 180ms ease; box-shadow: 12px 0 28px rgba(20, 38, 68, .16); }
   [dir='rtl'] .sidebar { transform: translateX(105%); }
   .sidebarOpen, [dir='rtl'] .sidebarOpen { transform: translateX(0); }
@@ -230,7 +230,7 @@
   .flightResult { grid-template-columns: 36px minmax(0, 1fr) auto; }
   .flightResult .iconAction { grid-column: 1 / -1; width: 100%; min-height: 40px; }
   .composerArea { padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
-  .keyboardOpen .composerArea { padding-bottom: 8px; }
+  .keyboardOpen .composerArea { position: relative; z-index: 12; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
   .keyboardOpen .composerArea > small { display: none; }
   .composer { min-height: 52px; }
   .composer textarea { font-size: 16px; }

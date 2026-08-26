@@ -435,7 +435,7 @@ export default function HomePage() {
                 />
               </div>
               <div className={styles.row2}>
-                <div className={styles.field}>
+                <div className={`${styles.field} ${styles.dateField}`}>
                   <label className={styles.label}>{t('home_checkin')}</label>
                   <input
                     type="date"
@@ -448,7 +448,7 @@ export default function HomePage() {
                     }}
                   />
                 </div>
-                <div className={styles.field}>
+                <div className={`${styles.field} ${styles.dateField}`}>
                   <label className={styles.label}>{t('home_checkout')}</label>
                   <input
                     type="date"

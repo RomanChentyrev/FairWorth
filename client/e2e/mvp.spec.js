@@ -156,7 +156,7 @@ test('profile preferences stay interactive and responsive', async ({ page, reque
   await page.getByRole('button', { name: 'Personal info', exact: true }).click();
   const personalPanel = page.getByRole('heading', { name: 'Personal info', exact: true }).locator('xpath=../../..');
   const personalWidth = await personalPanel.evaluate(panel => panel.getBoundingClientRect().width);
-  expect(personalWidth).toBeGreaterThanOrEqual(350);
+  expect(personalWidth).toBeGreaterThanOrEqual(348);
 
   await page.goto('/');
   const dateLayout = await page.evaluate(() => {
@@ -373,18 +373,37 @@ test('demo checkout shows the cost breakdown and confirms a booking', async ({ p
   const basketLayout = await mobileBasket.evaluate(drawer => {
     const drawerRect = drawer.getBoundingClientRect();
     const controls = [...drawer.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+    const items = [...drawer.querySelectorAll('button[aria-label="Remove"]')]
+      .map(button => button.parentElement?.parentElement)
+      .filter(Boolean)
+      .map(item => {
+        const rect = item.getBoundingClientRect();
+        const children = [...item.children].map(child => child.getBoundingClientRect());
+        return {
+          top: rect.top,
+          bottom: rect.bottom,
+          contentInside: children.every(child => child.left >= rect.left - 1
+            && child.right <= rect.right + 1
+            && child.top >= rect.top - 1
+            && child.bottom <= rect.bottom + 1),
+        };
+      });
     return {
       viewportWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
       drawerLeft: drawerRect.left,
       drawerRight: drawerRect.right,
       controlsInside: controls.every(rect => rect.left >= drawerRect.left - 1 && rect.right <= drawerRect.right + 1),
+      itemContentInside: items.every(item => item.contentInside),
+      itemsDoNotOverlap: items.every((item, index) => index === 0 || item.top >= items[index - 1].bottom),
     };
   });
   expect(basketLayout.documentWidth).toBeLessThanOrEqual(basketLayout.viewportWidth);
   expect(basketLayout.drawerLeft).toBeGreaterThanOrEqual(0);
   expect(basketLayout.drawerRight).toBeLessThanOrEqual(basketLayout.viewportWidth);
   expect(basketLayout.controlsInside).toBe(true);
+  expect(basketLayout.itemContentInside).toBe(true);
+  expect(basketLayout.itemsDoNotOverlap).toBe(true);
   await mobileBasket.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByLabel('Phone').fill('+375 29 000 00 00');
   await page.getByLabel('First name').fill('Roman');

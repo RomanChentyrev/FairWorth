@@ -153,6 +153,7 @@ export default function AiModePage() {
   const [contextOpen, setContextOpen] = useState(() => typeof window === 'undefined' || !window.matchMedia('(max-width: 760px)').matches);
   const [composerFocused, setComposerFocused] = useState(false);
   const [visualViewportHeight, setVisualViewportHeight] = useState(null);
+  const [visualViewportOffset, setVisualViewportOffset] = useState(0);
   const timelineRef = useRef(null);
 
   useEffect(() => {
@@ -170,6 +171,7 @@ export default function AiModePage() {
       const browserHeight = Number(window.innerHeight) || 0;
       const visualHeight = Number(viewport?.height) || browserHeight;
       setVisualViewportHeight(Math.round(Math.min(browserHeight, visualHeight)));
+      setVisualViewportOffset(Math.max(0, Math.round(Number(viewport?.offsetTop) || 0)));
     };
     updateHeight();
     viewport?.addEventListener('resize', updateHeight);
@@ -184,7 +186,13 @@ export default function AiModePage() {
 
   useEffect(() => {
     document.body.classList.toggle('aiKeyboardOpen', composerFocused);
-    return () => document.body.classList.remove('aiKeyboardOpen');
+    document.body.classList.add('aiModeActive');
+    if (composerFocused) document.body.style.overflow = 'hidden';
+    else document.body.style.removeProperty('overflow');
+    return () => {
+      document.body.classList.remove('aiKeyboardOpen', 'aiModeActive');
+      document.body.style.removeProperty('overflow');
+    };
   }, [composerFocused]);
 
   const context = activeConversation?.search_context || {};
@@ -468,7 +476,10 @@ export default function AiModePage() {
 
   return <main
     className={`${styles.page} ${contextOpen ? '' : styles.contextHidden} ${composerFocused ? styles.keyboardOpen : ''}`}
-    style={visualViewportHeight ? { '--ai-visual-viewport-height': `${visualViewportHeight}px` } : undefined}
+    style={visualViewportHeight ? {
+      '--ai-visual-viewport-height': `${visualViewportHeight}px`,
+      '--ai-visual-viewport-offset': `${visualViewportOffset}px`,
+    } : undefined}
   >
     <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ''}`}>
       <div className={styles.sidebarHeader}><div><span className={styles.sidebarMark}><Sparkles size={17} /></span><strong>AI Mode</strong></div><button type="button" aria-label="Close conversations" onClick={() => setSidebarOpen(false)} className={styles.mobileClose}><X size={18} /></button></div>
