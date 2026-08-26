@@ -151,6 +151,8 @@ export default function AiModePage() {
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(() => typeof window === 'undefined' || !window.matchMedia('(max-width: 760px)').matches);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const [visualViewportHeight, setVisualViewportHeight] = useState(null);
   const timelineRef = useRef(null);
 
   useEffect(() => {
@@ -161,6 +163,29 @@ export default function AiModePage() {
     compactViewport.addEventListener('change', handleViewportChange);
     return () => compactViewport.removeEventListener('change', handleViewportChange);
   }, []);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const updateHeight = () => {
+      const browserHeight = Number(window.innerHeight) || 0;
+      const visualHeight = Number(viewport?.height) || browserHeight;
+      setVisualViewportHeight(Math.round(Math.min(browserHeight, visualHeight)));
+    };
+    updateHeight();
+    viewport?.addEventListener('resize', updateHeight);
+    viewport?.addEventListener('scroll', updateHeight);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      viewport?.removeEventListener('resize', updateHeight);
+      viewport?.removeEventListener('scroll', updateHeight);
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle('aiKeyboardOpen', composerFocused);
+    return () => document.body.classList.remove('aiKeyboardOpen');
+  }, [composerFocused]);
 
   const context = activeConversation?.search_context || {};
   const sortedConversations = useMemo(() => [...conversations].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)), [conversations]);
@@ -441,7 +466,10 @@ export default function AiModePage() {
     context.budget_amount && { icon: CircleDollarSign, value: `${formatAmount(context.budget_amount, lang)} ${context.currency || ''}` },
   ].filter(Boolean);
 
-  return <main className={`${styles.page} ${contextOpen ? '' : styles.contextHidden}`}>
+  return <main
+    className={`${styles.page} ${contextOpen ? '' : styles.contextHidden} ${composerFocused ? styles.keyboardOpen : ''}`}
+    style={visualViewportHeight ? { '--ai-visual-viewport-height': `${visualViewportHeight}px` } : undefined}
+  >
     <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ''}`}>
       <div className={styles.sidebarHeader}><div><span className={styles.sidebarMark}><Sparkles size={17} /></span><strong>AI Mode</strong></div><button type="button" aria-label="Close conversations" onClick={() => setSidebarOpen(false)} className={styles.mobileClose}><X size={18} /></button></div>
       <button className={styles.newChat} type="button" onClick={newConversation}><MessageSquarePlus size={16} />{t('ai_new_chat')}</button>
@@ -490,7 +518,19 @@ export default function AiModePage() {
       <div className={styles.composerArea}>
         {error && <div className={styles.error}><span>{error}</span><button type="button" onClick={() => setError('')}><X size={14} /></button></div>}
         <div className={styles.composer}>
-          <textarea value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder={t('ai_composer_placeholder')} rows={1} maxLength={4000} />
+          <textarea
+            value={draft}
+            onChange={event => setDraft(event.target.value)}
+            onFocus={() => {
+              setComposerFocused(true);
+              window.requestAnimationFrame(() => timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight }));
+            }}
+            onBlur={() => window.setTimeout(() => setComposerFocused(false), 120)}
+            onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }}
+            placeholder={t('ai_composer_placeholder')}
+            rows={1}
+            maxLength={4000}
+          />
           <button type="button" disabled={!draft.trim() || sending} onClick={() => submit()} aria-label={t('ai_send')}><ArrowUp size={18} /></button>
         </div>
         <small>{t('ai_disclaimer')}</small>

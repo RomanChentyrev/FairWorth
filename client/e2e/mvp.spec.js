@@ -153,6 +153,27 @@ test('profile preferences stay interactive and responsive', async ({ page, reque
   await expect(page.getByRole('heading', { name: 'Your travel profile' })).toBeVisible();
   const dimensions = await page.evaluate(() => ({ viewport: window.innerWidth, content: document.documentElement.scrollWidth }));
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+  await page.getByRole('button', { name: 'Personal info', exact: true }).click();
+  const personalPanel = page.getByRole('heading', { name: 'Personal info', exact: true }).locator('xpath=../../..');
+  const personalWidth = await personalPanel.evaluate(panel => panel.getBoundingClientRect().width);
+  expect(personalWidth).toBeGreaterThanOrEqual(350);
+
+  await page.goto('/');
+  const dateLayout = await page.evaluate(() => {
+    const dates = [...document.querySelectorAll('input[type="date"]')].map(input => input.getBoundingClientRect());
+    const city = document.querySelector('input[placeholder="City or airport"]')?.getBoundingClientRect();
+    return {
+      cityWidth: city?.width || 0,
+      dateWidths: dates.map(rect => rect.width),
+      dateRights: dates.map(rect => rect.right),
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    };
+  });
+  expect(dateLayout.documentWidth).toBeLessThanOrEqual(dateLayout.viewportWidth);
+  expect(dateLayout.dateWidths).toHaveLength(2);
+  for (const width of dateLayout.dateWidths) expect(Math.abs(width - dateLayout.cityWidth)).toBeLessThanOrEqual(1);
+  for (const right of dateLayout.dateRights) expect(right).toBeLessThanOrEqual(dateLayout.viewportWidth);
 });
 
 test('Insights renders a live offer as a responsive visual card', async ({ page, request }) => {
@@ -295,6 +316,33 @@ test('AI Mode opens as a separate conversational workspace', async ({ page, requ
   await expect(page.getByText('AI Travel Assistant')).toBeVisible();
   const dimensions = await page.evaluate(() => ({ viewport: window.innerWidth, content: document.documentElement.scrollWidth }));
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+
+  const composer = page.getByPlaceholder(/ask about a destination/i);
+  await composer.focus();
+  await page.setViewportSize({ width: 375, height: 500 });
+  await expect.poll(() => page.evaluate(() => document.body.classList.contains('aiKeyboardOpen'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => {
+    const textarea = document.querySelector('textarea[placeholder*="Ask about"]');
+    return textarea?.closest('div')?.getBoundingClientRect().bottom || 0;
+  })).toBeLessThanOrEqual(500);
+  const keyboardLayout = await page.evaluate(() => {
+    const textarea = document.querySelector('textarea[placeholder*="Ask about"]');
+    const composerBox = textarea?.closest('div')?.getBoundingClientRect();
+    const bottomNavigation = document.querySelector('nav[aria-label="Primary navigation"]');
+    const tripButton = [...document.querySelectorAll('button')].find(button => /^Trip\s+\d+$/.test(button.textContent?.trim() || ''));
+    return {
+      composerBottom: composerBox?.bottom || 0,
+      viewportHeight: window.innerHeight,
+      bottomNavigationVisible: bottomNavigation ? getComputedStyle(bottomNavigation).display !== 'none' : false,
+      tripButtonVisible: tripButton ? getComputedStyle(tripButton).display !== 'none' : false,
+      documentWidth: document.documentElement.scrollWidth,
+    };
+  });
+  expect(keyboardLayout.composerBottom).toBeLessThanOrEqual(keyboardLayout.viewportHeight);
+  expect(keyboardLayout.bottomNavigationVisible).toBe(false);
+  expect(keyboardLayout.tripButtonVisible).toBe(false);
+  expect(keyboardLayout.documentWidth).toBeLessThanOrEqual(375);
+  await composer.blur();
 });
 
 test('demo checkout shows the cost breakdown and confirms a booking', async ({ page, request }) => {
@@ -318,6 +366,26 @@ test('demo checkout shows the cost breakdown and confirms a booking', async ({ p
   await page.goto('/booking/demo');
   await expect(page.getByRole('heading', { name: 'Demo trip booking' })).toBeVisible();
   await expect(page.getByText('$1,250', { exact: true }).first()).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: /^Trip 2$/ }).click();
+  const mobileBasket = page.getByTestId('trip-basket-drawer');
+  await expect(mobileBasket).toBeVisible();
+  const basketLayout = await mobileBasket.evaluate(drawer => {
+    const drawerRect = drawer.getBoundingClientRect();
+    const controls = [...drawer.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+    return {
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      drawerLeft: drawerRect.left,
+      drawerRight: drawerRect.right,
+      controlsInside: controls.every(rect => rect.left >= drawerRect.left - 1 && rect.right <= drawerRect.right + 1),
+    };
+  });
+  expect(basketLayout.documentWidth).toBeLessThanOrEqual(basketLayout.viewportWidth);
+  expect(basketLayout.drawerLeft).toBeGreaterThanOrEqual(0);
+  expect(basketLayout.drawerRight).toBeLessThanOrEqual(basketLayout.viewportWidth);
+  expect(basketLayout.controlsInside).toBe(true);
+  await mobileBasket.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByLabel('Phone').fill('+375 29 000 00 00');
   await page.getByLabel('First name').fill('Roman');
   await page.getByLabel('Last name').fill('Test');

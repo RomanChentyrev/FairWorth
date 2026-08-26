@@ -98,8 +98,11 @@
 }
 
 .items {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 14px;
   display: grid;
+  align-content: start;
   gap: 10px;
   overflow: auto;
 }
@@ -170,6 +173,7 @@
 }
 
 .footer {
+  flex: 0 0 auto;
   margin-top: auto;
   padding: 16px 18px;
   border-top: 1px solid var(--border);
@@ -180,6 +184,7 @@
 }
 
 .tripScore {
+  flex: 0 0 auto;
   margin: 0 14px 10px;
   padding: 10px 12px;
   border: 1px solid var(--green-border);
@@ -214,10 +219,11 @@
   color: var(--text-secondary);
   font-weight: 700;
 }
-.checkoutBtn { min-height: 44px; margin: 0 14px 8px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 6px; background: var(--navy); color: #fff; font-size: 13px; font-weight: 700; }
+.drawer > .clearBtn { flex: 0 0 auto; width: auto; margin: 0 14px 8px; }
+.checkoutBtn { min-height: 44px; flex: 0 0 auto; margin: 0 14px 8px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 6px; background: var(--navy); color: #fff; font-size: 13px; font-weight: 700; }
 .checkoutBtn:hover:not(:disabled) { background: var(--navy-mid); }
 .checkoutBtn:disabled { opacity: .45; }
-.checkoutHint { margin: 0 14px 12px; color: var(--text-muted); font-size: 10px; text-align: center; }
+.checkoutHint { flex: 0 0 auto; margin: 0 14px 12px; color: var(--text-muted); font-size: 10px; text-align: center; }
 
 @media (max-width: 720px) {
   .tab {
@@ -239,14 +245,22 @@
     left: 0;
     top: 60px;
     bottom: calc(62px + env(safe-area-inset-bottom));
-    width: auto;
+    width: 100%;
+    max-width: 100%;
     border-radius: 0;
     border-inline: 0;
   }
   .header { padding: 14px; }
   .items { padding: 10px; }
-  .item { grid-template-columns: 36px minmax(0, 1fr); }
-  .itemSide { grid-column: 2; justify-content: space-between; }
-  .footer { align-items: stretch; flex-direction: column; }
+  .item { min-height: 0; grid-template-columns: 40px minmax(0, 1fr); align-items: start; padding: 12px; }
+  .itemIcon { grid-row: 1 / span 2; width: 40px; height: 40px; }
+  .itemBody { align-self: center; padding-inline-end: 2px; }
+  .itemTitle { white-space: normal; overflow-wrap: anywhere; }
+  .itemSubtitle { overflow-wrap: anywhere; }
+  .itemSide { width: 100%; min-width: 0; grid-column: 2; justify-content: space-between; gap: 10px; }
+  .itemPrice { min-width: 0; overflow-wrap: anywhere; }
+  .removeBtn { width: 44px; height: 44px; flex: 0 0 44px; }
+  .footer { align-items: stretch; flex-direction: column; padding: 12px 14px; }
   .clearBtn { min-height: 44px; }
+  :global(body.aiKeyboardOpen) .tab { display: none; }
 }

@@ -64,5 +64,6 @@
   .mobileNavItem span { max-width: 100%; overflow: hidden; padding: 0 2px; font-size: 9px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
   .mobileNavActive { color: var(--green); }
   .mobileNavActive::before { content: ''; position: absolute; top: -5px; width: 28px; height: 2px; background: var(--coral); }
+  :global(body.aiKeyboardOpen) .mobileBottomNav { display: none; }
 }
 @keyframes menuIn { from { opacity: 0; transform: translateY(-8px); } }

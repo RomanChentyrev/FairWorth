@@ -632,7 +632,7 @@
   .pageIntro p { line-height: 1.5; }
   .profileProgress { width: 100%; min-width: 0; padding: 0; }
   .progressRing { width: 54px; height: 54px; flex-basis: 54px; border-width: 5px; }
-  .layout { display: flex; flex-direction: column; gap: 14px; padding: 14px 10px 84px; }
+  .layout { width: 100%; max-width: 100%; display: flex; align-items: stretch; flex-direction: column; gap: 14px; padding: 14px 10px 84px; }
   .sidebar { position: static; width: 100%; gap: 10px; }
   .avatarCard { display: flex; align-items: center; gap: 12px; padding: 14px; text-align: start; border-radius: 8px; }
   .avatarWrap, .avatar { width: 52px; height: 52px; }
@@ -647,7 +647,8 @@
   }
   .tabNav::-webkit-scrollbar { display: none; }
   .tabNavItem { min-width: max-content; min-height: 42px; flex: 0 0 auto; padding: 8px 12px; scroll-snap-align: start; }
-  .tabContent { padding: 16px 12px; border-radius: 8px; }
+  .main { width: 100%; max-width: 100%; }
+  .tabContent { width: 100%; max-width: 100%; box-sizing: border-box; padding: 16px 12px; border-radius: 8px; }
   .tabHeader { align-items: stretch; flex-direction: column; gap: 14px; margin-bottom: 20px; padding-bottom: 16px; }
   .tabTitle { font-size: 19px; }
   .editBtn { min-height: 44px; justify-content: center; }
