@@ -102,6 +102,32 @@ function isoDate(year, month, day) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+function todayIso(referenceDate = new Date()) {
+  return new Date(Date.UTC(
+    referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), referenceDate.getUTCDate(),
+  )).toISOString().slice(0, 10);
+}
+
+function implicitFutureYear(month, day, referenceDate = new Date()) {
+  const year = referenceDate.getUTCFullYear();
+  const candidate = isoDate(year, month, day);
+  return candidate && candidate >= todayIso(referenceDate) ? year : year + 1;
+}
+
+function hasPastStartDate(context = {}, referenceDate = new Date()) {
+  return /^20\d{2}-\d{2}-\d{2}$/.test(String(context.date_start || ''))
+    && context.date_start < todayIso(referenceDate);
+}
+
+function withoutPastTravelDates(context = {}, referenceDate = new Date()) {
+  if (!hasPastStartDate(context, referenceDate)) return { ...context };
+  const sanitized = { ...context };
+  delete sanitized.date_start;
+  delete sanitized.date_end;
+  delete sanitized.date_range_hint;
+  return sanitized;
+}
+
 function dateRangePatch(dateStart, dateEnd) {
   if (!dateStart || !dateEnd || dateEnd < dateStart) return {};
   return { date_start: dateStart, date_end: dateEnd, date_range_hint: null };
@@ -122,7 +148,7 @@ function extractDateRangePatch(message, currentContext = {}) {
   }
   const chineseMatch = value.match(/(20\d{2})?\s*年?\s*(\d{1,2})月(\d{1,2})日?\s*(?:至|到|[-–—])\s*(?:(20\d{2})年)?\s*(?:(\d{1,2})月)?(\d{1,2})日?/u);
   if (chineseMatch) {
-    const startYear = Number(chineseMatch[1] || new Date().getFullYear());
+    const startYear = Number(chineseMatch[1] || implicitFutureYear(Number(chineseMatch[2]), Number(chineseMatch[3])));
     const endYear = Number(chineseMatch[4] || startYear);
     const startMonth = Number(chineseMatch[2]);
     const endMonth = Number(chineseMatch[5] || startMonth);
@@ -136,7 +162,7 @@ function extractDateRangePatch(message, currentContext = {}) {
     const month = monthNumbers[match[2]];
     const endDay = Number(match[3]);
     const year = match[4] ? Number(match[4]) : null;
-    const resolvedYear = year || new Date().getFullYear();
+    const resolvedYear = year || implicitFutureYear(month, startDay);
     const dateStart = isoDate(resolvedYear, month, startDay);
     const dateEnd = isoDate(resolvedYear, month, endDay);
     return dateRangePatch(dateStart, dateEnd);
@@ -146,14 +172,14 @@ function extractDateRangePatch(message, currentContext = {}) {
     const startDay = Number(trailingMonthMatch[1]);
     const endDay = Number(trailingMonthMatch[2]);
     const month = monthNumbers[trailingMonthMatch[3]];
-    const resolvedYear = trailingMonthMatch[4] ? Number(trailingMonthMatch[4]) : new Date().getFullYear();
+    const resolvedYear = trailingMonthMatch[4] ? Number(trailingMonthMatch[4]) : implicitFutureYear(month, startDay);
     const dateStart = isoDate(resolvedYear, month, startDay);
     const dateEnd = isoDate(resolvedYear, month, endDay);
     return dateRangePatch(dateStart, dateEnd);
   }
   const typoForMatch = value.match(new RegExp(`from\\s+(\\d{1,2})\\s+for\\s+(\\d{1,2})\\s+(${months})(?:[,\\s]+(20\\d{2}))?`, 'iu'));
   if (typoForMatch) {
-    const resolvedYear = typoForMatch[4] ? Number(typoForMatch[4]) : new Date().getFullYear();
+    const resolvedYear = typoForMatch[4] ? Number(typoForMatch[4]) : implicitFutureYear(monthNumbers[typoForMatch[3]], Number(typoForMatch[1]));
     return dateRangePatch(
       isoDate(resolvedYear, monthNumbers[typoForMatch[3]], Number(typoForMatch[1])),
       isoDate(resolvedYear, monthNumbers[typoForMatch[3]], Number(typoForMatch[2])),
@@ -278,7 +304,7 @@ function extractRequestPatch(message, currentContext = {}) {
 function currentYearDateHintPatch(context = {}) {
   if (!context.date_range_hint || context.date_start || context.date_end) return {};
   const { start_day: startDay, end_day: endDay, month } = context.date_range_hint;
-  const year = new Date().getFullYear();
+  const year = implicitFutureYear(month, startDay);
   const dateStart = isoDate(year, month, startDay);
   const dateEnd = isoDate(year, month, endDay);
   return dateStart && dateEnd ? { date_start: dateStart, date_end: dateEnd, date_range_hint: null } : {};
@@ -297,7 +323,7 @@ function actionableIntent(intent, context = {}) {
 }
 
 function sanitizeStoredContext(context = {}) {
-  const sanitized = { ...context };
+  const sanitized = withoutPastTravelDates(context);
   const destination = String(sanitized.destination || '').trim().toLowerCase();
   if (genericDestinationWords.has(destination)) sanitized.destination = null;
   return sanitized;
@@ -305,10 +331,12 @@ function sanitizeStoredContext(context = {}) {
 
 function requiredFields(intent, context) {
   const validDate = value => /^20\d{2}-\d{2}-\d{2}$/.test(String(value || ''));
+  const today = todayIso();
   const absent = field => !context[field]
     || (field === 'destination' && isBroadDestination(context[field]))
     || (['date_start', 'date_end'].includes(field) && !validDate(context[field]))
-    || (field === 'date_end' && context.date_start && context.date_end < context.date_start);
+    || (field === 'date_start' && context.date_start < today)
+    || (field === 'date_end' && context.date_start && context.date_end <= context.date_start);
   if (intent === 'flight_search') return ['origin', 'destination', 'date_start'].filter(absent);
   if (intent === 'hotel_search') return ['destination', 'date_start', 'date_end'].filter(absent);
   if (intent === 'itinerary') return ['destination', 'date_start', 'date_end'].filter(absent);
@@ -327,16 +355,16 @@ function clarificationReply(language, missing, context = {}, repeated = false) {
       ? `I have ${dateHint.start_day}–${dateHint.end_day} ${monthLabel}, but I still need the year. Which year should I use?`
       : missing.includes('destination') ? 'Which exact city or island should I search? Live availability requires a specific destination.'
         : missing.includes('origin') ? 'Which city or airport will you depart from?'
-          : dateMissing ? `What are your check-in and check-out dates?${codeExample}`
+          : dateMissing ? `What future check-in and check-out dates should I use? Dates before today cannot be searched.${codeExample}`
             : missing.includes('budget_amount') ? 'What is your total budget for the trip, including the hotel and flights?'
             : 'Tell me whether you want hotels, flights, a comparison or a trip plan.',
-    ru: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `Я запомнил период ${dateHint.start_day}–${dateHint.end_day} ${monthLabel}, но нужен год. Какой год использовать?` : missing.includes('destination') ? 'Какой конкретно город или остров нужно искать?' : missing.includes('origin') ? 'Из какого города или аэропорта вы вылетаете?' : dateMissing ? 'Назовите даты заезда и выезда.' : missing.includes('budget_amount') ? 'Какой общий бюджет выделен на поездку, включая отель и перелёт?' : 'Уточните, что нужно найти: отель, перелёт, сравнение или план поездки.',
-    de: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `Ich habe den ${dateHint.start_day}.–${dateHint.end_day}. ${monthLabel} gespeichert, brauche aber noch das Jahr.` : missing.includes('destination') ? 'Welche genaue Stadt oder Insel soll ich durchsuchen?' : missing.includes('origin') ? 'Von welcher Stadt oder welchem Flughafen reisen Sie ab?' : dateMissing ? 'Wie lauten Ihre An- und Abreisedaten?' : 'Möchten Sie Hotels, Flüge, einen Vergleich oder einen Reiseplan?',
-    fr: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `J’ai noté du ${dateHint.start_day} au ${dateHint.end_day} ${monthLabel}, mais il me faut encore l’année.` : missing.includes('destination') ? 'Quelle ville ou île précise dois-je rechercher ?' : missing.includes('origin') ? 'De quelle ville ou de quel aéroport partez-vous ?' : dateMissing ? 'Quelles sont vos dates d’arrivée et de départ ?' : 'Souhaitez-vous des hôtels, des vols, une comparaison ou un itinéraire ?',
-    it: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `Ho memorizzato dal ${dateHint.start_day} al ${dateHint.end_day} ${monthLabel}, ma mi serve ancora l’anno.` : missing.includes('destination') ? 'Quale città o isola specifica devo cercare?' : missing.includes('origin') ? 'Da quale città o aeroporto partirai?' : dateMissing ? 'Quali sono le date di check-in e check-out?' : 'Vuoi cercare hotel, voli, un confronto o un itinerario?',
-    es: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `He guardado del ${dateHint.start_day} al ${dateHint.end_day} de ${monthLabel}, pero aún necesito el año.` : missing.includes('destination') ? '¿Qué ciudad o isla concreta debo buscar?' : missing.includes('origin') ? '¿Desde qué ciudad o aeropuerto sales?' : dateMissing ? '¿Cuáles son las fechas de entrada y salida?' : '¿Quieres hoteles, vuelos, una comparación o un itinerario?',
-    'zh-CN': dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `我已记录 ${dateHint.start_day} 日至 ${dateHint.end_day} 日，但还需要年份。` : missing.includes('destination') ? '请提供要搜索的具体城市或岛屿。' : missing.includes('origin') ? '您将从哪个城市或机场出发？' : dateMissing ? '请提供入住和退房日期。' : '请说明您需要酒店、航班、比较还是行程计划。',
-    ar: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `سجلت الفترة من ${dateHint.start_day} إلى ${dateHint.end_day} ${monthLabel}، لكنني أحتاج إلى السنة.` : missing.includes('destination') ? 'ما المدينة أو الجزيرة المحددة التي تريد البحث فيها؟' : missing.includes('origin') ? 'من أي مدينة أو مطار ستغادر؟' : dateMissing ? 'ما تاريخا تسجيل الوصول والمغادرة؟' : 'هل تريد فنادق أم رحلات أم مقارنة أم خطة سفر؟',
+    ru: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `Я запомнил период ${dateHint.start_day}–${dateHint.end_day} ${monthLabel}, но нужен год. Какой год использовать?` : missing.includes('destination') ? 'Какой конкретно город или остров нужно искать?' : missing.includes('origin') ? 'Из какого города или аэропорта вы вылетаете?' : dateMissing ? 'Какие будущие даты заезда и выезда использовать? Прошедшие даты искать нельзя.' : missing.includes('budget_amount') ? 'Какой общий бюджет выделен на поездку, включая отель и перелёт?' : 'Уточните, что нужно найти: отель, перелёт, сравнение или план поездки.',
+    de: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `Ich habe den ${dateHint.start_day}.–${dateHint.end_day}. ${monthLabel} gespeichert, brauche aber noch das Jahr.` : missing.includes('destination') ? 'Welche genaue Stadt oder Insel soll ich durchsuchen?' : missing.includes('origin') ? 'Von welcher Stadt oder welchem Flughafen reisen Sie ab?' : dateMissing ? 'Welche zukünftigen An- und Abreisedaten soll ich verwenden? Vergangene Daten können nicht gesucht werden.' : 'Möchten Sie Hotels, Flüge, einen Vergleich oder einen Reiseplan?',
+    fr: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `J’ai noté du ${dateHint.start_day} au ${dateHint.end_day} ${monthLabel}, mais il me faut encore l’année.` : missing.includes('destination') ? 'Quelle ville ou île précise dois-je rechercher ?' : missing.includes('origin') ? 'De quelle ville ou de quel aéroport partez-vous ?' : dateMissing ? 'Quelles dates futures d’arrivée et de départ dois-je utiliser ? Les dates passées ne peuvent pas être recherchées.' : 'Souhaitez-vous des hôtels, des vols, une comparaison ou un itinéraire ?',
+    it: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `Ho memorizzato dal ${dateHint.start_day} al ${dateHint.end_day} ${monthLabel}, ma mi serve ancora l’anno.` : missing.includes('destination') ? 'Quale città o isola specifica devo cercare?' : missing.includes('origin') ? 'Da quale città o aeroporto partirai?' : dateMissing ? 'Quali date future di check-in e check-out devo usare? Non è possibile cercare date passate.' : 'Vuoi cercare hotel, voli, un confronto o un itinerario?',
+    es: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `He guardado del ${dateHint.start_day} al ${dateHint.end_day} de ${monthLabel}, pero aún necesito el año.` : missing.includes('destination') ? '¿Qué ciudad o isla concreta debo buscar?' : missing.includes('origin') ? '¿Desde qué ciudad o aeropuerto sales?' : dateMissing ? '¿Qué fechas futuras de entrada y salida debo usar? No se pueden buscar fechas pasadas.' : '¿Quieres hoteles, vuelos, una comparación o un itinerario?',
+    'zh-CN': dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `我已记录 ${dateHint.start_day} 日至 ${dateHint.end_day} 日，但还需要年份。` : missing.includes('destination') ? '请提供要搜索的具体城市或岛屿。' : missing.includes('origin') ? '您将从哪个城市或机场出发？' : dateMissing ? '请提供未来的入住和退房日期，无法搜索过去的日期。' : '请说明您需要酒店、航班、比较还是行程计划。',
+    ar: dateHint && dateMissing && !missing.includes('destination') && !missing.includes('origin') ? `سجلت الفترة من ${dateHint.start_day} إلى ${dateHint.end_day} ${monthLabel}، لكنني أحتاج إلى السنة.` : missing.includes('destination') ? 'ما المدينة أو الجزيرة المحددة التي تريد البحث فيها؟' : missing.includes('origin') ? 'من أي مدينة أو مطار ستغادر؟' : dateMissing ? 'ما تاريخا تسجيل الوصول والمغادرة المستقبليان؟ لا يمكن البحث عن تواريخ ماضية.' : 'هل تريد فنادق أم رحلات أم مقارنة أم خطة سفر؟',
   };
   return labels[key] || labels.en;
 }
@@ -373,7 +401,14 @@ function fallbackPlan(message, currentContext, language, { previousIntent = null
     && !currentContext.origin && currentContext.destination) {
     contextPatch.origin = normalizedPlace(plainLocationValue);
   }
-  const context = mergeSearchContext(currentContext, contextPatch);
+  const mergedContext = mergeSearchContext(currentContext, contextPatch);
+  const expiredDates = hasPastStartDate(mergedContext);
+  if (expiredDates) {
+    contextPatch.date_start = null;
+    contextPatch.date_end = null;
+    contextPatch.date_range_hint = null;
+  }
+  const context = expiredDates ? withoutPastTravelDates(mergedContext) : mergedContext;
   const intent = actionableIntent(initialIntent, context);
   const missing = requiredFields(intent, context);
   const priorAssistant = [...recentMessages].reverse().find(item => item.role === 'assistant')?.content || '';
@@ -500,7 +535,7 @@ Allowed intents: ${intentValues.join(', ')}. Allowed actions: ${actionValues.joi
 Hotel search requires destination, date_start and date_end. Flight search requires origin, destination and date_start. Budget planning requires origin, destination, date_start, date_end and budget_amount.
 The previous intent is ${previousIntent || 'unknown'}. Treat short follow-up messages as continuations unless the user clearly changes the task.
 Dates not stated by the user or existing context must remain absent. Do not infer a year or date.
-When the user gives a day-and-month range without a year, Tripalora has already assigned the current year in CURRENT_CONTEXT. Use it without asking for the year.
+When the user gives a day-and-month range without a year, Tripalora has already assigned the nearest future occurrence in CURRENT_CONTEXT. Use it without asking for the year. Never search dates before today.
 If the user changes their mind about a destination, update destination even when one already exists. If they explicitly switch from hotels to flights or back, switch intent while preserving shared trip context.
 Use intent budget and action budget_plan only for a complete-trip budget request, not merely because a hotel or flight has a price limit.
 Schema: {"intent":"...","reply":"...","context_patch":{},"action":{"type":"...","result_indexes":[]},"missing_fields":[],"used_profile_fields":[]}.
@@ -513,7 +548,8 @@ context_patch may contain only origin, destination, date_start, date_end, date_r
     const parsed = planSchema.parse(normalizePlannerPayload(parseAIJson(text)));
     const parsedPatch = { ...parsed.context_patch };
     if (parsedPatch.travelers && !extractPeople(cleanMessage) && !seededContext.travelers) delete parsedPatch.travelers;
-    const context = mergeSearchContext(mergeSearchContext(seededContext, parsedPatch), deterministicPatch);
+    const mergedContext = mergeSearchContext(mergeSearchContext(seededContext, parsedPatch), deterministicPatch);
+    const context = withoutPastTravelDates(mergedContext);
     const explicitIntent = fallbackPlan(cleanMessage, {}, language).intent;
     const explicitActionIntent = ['hotel_search', 'flight_search', 'compare', 'itinerary', 'budget'].includes(explicitIntent) ? explicitIntent : null;
     const parsedIntent = explicitActionIntent
@@ -536,8 +572,8 @@ context_patch may contain only origin, destination, date_start, date_end, date_r
     };
   } catch (error) {
     const fallback = fallbackPlan(cleanMessage, contextBeforeMessage, language, { previousIntent, recentMessages: cleanHistory });
-    return { ...fallback, context: mergeSearchContext(seededContext, fallback.context_patch), error: error.message };
+    return { ...fallback, context: withoutPastTravelDates(mergeSearchContext(seededContext, fallback.context_patch)), error: error.message };
   }
 }
 
-module.exports = { planMessage, redactSensitiveText, mergeSearchContext, profileSubset, fallbackPlan, planSchema, extractDateRangePatch, extractRequestPatch, clarificationReply, isBroadDestination, currentYearDateHintPatch };
+module.exports = { planMessage, redactSensitiveText, mergeSearchContext, profileSubset, fallbackPlan, planSchema, extractDateRangePatch, extractRequestPatch, clarificationReply, isBroadDestination, currentYearDateHintPatch, implicitFutureYear, withoutPastTravelDates };

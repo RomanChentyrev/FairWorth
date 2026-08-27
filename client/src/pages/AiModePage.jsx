@@ -9,7 +9,7 @@ import { aiModeApi, flightsApi, hotelsApi } from '../api';
 import { useLang } from '../i18n/LanguageContext';
 import { useTripBasket } from '../context/TripBasketContext';
 import { formatAmount } from '../utils/money';
-import { buildBudgetOptions } from '../utils/aiBudgetPlan';
+import { buildBudgetOptions, buildRoundTripOffers } from '../utils/aiBudgetPlan';
 import styles from './AiModePage.module.css';
 
 const QUICK_ACTIONS = [
@@ -24,6 +24,20 @@ function readableDate(value, lang) {
   if (!value) return null;
   const date = new Date(`${value}T00:00:00`);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(lang, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function assertSearchDates(current, requireEnd = false) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(`${current.date_start || ''}T00:00:00`);
+  const end = new Date(`${current.date_end || ''}T00:00:00`);
+  const invalidStart = Number.isNaN(start.getTime()) || start < today;
+  const invalidEnd = requireEnd && (Number.isNaN(end.getTime()) || end <= start);
+  if (invalidStart || invalidEnd) {
+    const error = new Error('Travel dates must be in the future');
+    error.code = 'INVALID_TRAVEL_DATES';
+    throw error;
+  }
 }
 
 function compactHotel(hotel) {
@@ -262,6 +276,7 @@ export default function AiModePage() {
   }, []);
 
   const findHotelOptions = useCallback(async current => {
+    assertSearchDates(current, true);
     const baseRequest = {
       city: current.destination, check_in: current.date_start, check_out: current.date_end,
       guests: current.travelers || 2, trip_purpose: current.trip_purpose || 'leisure',
@@ -299,23 +314,49 @@ export default function AiModePage() {
   }, [activeConversation?.id, lang]);
 
   const findFlightOptions = useCallback(async (current, { requireRoundTrip = false } = {}) => {
+    assertSearchDates(current, false);
     const [origin, destination] = await Promise.all([resolveAirport(current.origin), resolveAirport(current.destination)]);
+    const requestLeg = async ({ legOrigin, legDestination, date }) => {
+      const legRequest = {
+        origin: legOrigin, destination: legDestination, depart_date: date,
+        passengers: current.travelers || 1, cabin_class: current.cabin_class || undefined,
+        max_stops: current.max_stops ?? undefined, currency: current.currency || 'USD', limit: 10,
+        include_alternatives: true, allow_profile_fallback: true,
+      };
+      const response = await flightsApi.top(legRequest);
+      return { request: legRequest, response, offers: response.data.data || [] };
+    };
     const request = {
       origin, destination, depart_date: current.date_start, return_date: current.date_end || undefined,
       passengers: current.travelers || 1, cabin_class: current.cabin_class || undefined,
       max_stops: current.max_stops ?? undefined, currency: current.currency || 'USD', limit: 10,
       include_alternatives: true,
       allow_profile_fallback: true,
-      require_round_trip: requireRoundTrip && Boolean(current.date_end),
     };
-    const response = await flightsApi.top(request);
-    const offers = response.data.data || [];
-    const comparableOffers = requireRoundTrip && current.date_end
-      ? offers.filter(ticket => ticket.return_at)
-      : offers;
+    if (requireRoundTrip && current.date_end) {
+      assertSearchDates(current, true);
+      const [outbound, inbound] = await Promise.all([
+        requestLeg({ legOrigin: origin, legDestination: destination, date: current.date_start }),
+        requestLeg({ legOrigin: destination, legDestination: origin, date: current.date_end }),
+      ]);
+      const outboundOffers = outbound.offers.slice(0, 5).map(ticket => compactFlight(ticket, outbound.request));
+      const inboundOffers = inbound.offers.slice(0, 5).map(ticket => compactFlight(ticket, inbound.request));
+      const roundTrips = buildRoundTripOffers(outboundOffers, inboundOffers);
+      return {
+        request: { ...request, search_strategy: 'independent_round_trip_legs' },
+        results: roundTrips.slice(0, 8),
+        diagnostics: {
+          search_status: roundTrips.length ? 'complete_with_offers' : 'complete_no_offers',
+          outbound_offer_count: outboundOffers.length,
+          inbound_offer_count: inboundOffers.length,
+          profile_constraints_relaxed: outbound.response.data.profile_constraints_relaxed === true || inbound.response.data.profile_constraints_relaxed === true,
+        },
+      };
+    }
+    const { response, offers } = await requestLeg({ legOrigin: origin, legDestination: destination, date: current.date_start });
     return {
       request: { ...request, profile_constraints_relaxed: response.data.profile_constraints_relaxed === true },
-      results: comparableOffers.slice(0, 8).map(ticket => compactFlight(ticket, request)),
+      results: offers.slice(0, 8).map(ticket => compactFlight(ticket, request)),
       diagnostics: {
         search_status: response.data.search_status,
         provider_ticket_count: response.data.provider_ticket_count,
@@ -450,7 +491,29 @@ export default function AiModePage() {
   };
 
   const selectFlightResult = result => {
-    selectFlight('outbound', { flightId: result.id, title: `${result.airline} ${result.flight_number || ''}`.trim(), airline: result.airline, flightNumber: result.flight_number, originCode: result.origin, destinationCode: result.destination, date: result.departure_at?.slice(0, 10), provider: result.source, pricePerPerson: result.price, passengers: context.travelers || 1, totalPrice: result.price * (context.travelers || 1), currency: result.currency || 'USD', fairworthScore: result.score, adjustedScore: result.adjusted_score, fareConfidence: result.fare_confidence });
+    const toBasketFlight = flight => ({
+      flightId: flight.id,
+      title: `${flight.airline} ${flight.flight_number || ''}`.trim(),
+      airline: flight.airline,
+      flightNumber: flight.flight_number,
+      originCode: flight.origin,
+      destinationCode: flight.destination,
+      date: flight.departure_at?.slice(0, 10),
+      provider: flight.source,
+      pricePerPerson: flight.price,
+      passengers: context.travelers || 1,
+      totalPrice: flight.price * (context.travelers || 1),
+      currency: flight.currency || 'USD',
+      fairworthScore: flight.score,
+      adjustedScore: flight.adjusted_score,
+      fareConfidence: flight.fare_confidence,
+    });
+    if (result.round_trip_legs?.outbound && result.round_trip_legs?.inbound) {
+      selectFlight('outbound', toBasketFlight(result.round_trip_legs.outbound));
+      selectFlight('return', toBasketFlight(result.round_trip_legs.inbound));
+    } else {
+      selectFlight('outbound', toBasketFlight(result));
+    }
     aiModeApi.track({ event_type: 'ai_trip_created', conversation_id: activeConversation.id, properties: { entity_type: 'flight', entity_id: result.id } }).catch(() => {});
   };
 

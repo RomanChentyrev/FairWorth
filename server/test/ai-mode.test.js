@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  planMessage, redactSensitiveText, mergeSearchContext, profileSubset, fallbackPlan, planSchema, extractDateRangePatch, extractRequestPatch, isBroadDestination, currentYearDateHintPatch,
+  planMessage, redactSensitiveText, mergeSearchContext, profileSubset, fallbackPlan, planSchema, extractDateRangePatch, extractRequestPatch, isBroadDestination, currentYearDateHintPatch, implicitFutureYear, withoutPastTravelDates,
 } = require('../services/aiModeOrchestrator');
 
 test('AI Mode redacts common sensitive values before persistence and prompting', () => {
@@ -65,6 +65,27 @@ test('AI Mode applies the current year to a date range without a year', () => {
     date_start: '2026-10-10', date_end: '2026-10-15', date_range_hint: null,
   });
   assert.deepEqual(currentYearDateHintPatch({ date_range_hint: { start_day: 1, end_day: 14, month: 9 } }), pending);
+});
+
+test('AI Mode moves yearless past calendar dates to their next future occurrence', () => {
+  const reference = new Date('2026-08-26T12:00:00Z');
+  assert.equal(implicitFutureYear(1, 11, reference), 2027);
+  assert.equal(implicitFutureYear(10, 11, reference), 2026);
+});
+
+test('AI Mode refuses explicit dates that are already in the past', () => {
+  const sanitized = withoutPastTravelDates({
+    origin: 'Moscow', destination: 'Paris', date_start: '2026-01-11', date_end: '2026-01-12', budget_amount: 10000,
+  }, new Date('2026-08-26T12:00:00Z'));
+  assert.equal(sanitized.date_start, undefined);
+  assert.equal(sanitized.date_end, undefined);
+
+  const plan = fallbackPlan('2025-01-11 to 2025-01-12', {
+    origin: 'Moscow', destination: 'Paris', budget_amount: 10000,
+  }, 'en', { previousIntent: 'budget' });
+  assert.equal(plan.action.type, 'none');
+  assert.deepEqual(plan.missing_fields, ['date_start', 'date_end']);
+  assert.match(plan.reply, /future check-in and check-out/i);
 });
 
 test('AI Mode parses date ranges in every product language', () => {
